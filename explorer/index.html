@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Lease Lens Explorer</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
+  <link rel="stylesheet" href="style.css" />
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+</head>
+<body>
+  <header class="topbar">
+    <div>
+      <strong>Lease Lens — data explorer</strong>
+      <span class="muted">Internal tool for Milestone 3 sketching · RentSafeTO apartment building evaluations</span>
+    </div>
+    <div id="status" class="muted">Loading…</div>
+  </header>
+
+  <div class="layout">
+    <aside id="sidebar">
+      <h2>Filters <button id="reset" class="small">Reset</button></h2>
+
+      <label>Dataset / time period</label>
+      <div class="seg" id="f-era">
+        <label><input type="radio" name="era" value="both" checked /> Both</label>
+        <label><input type="radio" name="era" value="pre" /> Pre-2023</label>
+        <label><input type="radio" name="era" value="cur" /> 2023–current</label>
+      </div>
+      <p class="hint warn" id="era-warning">Both selected: the two files use <b>different scoring methods</b> (1–5 vs 0–3 ratings, 20 vs 50 categories). Compare scores within a period.</p>
+
+      <label>Evaluation year <span class="muted" id="f-year-out"></span></label>
+      <div class="range2"><input type="number" id="f-year-min" /><span>to</span><input type="number" id="f-year-max" /></div>
+
+      <label>Ward <span class="muted">(none ticked = all)</span></label>
+      <div id="f-ward" class="checklist"></div>
+
+      <label>Property type</label>
+      <div id="f-type" class="checklist short"></div>
+
+      <label>Overall score</label>
+      <div class="range2"><input type="number" id="f-score-min" /><span>to</span><input type="number" id="f-score-max" /></div>
+
+      <label>Year built</label>
+      <div class="range2"><input type="number" id="f-built-min" /><span>to</span><input type="number" id="f-built-max" /></div>
+      <label class="inline"><input type="checkbox" id="f-built-missing" checked /> include missing year built</label>
+
+      <label>Units</label>
+      <div class="range2"><input type="number" id="f-units-min" /><span>to</span><input type="number" id="f-units-max" /></div>
+
+      <label>Storeys</label>
+      <div class="range2"><input type="number" id="f-storeys-min" /><span>to</span><input type="number" id="f-storeys-max" /></div>
+
+      <label>Address / RSN search</label>
+      <input type="search" id="f-search" placeholder="e.g. KENNEDY RD or 4152711" />
+
+      <label>Inspection category</label>
+      <select id="f-cat"></select>
+      <label>Category rating</label>
+      <select id="f-catrating"></select>
+      <p class="hint">A category filter only keeps evaluations from the period that has that category.</p>
+
+      <label>Poor rating definition</label>
+      <div class="range2 poor">
+        <span>Pre-2023 ≤</span><input type="number" id="poor-pre" min="1" max="5" value="2" />
+        <span>2023+ ≤</span><input type="number" id="poor-cur" min="0" max="3" value="1" />
+      </div>
+
+      <label class="inline"><input type="checkbox" id="f-latest" /> only latest evaluation per building</label>
+      <label class="inline"><input type="checkbox" id="f-noflag" /> exclude flagged anomalies</label>
+      <p class="hint">Flagged = created-in-error, no ratings, duplicate RSN+date. Off by default — nothing is dropped silently.</p>
+    </aside>
+
+    <main>
+      <section id="summary" class="summary"></section>
+      <details id="ideas" class="ideas" open>
+        <summary>Sketch ideas — descriptive patterns in the current filter (not causal claims)</summary>
+        <div id="ideas-body"></div>
+      </details>
+      <nav id="tabs"></nav>
+      <section id="view"></section>
+    </main>
+  </div>
+  <div id="tooltip" class="tooltip" hidden></div>
+
+  <script src="js/data.js"></script>
+  <script src="js/charts.js"></script>
+  <script src="js/views.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
