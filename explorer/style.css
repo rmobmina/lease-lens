@@ -94,6 +94,8 @@ table.data tr.clickable:hover { background: var(--page); cursor: pointer; }
 .legend { display: flex; flex-wrap: wrap; gap: 10px; font-size: 11.5px; align-items: center; color: var(--ink-2); }
 .legend .sw { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 4px; vertical-align: -1px; }
 .legend .sq { border-radius: 2px; }
+.legend .sw.triangle { border-radius: 0; width: 11px; height: 10px; clip-path: polygon(50% 0, 100% 100%, 0 100%); }
+.legend .sw.diamond { border-radius: 0; clip-path: polygon(50% 0, 100% 50%, 50% 100%, 0 50%); }
 #map { height: 600px; border-radius: 6px; border: 1px solid var(--border); }
 .kv { display: grid; grid-template-columns: max-content 1fr; gap: 2px 12px; font-size: 12px; }
 .kv dt { color: var(--muted); }

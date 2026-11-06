@@ -2,6 +2,13 @@
 
 const css = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 const eraColor = (era) => css(era === 'pre' ? '--pre' : '--cur');
+// Period is also encoded by shape (redundant with colour): pre-2023 circle, 2023+ triangle, cross-period diamond.
+const ERA_SHAPE = { pre: 'circle', cur: 'triangle', cross: 'diamond' };
+const eraShape = (era) => ERA_SHAPE[era] ?? 'circle';
+const SYMBOLS = { circle: d3.symbolCircle, triangle: d3.symbolTriangle, diamond: d3.symbolDiamond, square: d3.symbolSquare };
+// d3.symbol path for a named shape, sized to the same area as a circle of radius r
+const symbolPath = (shape, r) => d3.symbol(SYMBOLS[shape] ?? d3.symbolCircle, Math.PI * r * r)();
+const eraLegendItems = (eras) => eras.map((e) => ({ color: eraColor(e), label: LL.ERA[e]?.label ?? e, shape: eraShape(e) }));
 const fmt = {
   n: d3.format(','),
   f1: d3.format(',.1f'),
@@ -74,7 +81,7 @@ function card(parent, title, sub) {
 
 function legend(parent, items, square = false) {
   const d = el('div', { class: 'legend' });
-  d.innerHTML = items.map((i) => `<span><span class="sw ${square ? 'sq' : ''}" style="background:${i.color}"></span>${i.label}</span>`).join('');
+  d.innerHTML = items.map((i) => `<span><span class="sw ${square ? 'sq' : ''} ${i.shape ?? ''}" style="background:${i.color}"></span>${i.label}</span>`).join('');
   parent.appendChild(d);
   return d;
 }
@@ -118,7 +125,7 @@ function histogram(parent, values, { domain = [0, 100], binWidth = 2, color, hei
 }
 
 // ---- scatter --------------------------------------------------------------
-function scatter(parent, data, { x: xAcc, y: yAcc, xDomain, yDomain = [0, 100], xLog = false, color, r = 2.5, height = 320, xLabel, yLabel = 'Overall score', tipFn, onClick, jitterX = 0, jitterY = 0, opacity = 0.45, overlay } = {}) {
+function scatter(parent, data, { x: xAcc, y: yAcc, xDomain, yDomain = [0, 100], xLog = false, color, r = 2.5, height = 320, xLabel, yLabel = 'Overall score', tipFn, onClick, jitterX = 0, jitterY = 0, opacity = 0.45, overlay, shape } = {}) {
   const f = frame(parent, { height });
   const xs = (xLog ? d3.scaleLog() : d3.scaleLinear()).domain(xDomain || d3.extent(data, xAcc)).range([0, f.w]);
   if (!xLog) xs.nice();
@@ -127,9 +134,15 @@ function scatter(parent, data, { x: xAcc, y: yAcc, xDomain, yDomain = [0, 100], 
   const key = (d) => d.uid ?? d.r?.uid ?? d.b?.uid ?? String(xAcc(d)) + yAcc(d);
   const jx = (d) => (jitterX ? (hash(key(d)) - 0.5) * jitterX : 0);
   const jy = (d) => (jitterY ? (hash(key(d) + "y") - 0.5) * jitterY : 0);
-  const pts = f.g.append('g').selectAll('circle').data(data).join('circle')
-    .attr('cx', (d) => xs(xAcc(d) + jx(d))).attr('cy', (d) => ys(yAcc(d) + jy(d))).attr('r', r)
-    .attr('fill', color).attr('fill-opacity', opacity);
+  const pts = shape
+    ? f.g.append('g').selectAll('path').data(data).join('path')
+      .attr('transform', (d) => `translate(${xs(xAcc(d) + jx(d))},${ys(yAcc(d) + jy(d))})`)
+      .attr('d', (d) => symbolPath(typeof shape === 'function' ? shape(d) : shape, r))
+    : f.g.append('g').selectAll('circle').data(data).join('circle')
+      .attr('cx', (d) => xs(xAcc(d) + jx(d))).attr('cy', (d) => ys(yAcc(d) + jy(d))).attr('r', r);
+  // a stronger outline in the same colour keeps each symbol's shape readable where points overlap
+  pts.attr('fill', color).attr('fill-opacity', opacity);
+  if (shape) pts.attr('stroke', color).attr('stroke-opacity', Math.min(1, opacity + 0.35)).attr('stroke-width', 0.7);
   if (tipFn) bindTip(pts, tipFn);
   if (onClick) pts.style('cursor', 'pointer').on('click', (ev, d) => onClick(d));
   if (overlay) overlay(f, xs, ys);
@@ -199,4 +212,4 @@ function heatmap(parent, { rows, cols, cell, maxV, minN = 10, colLabelAngle = -4
   parent.appendChild(lg);
 }
 
-window.LLC = { css, eraColor, fmt, RATING_COLORS, divergingScale, tip, bindTip, encoding, el, card, legend, frame, axes, histogram, scatter, boxplot, heatmap, hash };
+window.LLC = { css, eraColor, eraShape, symbolPath, eraLegendItems, fmt, RATING_COLORS, divergingScale, tip, bindTip, encoding, el, card, legend, frame, axes, histogram, scatter, boxplot, heatmap, hash };

@@ -67,6 +67,21 @@ function haversine(a, b) {
   return 2 * R * Math.asin(Math.sqrt(h));
 }
 
+// Leaflet's canvas renderer only draws circles; this marker also draws triangles/diamonds (hit-testing stays circular).
+const ShapeMarker = L.CircleMarker.extend({
+  _updatePath() {
+    const R = this._renderer, shape = this.options.shape;
+    if (!shape || shape === 'circle' || !R._ctx) return R._updateCircle(this);
+    if (!R._drawing || this._empty()) return;
+    const { x, y } = this._point, r = Math.max(this._radius, 1), ctx = R._ctx;
+    ctx.beginPath();
+    if (shape === 'triangle') { const s = r * 1.35; ctx.moveTo(x, y - s); ctx.lineTo(x + s * 0.87, y + s * 0.5); ctx.lineTo(x - s * 0.87, y + s * 0.5); }
+    else { const s = r * 1.25; ctx.moveTo(x, y - s); ctx.lineTo(x + s, y); ctx.lineTo(x, y + s); ctx.lineTo(x - s, y); }
+    ctx.closePath();
+    R._fillStroke(ctx, this);
+  },
+});
+
 // =====================================================================
 const VIEWS = {
   helpers: { pairs, catStats },
@@ -104,7 +119,7 @@ const VIEWS = {
 
     // history
     const hc = card(root, 'Evaluation history');
-    encoding(hc, { mark: 'one dot = one evaluation; lines connect evaluations within the same period', x: 'evaluation date', y: 'overall score (0–100)', color: 'period (blue = pre-2023, orange = 2023+). Dashed gap = scoring methodology change' });
+    encoding(hc, { mark: 'one symbol = one evaluation (circle = pre-2023, triangle = 2023+); lines connect evaluations within the same period', x: 'evaluation date', y: 'overall score (0–100)', color: 'period (blue = pre-2023, orange = 2023+). Dashed gap = scoring methodology change' });
     {
       const f = frame(hc, { height: 220 });
       const x = d3.scaleTime().domain([new Date('2017-06-01'), new Date('2026-12-31')]).range([0, f.w]);
@@ -116,7 +131,7 @@ const VIEWS = {
       for (const e of ['pre', 'cur']) {
         const pts = evs.filter((r) => r.era === e && r.score != null);
         f.g.append('path').datum(pts).attr('fill', 'none').attr('stroke', eraColor(e)).attr('stroke-width', 2).attr('d', d3.line().x((r) => x(r.time)).y((r) => y(r.score)));
-        const dots = f.g.selectAll(null).data(pts).join('circle').attr('cx', (r) => x(r.time)).attr('cy', (r) => y(r.score)).attr('r', 5).attr('fill', eraColor(e)).attr('stroke', 'var(--surface)').attr('stroke-width', 2);
+        const dots = f.g.selectAll(null).data(pts).join('path').attr('transform', (r) => `translate(${x(r.time)},${y(r.score)})`).attr('d', symbolPath(eraShape(e), 5.5)).attr('fill', eraColor(e)).attr('stroke', 'var(--surface)').attr('stroke-width', 2);
         bindTip(dots, recTip);
         f.g.selectAll(null).data(pts).join('text').attr('x', (r) => x(r.time)).attr('y', (r) => y(r.score) - 9).attr('text-anchor', 'middle').text((r) => r.score);
       }
@@ -227,7 +242,7 @@ const VIEWS = {
       colorDesc = 'percentile rank of the score among ALL evaluations in the same period (computed on unfiltered data)';
     } else if (U.color === 'era') {
       colorFn = (r) => eraColor(r.era);
-      legendItems = ['pre', 'cur'].map((e) => ({ color: eraColor(e), label: eraLabel(e) }));
+      legendItems = eraLegendItems(['pre', 'cur']);
       colorDesc = 'period / file';
     } else if (U.color === 'type') {
       const types = ['PRIVATE', 'TCHC', 'SOCIAL HOUSING'], cols = ['#2a78d6', '#eb6834', '#1baf7a'];
@@ -242,10 +257,11 @@ const VIEWS = {
       colorDesc = `rating for “${cat.label}” (${eraLabel(cat.era)}); points from the other period are hidden`;
       pts = pts.filter((r) => r.era === cat.era);
     }
-    const sizeFn = U.size === 'units' ? (() => { const s = d3.scaleSqrt().domain([0, 800]).range([2, 14]); return (r) => s(r.units ?? 0); })() : () => 4;
-    encoding(c, { mark: U.points === 'latest' ? 'one circle = one building (its latest evaluation in the filter)' : 'one circle = one evaluation (buildings overlap)', x: 'longitude', y: 'latitude', color: colorDesc, size: U.size === 'units' ? 'number of units (area ∝ units)' : 'fixed', other: 'lower scores are drawn on top so low-scoring clusters stay visible' });
+    const sizeFn = U.size === 'units' ? (() => { const s = d3.scaleSqrt().domain([0, 800]).range([2, 14]); return (r) => s(r.units ?? 0); })() : () => 5;
+    encoding(c, { mark: (U.points === 'latest' ? 'one symbol = one building (its latest evaluation in the filter)' : 'one symbol = one evaluation (buildings overlap)') + '; shape = period (circle = pre-2023, triangle = 2023+)', x: 'longitude', y: 'latitude', color: colorDesc, size: U.size === 'units' ? 'number of units (area ∝ units)' : 'fixed', other: 'lower scores are drawn on top so low-scoring clusters stay visible' });
     legend(c, legendItems);
-    c.appendChild(el('p', { class: 'hint' }, `${fmt.n(pts.length)} points plotted · ${fmt.n(noCoord)} records without any coordinates not shown · ${fmt.n(derived)} positions derived from X/Y (see Data notes). Click a point to open it in the building explorer.`));
+    if (U.color !== 'era') legend(c, eraLegendItems(eras).map((i) => ({ ...i, color: 'var(--muted)' })));
+    c.appendChild(el('p', { class: 'hint' }, `${fmt.n(pts.length)} points plotted · ${fmt.n(noCoord)} records without any coordinates not shown · ${fmt.n(derived)} positions derived from X/Y (see Data notes). Click a point to open it in the building explorer.${U.points === 'latest' ? ' Almost every building has a 2023+ evaluation, so in “latest” mode nearly all symbols are triangles; set Points to “every evaluation” to see the pre-2023 circles.' : ''}`));
     const mdiv = el('div', { id: 'map' }); c.appendChild(mdiv);
     const map = L.map(mdiv, { preferCanvas: true }).setView([43.715, -79.39], 11);
     VIEWS._map = map;
@@ -253,7 +269,7 @@ const VIEWS = {
     const renderer = L.canvas({ padding: 0.5 });
     [...pts].sort((a, b) => (b.score ?? 0) - (a.score ?? 0)).forEach((r) => {
       const col = colorFn(r);
-      L.circleMarker([r.lat, r.lon], { renderer, radius: sizeFn(r), color: '#333', weight: 0.4, fillColor: col, fillOpacity: 0.85 })
+      new ShapeMarker([r.lat, r.lon], { renderer, shape: eraShape(r.era), radius: sizeFn(r), color: '#333', weight: 0.4, fillColor: col, fillOpacity: 0.85 })
         .bindTooltip(recTip(r), { sticky: true }).on('click', () => APP.selectBuilding(r.rsn)).addTo(map);
     });
   },
@@ -298,9 +314,9 @@ const VIEWS = {
     const pts = recs.filter((r) => r[U.x] != null);
     if (!pts.length) return emptyMsg(c);
     const eras = APP.erasIn(pts);
-    encoding(c, { mark: 'one dot = one evaluation', x: U.x === 'age' ? 'building age at evaluation = evaluation year − year built' : 'year built', y: 'overall score', color: 'period', other: 'semi-transparent so dense areas look darker' });
-    legend(c, eras.map((e) => ({ color: eraColor(e), label: eraLabel(e) })));
-    scatter(c, pts, { x: (r) => r[U.x], y: (r) => r.score, xDomain: d3.extent(pts, (r) => r[U.x]), color: (r) => eraColor(r.era), xLabel: U.x === 'age' ? 'Age at evaluation (years)' : 'Year built', tipFn: recTip, onClick: (r) => APP.selectBuilding(r.rsn), jitterX: U.jitter ? 1 : 0, jitterY: U.jitter ? 1 : 0, r: 2.2, opacity: 0.35 });
+    encoding(c, { mark: 'one symbol = one evaluation (circle = pre-2023, triangle = 2023+)', x: U.x === 'age' ? 'building age at evaluation = evaluation year − year built' : 'year built', y: 'overall score', color: 'period (also shown by shape)', other: 'semi-transparent so dense areas look darker' });
+    legend(c, eraLegendItems(eras));
+    scatter(c, pts, { x: (r) => r[U.x], y: (r) => r.score, xDomain: d3.extent(pts, (r) => r[U.x]), color: (r) => eraColor(r.era), xLabel: U.x === 'age' ? 'Age at evaluation (years)' : 'Year built', tipFn: recTip, onClick: (r) => APP.selectBuilding(r.rsn), jitterX: U.jitter ? 1 : 0, jitterY: U.jitter ? 1 : 0, r: 3.6, opacity: 0.3, shape: (r) => eraShape(r.era) });
     const b = card(root, 'Score by decade built');
     encoding(b, { mark: 'one box per decade × period: line = median, box = interquartile range, whisker = 1.5×IQR', x: 'decade built (pre-1900 grouped)', y: 'overall score', color: 'period', other: 'faded = fewer than 5 evaluations; hover for n' });
     legend(b, eras.map((e) => ({ color: eraColor(e), label: eraLabel(e) })));
@@ -322,20 +338,20 @@ const VIEWS = {
       for (const e of eras) {
         const rows = bands.map(([a, b, l]) => { const v = recs.filter((r) => r.era === e && acc(r) >= a && acc(r) <= b).map((r) => r.score); return v.length >= 5 ? { x: xs0(a, b), m: LL.median(v), n: v.length, l } : null; }).filter(Boolean);
         f.g.append('path').datum(rows).attr('fill', 'none').attr('stroke', eraColor(e)).attr('stroke-width', 2.5).attr('d', d3.line().x((d) => xs(d.x)).y((d) => ys(d.m)));
-        const dd = f.g.selectAll(null).data(rows).join('circle').attr('cx', (d) => xs(d.x)).attr('cy', (d) => ys(d.m)).attr('r', 5).attr('fill', eraColor(e)).attr('stroke', 'var(--surface)').attr('stroke-width', 2);
+        const dd = f.g.selectAll(null).data(rows).join('path').attr('transform', (d) => `translate(${xs(d.x)},${ys(d.m)})`).attr('d', symbolPath(eraShape(e), 5.5)).attr('fill', eraColor(e)).attr('stroke', 'var(--surface)').attr('stroke-width', 2);
         bindTip(dd, (d) => `${eraLabel(e)} · ${d.l}<br>median ${d.m} (n = ${fmt.n(d.n)})`);
       }
     };
     const grid = el('div', { class: 'grid2' }); root.appendChild(grid);
     const c1 = card(grid, 'Number of units vs score');
     const c2 = card(grid, 'Number of storeys vs score');
-    encoding(c1, { mark: 'small dot = one evaluation; large dots + line = median score per unit band (n ≥ 5)', x: 'confirmed units (log scale)', y: 'overall score', color: 'period' });
-    legend(c1, eras.map((e) => ({ color: eraColor(e), label: eraLabel(e) })));
-    scatter(c1, recs, { x: (r) => r.units, y: (r) => r.score, xLog: true, xDomain: [8, 900], color: (r) => eraColor(r.era), xLabel: 'Units (log)', tipFn: recTip, onClick: (r) => APP.selectBuilding(r.rsn), r: 2, opacity: 0.25, jitterY: 1,
+    encoding(c1, { mark: 'small symbol = one evaluation; large symbols + line = median score per unit band (n ≥ 5)', x: 'confirmed units (log scale)', y: 'overall score', color: 'period', other: 'shape = period (circle = pre-2023, triangle = 2023+)' });
+    legend(c1, eraLegendItems(eras));
+    scatter(c1, recs, { x: (r) => r.units, y: (r) => r.score, xLog: true, xDomain: [8, 900], color: (r) => eraColor(r.era), xLabel: 'Units (log)', tipFn: recTip, onClick: (r) => APP.selectBuilding(r.rsn), r: 3.4, opacity: 0.22, jitterY: 1, shape: (r) => eraShape(r.era),
       overlay: medOverlay(UNIT_BANDS, (r) => r.units, (a, b) => Math.sqrt(Math.max(a, 10) * Math.min(b, 800))) });
-    encoding(c2, { mark: 'small dot = one evaluation; large dots + line = median score per storey band (n ≥ 5)', x: 'confirmed storeys (jittered ±0.4)', y: 'overall score', color: 'period' });
-    legend(c2, eras.map((e) => ({ color: eraColor(e), label: eraLabel(e) })));
-    scatter(c2, recs, { x: (r) => r.storeys, y: (r) => r.score, xDomain: [0, d3.max(recs, (r) => r.storeys) + 1], color: (r) => eraColor(r.era), xLabel: 'Storeys', tipFn: recTip, onClick: (r) => APP.selectBuilding(r.rsn), r: 2, opacity: 0.25, jitterX: 0.8, jitterY: 1,
+    encoding(c2, { mark: 'small symbol = one evaluation; large symbols + line = median score per storey band (n ≥ 5)', x: 'confirmed storeys (jittered ±0.4)', y: 'overall score', color: 'period', other: 'shape = period (circle = pre-2023, triangle = 2023+)' });
+    legend(c2, eraLegendItems(eras));
+    scatter(c2, recs, { x: (r) => r.storeys, y: (r) => r.score, xDomain: [0, d3.max(recs, (r) => r.storeys) + 1], color: (r) => eraColor(r.era), xLabel: 'Storeys', tipFn: recTip, onClick: (r) => APP.selectBuilding(r.rsn), r: 3.4, opacity: 0.22, jitterX: 0.8, jitterY: 1, shape: (r) => eraShape(r.era),
       overlay: medOverlay(STOREY_BANDS, (r) => r.storeys, (a, b) => (a + Math.min(b, 40)) / 2) });
     const c3 = card(root, 'Score by storey band');
     encoding(c3, { mark: 'box per storey band × period (median, IQR, 1.5×IQR whiskers)', x: 'storey band', y: 'overall score', color: 'period' });
@@ -458,11 +474,11 @@ const VIEWS = {
         .attr('fill', (b) => (b.x1 <= 0 ? '#e34948' : b.x0 > 0 ? '#2a78d6' : '#b9b8b0'));
       bindTip(bars, (b) => `change ${b.x0} to ${b.x1 - 1}: <b>${fmt.n(b.length)}</b> pairs`);
     }
-    encoding(sc, { mark: 'one dot = one re-evaluation pair', x: 'earlier evaluation score', y: 'score change (later − earlier)', color: 'period of the pair (purple = crosses methodology change)', other: 'useful to check whether low scorers tend to rise (regression to the mean)' });
+    encoding(sc, { mark: 'one symbol = one re-evaluation pair (circle = pre-2023, triangle = 2023+, diamond = crosses the methodology change)', x: 'earlier evaluation score', y: 'score change (later − earlier)', color: 'period of the pair (purple = crosses methodology change)', other: 'useful to check whether low scorers tend to rise (regression to the mean)' });
     {
       const col = (p) => (p.type === 'cross' ? '#4a3aa7' : eraColor(p.type));
       const ext = Math.max(10, d3.max(ps, (p) => Math.abs(p.delta)));
-      scatter(sc, ps, { x: (p) => p.a.score, y: (p) => p.delta, xDomain: [d3.min(ps, (p) => p.a.score), 100], yDomain: [-ext, ext], color: col, xLabel: 'Earlier score', yLabel: 'Change', r: 2.5, opacity: 0.4, jitterX: 1, jitterY: 1,
+      scatter(sc, ps, { x: (p) => p.a.score, y: (p) => p.delta, xDomain: [d3.min(ps, (p) => p.a.score), 100], yDomain: [-ext, ext], color: col, xLabel: 'Earlier score', yLabel: 'Change', r: 3.8, opacity: 0.35, jitterX: 1, jitterY: 1, shape: (p) => eraShape(p.type),
         tipFn: (p) => `<b>${p.b.address}</b><br>${p.a.date}: ${p.a.score} → ${p.b.date}: ${p.b.score} (${fmt.sgn(p.delta)})`, onClick: (p) => APP.selectBuilding(p.rsn),
         overlay: (f, xs, ys) => f.g.append('line').attr('x1', 0).attr('x2', f.w).attr('y1', ys(0)).attr('y2', ys(0)).attr('stroke', 'var(--ink)') });
     }
@@ -517,8 +533,8 @@ const VIEWS = {
       const grid = el('div', { class: 'grid2' }); ec.appendChild(grid);
       const left = el('div'); grid.appendChild(left);
       const right = el('div'); grid.appendChild(right);
-      encoding(left, { mark: 'one dot = one evaluation', x: 'overall score', y: 'number of poor-rated categories in that evaluation (jittered)', color: `period; shaded area = score ≥ ${U[e]} and ≥ ${U.minPoor} poor categories` });
-      scatter(left, recs, { x: (d) => d.r.score, y: (d) => d.poorCats.length, xDomain: [d3.min(recs, (d) => d.r.score), 100], yDomain: [0, Math.max(5, d3.max(recs, (d) => d.poorCats.length) + 1)], color: eraColor(e), xLabel: 'Overall score', yLabel: 'Poor categories', r: 2.2, opacity: 0.35, jitterX: 0.8, jitterY: 0.6,
+      encoding(left, { mark: `one ${eraShape(e)} = one evaluation`, x: 'overall score', y: 'number of poor-rated categories in that evaluation (jittered)', color: `period; shaded area = score ≥ ${U[e]} and ≥ ${U.minPoor} poor categories` });
+      scatter(left, recs, { x: (d) => d.r.score, y: (d) => d.poorCats.length, xDomain: [d3.min(recs, (d) => d.r.score), 100], yDomain: [0, Math.max(5, d3.max(recs, (d) => d.poorCats.length) + 1)], color: eraColor(e), xLabel: 'Overall score', yLabel: 'Poor categories', r: 3.6, opacity: 0.3, jitterX: 0.8, jitterY: 0.6, shape: eraShape(e),
         tipFn: (d) => recTip(d.r) + `<br><b>${d.poorCats.length} poor:</b> ${d.poorCats.map(LL.prettyCat).join(', ')}`, onClick: (d) => APP.selectBuilding(d.r.rsn),
         overlay: (f, xs, ys) => f.g.insert('rect', ':first-child').attr('x', xs(U[e])).attr('width', f.w - xs(U[e])).attr('y', 0).attr('height', ys(U.minPoor - 0.5)).attr('fill', 'var(--warnbg)') });
       const counts = d3.rollups(flagged.flatMap((d) => d.poorCats), (v) => v.length, (x) => x).sort((a, b) => b[1] - a[1]).slice(0, 15);
