@@ -1,0 +1,356 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Lease Lens</title>
+  <meta name="description" content="Explore apartment building conditions across Toronto before signing a lease, using RentSafeTO evaluation data." />
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%231c5cab'/%3E%3Ccircle cx='14' cy='14' r='7' fill='none' stroke='white' stroke-width='3'/%3E%3Cpath d='M19 19l6 6' stroke='white' stroke-width='3' stroke-linecap='round'/%3E%3C/svg%3E" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
+  <link rel="stylesheet" href="css/dashboard.css" />
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+</head>
+<body>
+  <a class="skip-link" href="#stage">Skip to content</a>
+
+  <div class="app">
+    <!-- Sidebar: brand, navigation, page-wide filters -------------------- -->
+    <aside class="sidebar" id="sidebar" aria-label="Navigation and filters">
+      <div class="sidebar-top">
+        <a class="brand" href="#/">
+          <span class="brand-mark" aria-hidden="true"></span>
+          <span><span class="brand-name">Lease Lens</span><span class="brand-tag">Toronto apartment buildings</span></span>
+        </a>
+        <button type="button" class="menu-button" id="menu-button" aria-expanded="false" aria-controls="nav-panel">Menu</button>
+      </div>
+
+      <div class="nav-panel" id="nav-panel">
+        <nav class="nav" aria-label="Sections">
+          <a href="#/" data-route="home" class="nav-item"><span class="nav-icon" aria-hidden="true">⌂</span><span class="nav-text"><b>Overview</b></span></a>
+          <a href="#/building" data-route="building" class="nav-item"><span class="nav-icon" aria-hidden="true">⌕</span><span class="nav-text"><b>Check a building</b><small>Its score, problems and history</small></span></a>
+
+          <a href="#/fingerprint" data-route="fingerprint" class="nav-item"><span class="nav-icon" aria-hidden="true">▦</span><span class="nav-text"><b>What a score hides</b><small>Two buildings, same score, item by item</small></span></a>
+
+          <p class="nav-label">Explore the city</p>
+          <a href="#/q1" data-route="q1" class="nav-item"><span class="nav-num">1</span><span class="nav-text"><b>Where</b><small>Low-scoring buildings on a map</small></span></a>
+          <a href="#/q2" data-route="q2" class="nav-item"><span class="nav-num">2</span><span class="nav-text"><b>Building age</b><small>Do older buildings score lower?</small></span></a>
+          <a href="#/q3" data-route="q3" class="nav-item"><span class="nav-num">3</span><span class="nav-text"><b>Common problems</b><small>What inspectors flag most</small></span></a>
+          <a href="#/q4" data-route="q4" class="nav-item"><span class="nav-num">4</span><span class="nav-text"><b>Re-inspections</b><small>Do scores improve?</small></span></a>
+          <a href="#/q5" data-route="q5" class="nav-item"><span class="nav-num">5</span><span class="nav-text"><b>Biggest changes</b><small>Largest rises and drops</small></span></a>
+        </nav>
+
+        <div class="filters" role="group" aria-label="Filters for every view">
+          <p class="nav-label">Filters</p>
+          <fieldset class="seg seg-full" id="period">
+            <legend>Scoring system</legend>
+            <label><input type="radio" name="period" value="cur" checked /><span>2023 – now</span></label>
+            <label><input type="radio" name="period" value="pre" /><span>2017 – 2023</span></label>
+          </fieldset>
+          <label class="field">
+            <span class="field-label">Ward</span>
+            <select id="ward"><option value="">All of Toronto</option></select>
+          </label>
+          <p class="filter-note" id="period-note"></p>
+        </div>
+
+        <div class="sidebar-foot">
+          <button type="button" class="theme-toggle" id="theme-toggle" aria-label="Switch colour theme">◐ <span>Dark mode</span></button>
+          <a href="#/about" data-route="about">About the data</a>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Main stage: one view at a time ----------------------------------- -->
+    <main class="stage" id="stage" tabindex="-1">
+      <header class="topbar">
+        <div class="search" role="search">
+          <span class="search-icon" aria-hidden="true">⌕</span>
+          <label class="visually-hidden" for="search">Find a building by address</label>
+          <input id="search" type="search" list="building-list" placeholder="Find a building by address…" autocomplete="off" />
+          <datalist id="building-list"></datalist>
+        </div>
+        <div id="ward-chip" class="selection filter-chip" hidden></div>
+        <div id="selection" class="selection" hidden></div>
+      </header>
+
+      <p id="status" class="status" role="status">Loading RentSafeTO evaluations…</p>
+
+      <!-- Overview ------------------------------------------------------ -->
+      <section class="view" data-view="home" aria-labelledby="home-title" hidden>
+        <div class="home-hero">
+          <p class="eyebrow">RentSafeTO apartment building evaluations</p>
+          <h1 id="home-title">Know the building before you sign the lease.</h1>
+          <p class="lede">Toronto inspects the common areas of rental apartment buildings with 3+ storeys and 10+ units and gives each one a score out of 100.
+            Look up a building you're considering, or explore how buildings compare across the city.</p>
+          <div class="hero-search">
+            <label class="visually-hidden" for="hero-search">Find a building by address</label>
+            <input id="hero-search" type="search" list="building-list" placeholder="Start typing a street address…" autocomplete="off" />
+            <button type="button" class="btn btn-primary" id="hero-go">Check building</button>
+          </div>
+        </div>
+        <div id="metrics" class="metrics" aria-label="Summary"></div>
+        <a class="home-story" href="#/fingerprint">
+          <span class="home-story-text">
+            <span class="eyebrow">Inspection fingerprint</span>
+            <span class="home-story-title">What does a 92 actually hide?</span>
+            <span class="home-story-sub">Most buildings score in a narrow band, so the number alone can hide what went wrong. See two buildings with the same score, item by item.</span>
+          </span>
+          <span class="qc-go">Compare them <span aria-hidden="true">→</span></span>
+        </a>
+        <h2 class="section-label">Five questions about Toronto's buildings</h2>
+        <div id="question-cards" class="question-cards"></div>
+      </section>
+
+      <!-- Building report ------------------------------------------------ -->
+      <section class="view" data-view="building" aria-labelledby="b-title" hidden>
+        <div id="b-empty" class="b-empty">
+          <p class="eyebrow">Building report</p>
+          <h1>Check a building</h1>
+          <p class="lede">Search for an address in the box above to see its latest score, the problems inspectors found, how it has changed, and how it compares with nearby buildings.</p>
+          <p class="b-empty-note" id="b-empty-note"></p>
+          <p class="section-label">Or try</p>
+          <div id="b-suggest" class="chips"></div>
+        </div>
+        <div id="b-report" hidden>
+          <header class="view-head">
+            <p class="eyebrow">Building report</p>
+            <h1 id="b-title"></h1>
+            <p class="meta" id="b-meta"></p>
+          </header>
+          <div class="report-grid">
+            <article class="card" id="b-score"></article>
+            <article class="card" id="b-history"><p class="card-label">Score history</p><div class="mini-chart"></div><p class="card-text"></p><p class="card-links"><a href="#/q4" data-keep>Do scores usually improve? →</a></p></article>
+            <article class="card" id="b-problems"></article>
+            <article class="card" id="b-context"></article>
+          </div>
+        </div>
+      </section>
+
+      <!-- Inspection fingerprint (novel view) ------------------------------ -->
+      <section class="view fp-view" data-view="fingerprint" aria-labelledby="fp-title" hidden>
+        <div class="fp-wrap">
+          <header class="fp-intro">
+            <p class="eyebrow">Inspection fingerprint</p>
+            <h1 id="fp-title">What does a 92 actually hide?</h1>
+            <p class="lede">A RentSafeTO score folds dozens of inspection items into one number. <span id="fp-spread"></span>, so the score alone says little about what went wrong.
+              Lay the items out side by side and two buildings with the same score can look nothing alike.</p>
+            <p class="fp-ask">Don't just ask what a building scored. Ask what it scored low on.</p>
+          </header>
+
+          <div id="fp-unavailable" class="fp-unavailable" hidden>
+            <p>The fingerprint uses the item ratings from the City's current scoring system (2023 – now). The 2017 – 2023 system rated different items on a different scale.</p>
+            <button type="button" class="btn btn-primary" id="fp-goto-cur">Switch to 2023 – now</button>
+          </div>
+
+          <div id="fp-main">
+            <div class="fp-controls" role="group" aria-label="Choose buildings to compare">
+              <label class="field fp-field-score"><span class="field-label">Overall score</span><select id="fp-score"></select></label>
+              <label class="field"><span class="field-label">Building A</span><input id="fp-a" type="search" list="building-list" autocomplete="off" /></label>
+              <label class="field"><span class="field-label">Building B</span><input id="fp-b" type="search" list="building-list" autocomplete="off" /></label>
+              <div class="fp-actions">
+                <button type="button" class="btn" id="fp-next"></button>
+                <button type="button" class="btn btn-quiet" id="fp-reset" hidden>Back to example pairs</button>
+              </div>
+            </div>
+
+            <p class="fp-verdict" id="fp-verdict" aria-live="polite"></p>
+            <div id="fp-legend" class="legend fp-legend" aria-label="Legend"></div>
+
+            <div class="fp-pair">
+              <article class="fp-building" id="fp-a-card"><div class="fp-head"></div><div class="fp-chart chart"></div><div class="fp-lows"></div><div class="fp-notes"></div></article>
+              <article class="fp-building" id="fp-b-card"><div class="fp-head"></div><div class="fp-chart chart"></div><div class="fp-lows"></div><div class="fp-notes"></div></article>
+            </div>
+            <p class="visually-hidden" id="fp-live" aria-live="polite"></p>
+
+            <details class="fp-table">
+              <summary>Show every item as a table</summary>
+              <div class="fp-table-scroll"><table><thead id="fp-table-head"></thead><tbody id="fp-table-body"></tbody></table></div>
+            </details>
+
+            <section class="fp-city" aria-labelledby="fp-city-title">
+              <h2 id="fp-city-title" class="fp-h2">The same grid, for every building in Toronto</h2>
+              <p class="fp-city-sub">Each column is one inspection item, in the same order as above. Its colours show the share of buildings at each rating, with the lowest marks at the bottom.</p>
+              <div class="fp-city-notes" id="fp-city-notes"></div>
+              <div id="fp-city-chart" class="chart fp-city-chart"></div>
+            </section>
+
+            <section class="fp-method-block" aria-labelledby="fp-method-title">
+              <h2 id="fp-method-title" class="fp-h2">Source and method</h2>
+              <div id="fp-method" class="fp-method"></div>
+            </section>
+          </div>
+        </div>
+      </section>
+
+      <!-- Q1 ------------------------------------------------------------- -->
+      <section class="view q-view" data-view="q1" aria-labelledby="q1-title" hidden>
+        <header class="view-head">
+          <p class="eyebrow">Question 1 of 5 · Location</p>
+          <h1 id="q1-title">Where are the lowest-scoring apartment buildings in Toronto, and are they geographically clustered?</h1>
+        </header>
+        <div class="view-body">
+          <div class="viz">
+            <div class="viz-bar">
+              <fieldset class="seg seg-sm" id="map-show">
+                <legend class="visually-hidden">Buildings to show</legend>
+                <label><input type="radio" name="map-show" value="all" checked /><span>All buildings</span></label>
+                <label><input type="radio" name="map-show" value="low25" /><span>Lowest 25%</span></label>
+                <label><input type="radio" name="map-show" value="low10" /><span>Lowest 10%</span></label>
+              </fieldset>
+              <div id="map-legend" class="legend" aria-label="Map legend"></div>
+            </div>
+            <div class="viz-area map-area">
+              <div id="map" role="application" aria-label="Map of apartment buildings coloured by score. Use the ward list or building search for keyboard access."></div>
+            </div>
+          </div>
+          <aside class="insight">
+            <div class="finding" id="q1-takeaway"></div>
+            <div class="insight-block ward-block">
+              <h2 class="insight-title">Share in the lowest 10%, by ward</h2>
+              <p class="insight-sub">Select a ward to zoom in and filter every view.</p>
+              <div id="ward-chart" class="ward-chart"></div>
+            </div>
+            <details class="method"><summary>How this is calculated</summary><div id="q1-method"></div></details>
+          </aside>
+        </div>
+      </section>
+
+      <!-- Q2 ------------------------------------------------------------- -->
+      <section class="view q-view" data-view="q2" aria-labelledby="q2-title" hidden>
+        <header class="view-head">
+          <p class="eyebrow">Question 2 of 5 · Building age</p>
+          <h1 id="q2-title">Do older buildings tend to receive lower evaluation scores than newer buildings?</h1>
+        </header>
+        <div class="view-body">
+          <div class="viz">
+            <div class="viz-bar"><p class="viz-title">Latest score vs. year built, one dot per building</p><div id="age-legend" class="legend"></div></div>
+            <div id="age-chart" class="viz-area chart"></div>
+          </div>
+          <aside class="insight">
+            <div class="finding" id="q2-takeaway"></div>
+            <div id="age-stats" class="mini-stats"></div>
+            <details class="method"><summary>How this is calculated</summary><div id="q2-method"></div></details>
+          </aside>
+        </div>
+      </section>
+
+      <!-- Q3 ------------------------------------------------------------- -->
+      <section class="view q-view" data-view="q3" aria-labelledby="q3-title" hidden>
+        <header class="view-head">
+          <p class="eyebrow">Question 3 of 5 · Common problems</p>
+          <h1 id="q3-title">What are the most common problems found in Toronto apartment buildings?</h1>
+        </header>
+        <div class="view-body">
+          <div class="viz">
+            <div class="viz-bar">
+              <fieldset class="seg seg-sm" id="item-group">
+                <legend class="visually-hidden">Inspection items</legend>
+                <label><input type="radio" name="item-group" value="all" checked /><span>All items</span></label>
+                <label><input type="radio" name="item-group" value="physical" /><span>Physical conditions</span></label>
+                <label><input type="radio" name="item-group" value="record" /><span>Records &amp; plans</span></label>
+              </fieldset>
+              <button type="button" class="btn btn-quiet" id="problem-more"></button>
+            </div>
+            <p class="viz-title viz-title-row">Share of buildings with each item rated poorly</p>
+            <div id="problem-chart" class="viz-area chart scroll"></div>
+          </div>
+          <aside class="insight">
+            <div class="finding" id="q3-takeaway"></div>
+            <div class="insight-block"><h2 class="insight-title">What counts as a problem?</h2><p class="insight-text" id="problem-def"></p></div>
+            <details class="method"><summary>How this is calculated</summary><div id="q3-method"></div></details>
+          </aside>
+        </div>
+      </section>
+
+      <!-- Q4 ------------------------------------------------------------- -->
+      <section class="view q-view" data-view="q4" aria-labelledby="q4-title" hidden>
+        <header class="view-head">
+          <p class="eyebrow">Question 4 of 5 · Re-inspections</p>
+          <h1 id="q4-title">When a building is inspected again, does its overall score usually improve?</h1>
+        </header>
+        <div class="view-body">
+          <div class="viz">
+            <div class="viz-bar">
+              <fieldset class="seg seg-sm" id="change-start">
+                <legend class="visually-hidden">Which buildings</legend>
+                <label><input type="radio" name="change-start" value="all" checked /><span>All re-inspections</span></label>
+                <label><input type="radio" name="change-start" value="low" /><span>Started in the lowest 25%</span></label>
+              </fieldset>
+            </div>
+            <div id="change-split" class="split"></div>
+            <p class="viz-title viz-title-row">How much scores changed</p>
+            <div id="change-chart" class="viz-area chart"></div>
+          </div>
+          <aside class="insight">
+            <div class="finding" id="q4-takeaway"></div>
+            <div class="insight-block"><h2 class="insight-title">What's a re-inspection?</h2>
+              <p class="insight-text">The next RentSafeTO evaluation of the same building. We compare its score with the one before it: <b>new score − previous score</b>.</p></div>
+            <details class="method"><summary>How this is calculated</summary><div id="q4-method"></div></details>
+          </aside>
+        </div>
+      </section>
+
+      <!-- Q5 ------------------------------------------------------------- -->
+      <section class="view q-view" data-view="q5" aria-labelledby="q5-title" hidden>
+        <header class="view-head">
+          <p class="eyebrow">Question 5 of 5 · Biggest changes</p>
+          <h1 id="q5-title">Which buildings improved or declined the most between evaluations?</h1>
+        </header>
+        <div class="view-body">
+          <div class="viz">
+            <div class="viz-bar">
+              <fieldset class="seg seg-sm" id="movers-n">
+                <legend class="visually-hidden">Number of buildings</legend>
+                <label><input type="radio" name="movers-n" value="5" /><span>Top 5</span></label>
+                <label><input type="radio" name="movers-n" value="10" checked /><span>Top 10</span></label>
+                <label><input type="radio" name="movers-n" value="15" /><span>Top 15</span></label>
+              </fieldset>
+              <div class="legend" id="movers-legend"></div>
+            </div>
+            <div id="movers-chart" class="viz-area chart scroll"></div>
+          </div>
+          <aside class="insight">
+            <div class="finding" id="q5-takeaway"></div>
+            <div class="insight-block"><h2 class="insight-title">Tip</h2>
+              <p class="insight-text">Select any building to highlight it on every chart, then open its full report from the bar at the top.</p></div>
+            <details class="method"><summary>How this is calculated</summary><div id="q5-method"></div></details>
+          </aside>
+        </div>
+      </section>
+
+      <!-- About ---------------------------------------------------------- -->
+      <section class="view" data-view="about" aria-labelledby="about-title" hidden>
+        <header class="view-head">
+          <p class="eyebrow">About</p>
+          <h1 id="about-title">About the data</h1>
+        </header>
+        <div class="about-grid">
+          <article class="card"><h2 class="card-headline">Source</h2><p class="card-text" id="data-note"></p></article>
+          <article class="card"><h2 class="card-headline">Reading these charts</h2>
+            <p class="card-text">Scores describe the condition of common areas on the inspection day, not individual units, rents or landlord practices. Patterns here are associations; they don't show what causes a low score.</p>
+            <p class="card-text">The City changed its scoring system in 2023. Scores from the two systems use different rating scales and items, so they're never compared with each other here.</p></article>
+          <article class="card"><h2 class="card-headline">Item ratings</h2>
+            <p class="card-text">Since 2023, inspectors rate up to 50 items from 0 to 3, where 3 is the top mark. N/A means an item doesn't apply and is never counted as a problem. The <a href="#/fingerprint">inspection fingerprint</a> explains how the ratings are grouped and counted.</p></article>
+          <article class="card"><h2 class="card-headline">For analysts</h2>
+            <p class="card-text">The <a href="../explorer/">data explorer</a> shows every record, every filter, and full data notes.</p></article>
+        </div>
+      </section>
+
+      <!-- Pager: previous / next question --------------------------------- -->
+      <nav class="pager" id="pager" aria-label="Question navigation" hidden>
+        <a class="pager-link prev" id="pager-prev"></a>
+        <ol class="pager-dots" id="pager-dots"></ol>
+        <a class="pager-link next" id="pager-next"></a>
+      </nav>
+    </main>
+  </div>
+
+  <div id="tooltip" class="tooltip" role="tooltip" hidden></div>
+
+  <!-- Shared modules from the explorer: data loading/normalization and small chart helpers -->
+  <script src="../explorer/js/data.js"></script>
+  <script src="../explorer/js/charts.js"></script>
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>
