@@ -1,0 +1,73 @@
+/* Temporal chapter. Loaded AFTER ../explorer/style.css, which supplies the shared colour tokens,
+   tooltip, axis and gridline styles. This file only adds reading typography and the
+   direction-of-change colours (validated for colour-vision deficiency in light and dark). */
+:root {
+  --higher: #2a78d6;   /* same blue the explorer uses for "improvement" */
+  --lower: #d03b3b;    /* same red the explorer uses for "decline" / poor */
+  --same: #9a998f;
+  --faded: #d9d8d0;
+  --measure: 40rem;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) { --higher: #3987e5; --lower: #e05a5a; --same: #7d7c75; --faded: #34342f; }
+}
+:root[data-theme="dark"] { --higher: #3987e5; --lower: #e05a5a; --same: #7d7c75; --faded: #34342f; }
+
+body.story { font-size: 17px; line-height: 1.55; background: var(--page); color: var(--ink); }
+.story main { max-width: 52rem; margin: 0 auto; padding: 48px 16px 96px; }
+.story p, .story .measure { max-width: var(--measure); }
+.story p { margin: 0 0 1em; }
+.story h2 { font-size: clamp(28px, 5vw, 40px); line-height: 1.1; letter-spacing: -0.01em; margin: 0 0 16px; max-width: 18ch; }
+.story .kicker { font-size: 13px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-2); margin-bottom: 8px; }
+.story .bridge { color: var(--ink-2); border-top: 1px solid var(--border); padding-top: 24px; margin-bottom: 40px; }
+.story .lede { font-size: 20px; line-height: 1.45; }
+.story figure { margin: 32px 0 40px; }
+.story figcaption.title { font-weight: 600; font-size: 17px; margin-bottom: 4px; }
+.story .sub { font-size: 14px; color: var(--ink-2); margin-bottom: 12px; max-width: var(--measure); }
+.story .note { font-size: 13px; color: var(--muted); max-width: var(--measure); }
+.hi { color: var(--higher); font-weight: 600; }
+.lo { color: var(--lower); font-weight: 600; }
+.eq { color: var(--ink-2); font-weight: 600; }
+
+/* Annotation = same left-rule treatment as the explorer's .encoding notes, at reading size. */
+.annot { border-left: 3px solid var(--ink); padding: 2px 0 2px 12px; font-size: 15px; max-width: 34rem; margin: 12px 0; }
+.annot b { font-weight: 650; }
+
+/* Direction bar (tall segmented bar; text sits in ink, colour only marks the segment). */
+.dirbar { display: flex; gap: 2px; height: 40px; margin: 8px 0 6px; }
+.dirbar > div { border-radius: 4px; min-width: 2px; }
+.dirlabels { display: flex; justify-content: space-between; gap: 12px; font-size: 14px; color: var(--ink-2); flex-wrap: wrap; }
+.dirlabels .big { display: block; font-size: 28px; font-weight: 650; color: var(--ink); line-height: 1.1; }
+.dirlabels .sw { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 5px; vertical-align: 0; }
+
+/* Controls: one row above the chart they scope. */
+.modes { display: flex; flex-wrap: wrap; gap: 6px; margin: 12px 0; }
+.modes button { font: inherit; font-size: 14px; padding: 6px 12px; border-radius: 999px; border: 1px solid var(--border); background: var(--panel); color: var(--ink); cursor: pointer; }
+.modes button[aria-pressed="true"] { background: var(--ink); color: var(--page); border-color: var(--ink); }
+.modes button:focus-visible, .lookup input:focus-visible, .story summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.chartwrap { position: relative; }
+.chartwrap svg { overflow: visible; }
+.story svg text { font-size: 12px; }
+.story svg .axis-title { fill: var(--ink); font-weight: 600; font-size: 13px; }
+.story svg .direct { fill: var(--ink); font-size: 12px; }
+.story svg .direct.strong { font-weight: 650; }
+
+.lookup { display: grid; gap: 6px; margin: 20px 0 8px; max-width: 30rem; }
+.lookup label { font-weight: 600; font-size: 15px; }
+.lookup input { font-size: 16px; padding: 8px 10px; width: 100%; }
+.readout { min-height: 3.2em; font-size: 15px; max-width: var(--measure); }
+.readout .muted { color: var(--muted); }
+
+.takeaway { font-size: 19px; border-top: 1px solid var(--border); padding-top: 20px; margin-top: 32px; }
+.story details { margin-top: 24px; font-size: 14px; }
+.story summary { cursor: pointer; font-weight: 600; color: var(--ink-2); }
+.story table.data { margin-top: 8px; font-size: 13px; }
+.story table.data td.num, .story table.data th.num { text-align: right; }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+@media (max-width: 560px) {
+  body.story { font-size: 16px; }
+  .story .lede { font-size: 18px; }
+  .dirlabels .big { font-size: 22px; }
+}
