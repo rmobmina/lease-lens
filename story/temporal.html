@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>LeaseLens — Score over time</title>
+  <link rel="stylesheet" href="../explorer/style.css" />
+  <link rel="stylesheet" href="css/temporal.css" />
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js"></script>
+</head>
+<body class="story">
+<main>
+
+  <!-- ===== Bridge from the previous chapter ("high score, specific problems") ===== -->
+  <p class="bridge">A high overall score can hide a broken elevator or a pest problem. There is a second catch: the score is a snapshot, and snapshots get old.</p>
+
+  <!-- ===== CHAPTER: Is that score still current? ===== -->
+  <section id="chapter-temporal" aria-labelledby="temporal-h">
+    <div class="kicker">Over time</div>
+    <h2 id="temporal-h">Is that score still current?</h2>
+    <p class="lede">A RentSafeTO score describes a building on the day an inspector visited. Toronto re-evaluates buildings about every two years, and when it does, the score usually moves.</p>
+
+    <!-- Figure 1: direction of change -->
+    <figure id="fig-direction" aria-labelledby="fig-direction-t">
+      <figcaption class="title" id="fig-direction-t">Two in three buildings scored higher the second time. Almost one in three scored lower.</figcaption>
+      <div class="sub">3,215 buildings evaluated at least twice since June 2023: their first score compared with their latest.</div>
+      <div id="dir-labels" class="dirlabels" aria-hidden="true"></div>
+      <div id="dir-bar" class="dirbar" role="img" aria-label="Of 3,215 buildings, 2,071 (64%) scored higher on their latest evaluation, 202 (6%) scored the same, and 942 (29%) scored lower."></div>
+    </figure>
+
+    <p>Most of these changes are small. About 3 in 10 buildings moved by 2 points or less. But 137 buildings dropped by 10 points or more, and 600 rose by 10 or more.</p>
+
+    <!-- Figure 2: slope chart, first → latest -->
+    <figure id="fig-slope" aria-labelledby="fig-slope-t">
+      <figcaption class="title" id="fig-slope-t">Each line is one building, from its first score to its latest</figcaption>
+      <div class="sub">Blue lines went up. Red lines went down. Gray lines stayed the same.</div>
+      <div class="modes" role="group" aria-label="Highlight a group of buildings">
+        <button type="button" data-mode="all" aria-pressed="true">All 3,215 buildings</button>
+        <button type="button" data-mode="low" aria-pressed="false">Started below 65</button>
+        <button type="button" data-mode="high" aria-pressed="false">Started at 95 or higher</button>
+      </div>
+      <div id="slope-annot" class="annot" aria-live="polite"></div>
+      <div id="slope" class="chartwrap"></div>
+
+      <div class="lookup">
+        <label for="bldg-search">Look up a building you're considering</label>
+        <input id="bldg-search" type="search" list="bldg-list" autocomplete="off" placeholder="Street address, e.g. 220 OAK ST" />
+        <datalist id="bldg-list"></datalist>
+      </div>
+      <div id="readout" class="readout" aria-live="polite"><span class="muted">Pick an address to see its first score, its latest score, and which way it moved.</span></div>
+    </figure>
+
+    <!-- Figure 3: size of change -->
+    <figure id="fig-hist" aria-labelledby="fig-hist-t">
+      <figcaption class="title" id="fig-hist-t">How far scores moved</figcaption>
+      <div class="sub">Number of buildings by points gained or lost between first and latest evaluation. Hover a bar to find those buildings in the chart above.</div>
+      <div id="hist" class="chartwrap"></div>
+    </figure>
+
+    <p>Why do the lowest scores tend to rise and the highest tend to fall? A building near 100 has little room to go up, and a very low score can reflect one bad inspection as well as a badly run building. The data shows that scores changed. It does not show which repairs were made.</p>
+
+    <p class="takeaway"><b>What this means for you:</b> check the date beside a score, and look at whether the building's last two scores went up or down. A 90 that used to be 98 tells a different story than a 90 that used to be 75.</p>
+
+    <p class="note">Compared: each building's first and latest RentSafeTO evaluation between June 2023 and September 2026 (median 2 years apart), matched by building registration number. Evaluations before June 2023 used a different scoring method and are not compared here. 375 buildings evaluated only once in this period are not in the charts, but can still be looked up. Source: City of Toronto Open Data, Apartment Building Evaluations.</p>
+
+    <details>
+      <summary>Show the numbers behind these charts</summary>
+      <div id="table-view"></div>
+    </details>
+  </section>
+</main>
+<div id="tooltip" class="tooltip" hidden></div>
+
+<script src="../explorer/js/data.js"></script>
+<script src="../explorer/js/charts.js"></script>
+<script src="js/temporal-data.js"></script>
+<script src="js/temporal-chart.js"></script>
+</body>
+</html>
