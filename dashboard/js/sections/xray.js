@@ -145,9 +145,14 @@ function renderZoneList(profile, xs) {
   });
 }
 
+// One entry point for the list, the labels and the model. Interior categories can't be seen from
+// outside, so choosing one opens the cutaway; choosing the exterior returns to the outside view.
 function selectZone(zone) {
   if (!lastCtx) return;
-  lastCtx.xs.zone = zone;
+  const xs = lastCtx.xs;
+  xs.zone = zone;
+  if (zone && zone !== 'exterior' && xs.mode === 'exterior') xs.mode = 'xray';
+  if (zone === 'exterior' && xs.mode !== 'exterior') xs.mode = 'exterior';
   rerender();
 }
 
@@ -175,7 +180,7 @@ function renderPanel(profile, xs, M, prevSame) {
   if (!z) {
     box.innerHTML = `<p class="card-label">Inspection of ${formatDate(rec.date)}</p>
       <h2 class="xr-panel-title">${profile.poor ? `${profile.poor} of ${profile.applicable} items rated poorly` : `None of ${profile.applicable} items rated poorly`}</h2>
-      <p class="card-text">Select a category in the list or on the model to see every item inspectors rated in it.</p>
+      <p class="card-text">Select a category in the list, a label, or a highlighted zone on the model to see every item inspectors rated in it. Interior categories open the X-Ray cutaway.</p>
       <p class="xr-scale">${scaleText}</p>
       ${profile.unmapped.length ? `<p class="xr-warn">${profile.unmapped.length} item(s) in this file have no category yet: ${profile.unmapped.map(esc).join(', ')}.</p>` : ''}`;
     return;
@@ -260,15 +265,15 @@ function renderProvenance(entry, rec) {
 // ---- stage: 3D scene (lazy) or 2D diagram (only without WebGL) ---------------------------------------
 function readPalette() {
   const c = cssVar;
+  const names = ['facade', 'wallInside', 'glass', 'band', 'roof', 'roofEdge', 'parapet', 'penthouse', 'floor', 'slabEdge', 'concrete', 'partition', 'poche',
+    'equipment', 'equipmentDark', 'cab', 'car', 'carGlass', 'paint', 'context', 'contextFaded', 'contextEdge', 'contextEdgeFaded', 'ground', 'plinth',
+    'base', 'frame', 'door', 'pad', 'paving', 'asphalt', 'trunk', 'foliage', 'guide'];
+  const kebab = (n) => n.replace(/[A-Z]/g, (m) => `-${m.toLowerCase()}`);
   return {
-    accent: c('--accent'), edge: c('--xr-edge'), ground: c('--xr-ground'), contextEdge: c('--xr-context-edge'),
-    status: { none: c('--xr-none'), ok: c('--xr-ok'), some: c('--xr-some'), high: c('--xr-high') },
-    statusEdge: { none: c('--xr-edge'), ok: c('--xr-edge'), some: c('--xr-some'), high: c('--xr-high') },
+    accent: c('--accent'), sky: c('--xr-sky'), ground: c('--xr-ground'), outline: c('--xr-outline'),
+    overlay: { none: c('--xr-none'), ok: c('--xr-ov-ok'), some: c('--xr-some'), high: c('--xr-high') },
     rating: { p3: c('--fp-3'), p2: c('--fp-2'), p1: c('--fp-1'), p0: c('--fp-0'), na: c('--xr-none'), none: c('--xr-none') },
-    mat: {
-      wall: c('--xr-wall'), roof: c('--xr-roof'), slab: c('--xr-slab'), dark: c('--xr-dark'), window: c('--xr-window'), glass: c('--xr-glass'),
-      paint: c('--xr-paint'), context: c('--xr-context'), ground: c('--xr-ground'),
-    },
+    mat: Object.fromEntries(names.map((n) => [n, c(`--xr-${kebab(n)}`)])),
   };
 }
 
@@ -278,7 +283,8 @@ function zoneLabels(profile) {
     const meta = zoneByKey.get(z.key);
     out[z.key] = {
       title: meta.short, name: meta.label, status: z.status,
-      sub: z.status === 'none' ? 'not evaluated' : z.poor ? `${z.poor} of ${z.applicable} poor` : 'no poor ratings',
+      // words as well as colour: the status name travels with the count
+      sub: { none: 'Not evaluated', ok: `None of ${z.applicable} poor`, some: `Some · ${z.poor} of ${z.applicable} poor`, high: `Concentrated · ${z.poor} of ${z.applicable} poor` }[z.status],
       summary: `${STATUS[z.status].label} · ${statusWords(z)}${z.share != null ? ` (${pct(z.share)})` : ''}`,
     };
   }
@@ -298,7 +304,14 @@ function renderStage(profile, xs, entry) {
   $('xr-mode').hidden = !use3d;
   $('xr-stage-card').classList.toggle('is-2d', !use3d);
   $('xr-cam').hidden = !use3d;
-  $('xr-all').hidden = !xs.zone;
+  $('xr-focus').disabled = !xs.zone;
+  $('xr-all').disabled = !xs.zone;
+  $('xr-focus').textContent = xs.zone ? `◎ Focus on ${zoneByKey.get(xs.zone).short.toLowerCase()}` : '◎ Focus on category';
+  $('xr-sep-wrap').hidden = !use3d || xs.mode !== 'exploded';
+  $('xr-explode-note').hidden = !use3d || xs.mode !== 'exploded';
+  $('xr-sep').value = Math.round((xs.sep ?? 0.55) * 100);
+  sepText();
+  $('xr-stage-card').dataset.mode = xs.mode;
   document.querySelectorAll('input[name="xr-mode"]').forEach((i) => (i.checked = i.value === xs.mode));
 
   if (!use3d) {
@@ -358,8 +371,14 @@ function renderStage(profile, xs, entry) {
   const items = recordItems(profile);
   const rk = items.map((i) => i.cls).join();
   if (scene3d.recKey !== rk) { scene3d.recKey = rk; api.setRecords(items); }
+  api.setSeparation(xs.sep ?? 0.55);
   api.setSelected(xs.zone);
   api.setMode(xs.mode);
+}
+
+function sepText() {
+  const v = +$('xr-sep').value;
+  $('xr-sep').setAttribute('aria-valuetext', `Floors separated, ${v}% of the maximum gap`);
 }
 
 let webglCache = null;
@@ -446,6 +465,10 @@ function wire() {
   $('xr-rot-right').addEventListener('click', () => scene3d?.api?.rotate(45));
   $('xr-reset').addEventListener('click', () => scene3d?.api?.reset());
   $('xr-all').addEventListener('click', () => selectZone(null));
+  $('xr-focus').addEventListener('click', () => scene3d?.api?.focus(lastCtx?.xs.zone));
+  const sep = $('xr-sep');
+  sep.addEventListener('input', () => { lastCtx.xs.sep = +sep.value / 100; sepText(); scene3d?.api?.setSeparation(lastCtx.xs.sep); });
+  sep.addEventListener('change', () => scene3d?.api?.setSeparation(lastCtx.xs.sep, { reframe: true }));
   $('xr-method-open').addEventListener('click', () => { const d = $('xr-method-box'); d.open = true; d.scrollIntoView({ behavior: reducedMotion() ? 'auto' : 'smooth', block: 'start' }); });
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' && lastCtx?.xs.zone && !$('xr-main').hidden && document.querySelector('[data-view="xray"]:not([hidden])')) selectZone(null);
@@ -458,7 +481,7 @@ function renderMethod() {
   const row = (z) => `<tr><th scope="row">${esc(z.label)}</th><td>${z.items.cur.map((c) => esc(LL.prettyCat(c))).join(', ')}</td><td>${z.items.pre.length ? z.items.pre.map((c) => esc(LL.prettyCat(c))).join(', ') : '<span class="muted">none</span>'}</td></tr>`;
   $('xr-method').innerHTML = `<ul>
     <li><b>Exterior: real geometry where it exists.</b> The outer shape and height come from the City of Toronto's 3D Massing data (2025, Open Government Licence – Toronto), matched to the RentSafeTO address point. A footprint is used only if the point is inside it, or it is the clear nearest within 15 m, and its height must fit the registered storeys (2.3–4.8 m per storey). Otherwise the building is drawn as a hatched approximate block and labelled so. The match type and confidence are shown under the model.</li>
-    <li><b>Interior: illustrative.</b> Exterior geometry is based on available building data. Interior spaces are illustrative and do not represent the actual floor plan. Floor plates follow the real outline; the corridor, stair, elevator core, rooftop plant and parking level are generic. Windows and balconies are a generic pattern, not surveyed façade features.</li>
+    <li><b>Interior: illustrative.</b> Exterior geometry is based on available building data. Interior spaces are illustrative and do not represent the actual floor plan. Floor plates follow the real outline; the corridor, stair, elevator core, rooftop plant and parking level are generic. Windows, balconies, the entrance and the garage door are a generic pattern scaled to the building's height, not surveyed façade features; the base, paths and trees are a neutral setting, not the real lot. <i>X-Ray</i> cuts the building open along a plane facing you; <i>Exploded</i> pulls the storeys apart. Neither assigns inspection results to particular floors or rooms.</li>
     <li><b>Colour shows categories, not locations.</b> A tinted part means inspectors rated items in that category poorly. It doesn't mean that part of the real building is damaged, and the records tiles beside the building are an abstract layer: paperwork has no place in the building. Category status is not a certified safety-risk score.</li>
     <li><b>One inspection at a time.</b> The X-Ray shows one evaluation (by default the latest in the scoring system chosen in the sidebar). Pick any point in the history to see that inspection instead.</li>
     <li><b>Rated poorly</b> means 0 or 1 on the 0–3 scale (2023 – now) or 1 or 2 on the 1–5 scale (2017 – 2023), the same rule as the Common problems view. N/A items don't apply and are never counted; blank items were not recorded.</li>

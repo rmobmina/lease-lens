@@ -32,7 +32,7 @@ const state = {
   movers: { n: 10 },
   fp: { score: 92, pairIndex: 0, a: null, b: null, shownA: null, shownB: null },
   // Building X-Ray: which inspection is shown, selected category, view mode, comparison choice
-  xray: { rsn: null, evalUid: null, zone: null, mode: 'exterior', matchRsn: null },
+  xray: { rsn: null, evalUid: null, zone: null, mode: 'exterior', matchRsn: null, sep: 0.55 },
 };
 let M; // model
 

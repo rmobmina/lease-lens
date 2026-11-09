@@ -160,25 +160,34 @@
             <article class="xr-stage-card" id="xr-stage-card" aria-label="3D model of the building">
               <div class="xr-toolbar">
                 <div class="xr-bar-id"><b id="xr-bar-title"></b><span class="xr-bar-meta" id="xr-bar-meta"></span></div>
-                <fieldset class="seg seg-sm" id="xr-mode">
+                <fieldset class="seg seg-sm xr-modes" id="xr-mode">
                   <legend class="visually-hidden">View</legend>
                   <label><input type="radio" name="xr-mode" value="exterior" checked /><span>Exterior</span></label>
                   <label><input type="radio" name="xr-mode" value="xray" /><span>X-Ray</span></label>
+                  <label><input type="radio" name="xr-mode" value="exploded" /><span>Exploded</span></label>
                 </fieldset>
+              </div>
+              <div class="xr-toolbar xr-toolbar-2">
+                <label class="xr-sep" id="xr-sep-wrap" hidden>
+                  <span>Floor separation</span>
+                  <input type="range" id="xr-sep" min="15" max="100" step="1" value="55" aria-describedby="xr-explode-note" />
+                </label>
                 <div class="xr-cam" id="xr-cam" role="group" aria-label="Camera">
-                  <button type="button" class="btn btn-sm" id="xr-all" hidden>← Whole building</button>
-                  <button type="button" class="btn btn-sm" id="xr-rot-left" aria-label="Rotate the building left">↺</button>
-                  <button type="button" class="btn btn-sm" id="xr-rot-right" aria-label="Rotate the building right">↻</button>
-                  <button type="button" class="btn btn-sm" id="xr-reset">Reset view</button>
+                  <button type="button" class="btn btn-sm" id="xr-focus" disabled title="Move the camera to the selected category">◎ Focus on category</button>
+                  <button type="button" class="btn btn-sm" id="xr-all" disabled title="Clear the selection and show the whole building">Show whole building</button>
+                  <button type="button" class="btn btn-sm xr-icon" id="xr-rot-left" aria-label="Turn the building 45° left" title="Turn left">↺</button>
+                  <button type="button" class="btn btn-sm xr-icon" id="xr-rot-right" aria-label="Turn the building 45° right" title="Turn right">↻</button>
+                  <button type="button" class="btn btn-sm" id="xr-reset" title="Return to the default three-quarter view">Reset camera</button>
                 </div>
               </div>
               <div class="xr-stage" id="xr-stage"></div>
+              <p class="xr-explode-note" id="xr-explode-note" hidden>Floors are pulled apart to show the conceptual layout. Inspection categories apply to the whole building, not to particular floors.</p>
               <div class="xr-foot">
                 <p class="xr-prov" id="xr-prov" aria-live="polite"></p>
                 <div class="xr-legend legend" id="xr-legend" aria-label="Legend"></div>
                 <p class="xr-caveat"><b>Exterior geometry is based on available building data. Interior spaces are illustrative and do not represent the actual floor plan.</b>
                   Colours show how inspectors rated each category, not where problems are.
-                  <span class="xr-hint">Drag to orbit, right-drag or two fingers to pan, scroll to zoom, double-click to focus, click a part to see its items.</span>
+                  <span class="xr-hint">Drag to orbit · right-drag or two fingers to pan · scroll to zoom · double-click to fly to a point · click a highlighted zone or a label to open its items · Esc returns to the whole building.</span>
                   <button type="button" class="link-btn xr-method-link" id="xr-method-open">How this works</button></p>
               </div>
             </article>

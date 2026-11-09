@@ -26,12 +26,17 @@ Three.js 0.160.0 comes from jsDelivr via the import map in `dashboard/index.html
 | File | Role |
 |---|---|
 | `dashboard/js/xray-model.js` | **Data only** (no DOM, no globals, runs in Node). Zone mapping, zone status, profiles, timeline points, matching. |
-| `dashboard/js/xray/building.js` | Geometry for one building: extruded massing (holes, multiple parts, rooftop parts), roofs, illustrative windows/balconies, context buildings, and the illustrative interior fitted inside the real footprint. Instanced meshes for repeated parts. |
+| `dashboard/js/xray/footprint.js` | **Pure 2D maths** (Node-tested): wall edges with outward normals (holes included), orientation buckets, the layout frame fitted inside a footprint, **wings** (largest inscribed rectangles along the dominant wall direction, so L-, T- and U-plans get a corridor per wing), storey layout. |
+| `dashboard/js/xray/framing.js` | **Camera fitting** (Node-tested): exact camera position for a fixed view direction so every model point projects inside a padded safe area, for any field of view and aspect ratio. |
+| `dashboard/js/xray/building.js` | Geometry for one building: façade wall panels per orientation bucket (outside/inside faces), through-wall glazing, floor bands, parapets, balconies, roof slabs, rooftop parts; slabs with thickness per storey in the real outline; the illustrative interior; translucent category overlays; parking; site; context. Everything repeated is instanced; floor-level instances carry a level index for the exploded view. |
+| `dashboard/js/xray/materials.js` | Material registry and palette (from `--xr-*` CSS tokens), hatch and contact-shadow textures. |
+| `dashboard/js/xray/annotations.js` | Screen-space labels: two collision-free columns beside the model, leader lines, occlusion and narrow-screen rules. `layoutLabels` is pure and tested. |
 | `scripts/build_massing.py`, `scripts/massing_lib.py` | Repeatable preprocessing: matches every RentSafeTO building to the 3D Massing shapefile and writes `dashboard/data/massing/<RSN mod 64>.json` plus `docs/massing-matches.csv`. Python standard library only. |
 | `dashboard/data/massing/` | Generated geometry shards (about 300 KB each; only the selected building's shard is fetched). `index.json` holds the source, licence and counts. |
 | `docs/massing-matches.csv` | One row per building: provenance, confidence, method, distance, storeys, height, parts, reason. For review. |
 | `tests/massing.test.mjs` | Checks the generated geometry: shards, provenance, height-vs-storeys, the named test buildings. |
-| `dashboard/js/xray/scene.js` | Three.js lifecycle: renderer, lights and shadows, camera framing, orbit/pan/zoom limits, picking, hover summaries, transitions, labels, disposal. Lazy-loaded. |
+| `tests/xray-geometry.test.mjs` | Outward normals (any ring orientation, courtyards), buckets, the layout frame inside irregular real footprints, storey layout, label layout (no overlaps, inside the canvas, beside the model). |
+| `dashboard/js/xray/scene.js` | Three.js lifecycle: renderer, lights, shadows and fog, the staged reveal and explode timelines, the camera-following section plane, camera framing and focus, context fading, picking, hover summaries, disposal. Lazy-loaded. |
 | `dashboard/js/sections/xray.js` | The view: which inspection to show, geometry loading and provenance, category list, detail panel, 2D fallback, lazy 3D loading. |
 | `dashboard/js/sections/xray-compare.js` | Same score, different story (D3). |
 | `dashboard/js/sections/xray-timeline.js` | Score history (D3). |
@@ -95,9 +100,10 @@ The *Actual footprint, estimated height* level exists in the code for footprints
 |---|---|
 | Footprint shape, holes, building parts, rooftop parts, heights | Real (3D Massing), when provenance is *Actual 3D massing* |
 | Neighbouring buildings within ~110 m | Real massing, drawn neutral |
-| Windows and balconies | **Illustrative**: a regular pattern spaced by storey along the real walls. Not surveyed. Not drawn on approximate blocks. |
-| Floor plates | Real outline, illustrative storey height (height ÷ registered storeys) |
-| Corridor, doors, stair, elevator core, risers, rooftop plant, parking level, waste enclosure | **Illustrative**, fitted inside the real footprint |
+| Windows, frames, sills and lintels, floor bands, pilasters, base course, entrance and canopy, garage door, parapets, balconies, stair bulkhead | **Illustrative**: a regular pattern spaced by storey along the real walls, scaled to the height class (≤ 4 storeys: wider bays and smaller windows, no balconies; 5–12: balconies on the two longest walls, pilasters; 13+: narrower bays, taller glazing). Rooftop plant is sized to the building (≤ 12% of its height, 1.4–2.6 m). Not surveyed. Not drawn on approximate blocks. |
+| Presentation base, walkway, driveway, trees | **Neutral setting**, not the real lot: a base around the building, a walk from the illustrative entrance, a driveway to the illustrative garage door, and a few trees placed clear of the building, neighbours, paths and data layers, and never between the default camera and the façade. |
+| Floor slabs (0.3 m) | Real outline, illustrative storey height (sourced height ÷ registered storeys) |
+| Corridor, unit walls (drawn cut at 1.35 m, like a plan), door openings, columns, stair with landings, elevator shaft and cab, rooftop plant, parking level with columns and cars, waste enclosure | **Illustrative**, fitted inside the real footprint: one corridor per wing (largest rectangles inscribed in the real outline); the stair, core and plant sit in the main wing |
 | Records tiles beside the building | **Abstract**: one tile per record item, coloured by its actual rating. Paperwork has no physical location. |
 
 The page states: *Exterior geometry is based on available building data. Interior spaces are illustrative and do not represent the actual floor plan.*
@@ -162,26 +168,65 @@ The count condition matters. The exterior zone has only 4 items, so one low mark
 - Lines connect points **only within a system**. Change is measured only against the previous evaluation in the same system; the first 2023+ score is never compared with a 2017–2023 score.
 - One evaluation: the point plus "not enough history". None in the active system: an empty-state sentence (other-system points still shown).
 
+## Views and transitions
+
+| View | What happens |
+|---|---|
+| **Exterior** | The sourced massing with the illustrative façade, roofs, parapets and rooftop plant; neighbouring massing in neutral grey. |
+| **X-Ray** | A staged, reversible sequence (≈850 ms; instant with reduced motion): the roof lifts (0–40%; it stays solid and is cut, never ghosted), the walls facing the camera slide outward and fade while a vertical **section plane** sweeps in from in front of the building to just past its centre (10–60%), the slabs and illustrative interior fade in (30–75%), then the category highlights appear (55–100%). The camera eases to a lower three-quarter view at the same time. The section plane and the cut walls follow the camera as it orbits, so the reader always looks into the building. |
+| **Exploded** | The cutaway with storeys separated. The façade is built storey by storey, so each floor keeps its back walls and windows with its slab, and faint dashed verticals at the real corners tie the floors to the building's outline. **Floor separation** slider (15–100% of the widest gap; `aria-valuetext` reads the setting). The widest gap is set per building so the exploded model grows by about its own height (or half its plan for low, wide buildings), each gap held between 0.8 and 1.6 storeys. Separation is vertical only, so slabs, shafts and stairs stay aligned and never intersect; the camera follows the slider so the whole model stays in frame. A note states that floors are pulled apart to show the conceptual layout and that categories apply to the whole building, not to particular floors. |
+
+Structure and data stay separate: architecture is off-white concrete, warm neutral floors, slate glazing; the data is shown only as translucent overlay volumes (corridors and stair = shared spaces; shaft and a shell around each piece of rooftop plant = building systems; parking floor and waste enclosure = grounds; record tiles = records; façade = exterior).
+
+| Status | 3D overlay | Label and list |
+|---|---|---|
+| No poor ratings | cool grey-teal, faint | "None of N poor" |
+| Some poor ratings | amber, translucent | "Some · k of N poor" |
+| Concentrated poor ratings | coral, translucent | "Concentrated · k of N poor" |
+| Not evaluated | grey, hatched | "Not evaluated" |
+
+Only the selected category is strong (≈70% opacity, never solid); the others drop to ≈8%. Thresholds are the documented zone-status rules below; the exact counts and every item rating are always in the side panel.
+
 ## Controls
 
-- **Exterior / X-Ray**: in X-Ray the façade fades to a ghost (windows disappear), context buildings fade, and the floor plates, corridor, stair, core, rooftop plant, parking level and records tiles appear; the camera reframes to include the parking level (≈450 ms; instant with reduced motion).
-- **Drag** to orbit (vertical angle 12–84°, never under the ground), **right-drag / two fingers** to pan (kept near the building), **scroll / pinch** to zoom (limited), **double-click** to fly to that point.
-- **↺ / ↻** turn 45°. **Reset view** returns to the default three-quarter view, which is fitted to each building's bounds and chosen to face its long façade from the south. Changing building re-frames automatically.
-- **Hover** a part: subtle accent plus a summary chip (category, status, items rated poorly). **Click**: selects the category, dims the others, moves the camera to it and updates the panel. Click again, **← Whole building**, or **Esc** to return.
-- **Keyboard**: the *Inspection categories* list is the accessible equivalent of clicking the model (Tab, ↑/↓, Home/End, Enter). Timeline points are focusable (Enter shows that inspection). Each item in the panel expands with Enter.
+- **Exterior / X-Ray / Exploded** (segmented control) and **Floor separation** (Exploded only).
+- **Drag** to orbit (15–84° from vertical), **right-drag / two fingers** to pan (kept near the building), **scroll / pinch** to zoom (limited), **double-click** to fly to that point.
+- **The camera never enters the building.** The building is treated as a solid: the convex hull of its real footprint, grown by about 0.7 storey heights, up to the current roof (lifted roof and separated floors included). If zooming, panning, a double-click, a category focus or an animated move would put the camera inside, it backs out along its own line of sight, so the view keeps pointing the same way and simply stops at the wall. (`pushOutside` in `framing.js`, tested in Node and checked in the browser by trying to zoom, orbit, pan and double-click into three buildings in X-Ray and Exploded.)
+- **Focus on [category]** moves the camera to the selected zone (zones that repeat on every floor focus on one representative floor). **Show whole building** clears the selection. **Reset camera** returns to the default three-quarter view facing the long, street-side façade, fitted as described under *Camera framing*. **↺ / ↻** turn 45°. A new building always gets its own fitted view.
+- **Model → panel**: hover shows a summary chip; click a highlighted zone (or its label) to select the category: the zone is emphasised, others dim, the camera focuses and the panel lists every applicable item with its actual rating.
+- **Panel → model**: clicking a category in the list does the same. Interior categories open the X-Ray automatically (they can't be seen from outside); the exterior returns to the Exterior view. Click again, **Show whole building** or **Esc** to clear.
+- **Labels**: projected 3D anchors, laid out in two columns beside the model so they never overlap or clip; leader lines connect them; anchors behind standing walls or off-screen hide their label. With a selection only the selected (and hovered) label shows. Without one, categories with poor ratings get full labels and the rest shrink to their title. The label columns sit in reserved side margins, so they don't cover the model. Under 560 px wide only the selected or hovered label is shown.
+- **Keyboard**: the *Inspection categories* list is the accessible equivalent of the model (Tab, ↑/↓, Home/End, Enter). All buttons and the slider are native controls. Timeline points are focusable. Each item in the panel expands with Enter.
+
+## Camera framing
+
+The default view of every mode is computed, not hard-coded (`framing.js`):
+
+1. The visible model becomes a set of points: the convex hull of the real footprint at the lowest visible height (ground, or the bottom of the parking level in X-Ray and Exploded) and the highest (parapets, rooftop parts and plant, plus the roof lift and the floor separation of the *destination* state), the site elements beside it (waste enclosure, entrance canopy) and, inside the building, the records tiles. Neighbouring buildings are excluded.
+2. With the view direction fixed (a three-quarter view onto the street façade: 60° from vertical for the exterior, 58° X-Ray, 55° Exploded; a little lower for towers), each screen-edge constraint is linear in the camera position and the two screen axes separate, so the closest camera that keeps every point inside the safe area is solved exactly, then centred.
+3. The safe area keeps about 10% of the canvas free at top and bottom, and room for the label columns at the sides (15% for the exterior, 21% inside, 7% under 560 px where labels are hidden).
+
+It runs when a building opens, on every mode change (to the destination bounds, before the transition starts), when the floor separation changes (keeping the reader's angle), and when the canvas resizes (`ResizeObserver`), as long as the reader hasn't taken over the camera. **Reset camera** always returns to it. Tests check that the fit is inside the safe area and tight, for tall, wide, low and exploded shapes at aspect ratios from 0.46 to 2.4, and the app records the projected extent on the canvas (`data-fit`) so browser checks can confirm nothing is cropped.
+
+## Rendering
+
+ACES tone mapping; hemisphere sky light, a key sun with 2048² soft shadows fitted to each building, a weak cool fill from the opposite side, and a room environment map for glazing reflections. A soft contact shadow sits under the building, which stands on a 35 cm presentation base. Neighbouring massing is tinted toward the background (more so in X-Ray and Exploded) so it never competes with the selected building. Fog in the background colour fades the surrounding city into the horizon; context buildings between the camera and the selected building fade out as the camera moves. No post-processing pass: SSAO was considered but costs a full extra render per frame for little gain at this scale.
 
 ## Fallbacks and performance
 
 - 3D renders automatically on any browser with WebGL, at any width (the earlier < 640 px 2D-first rule was the reason many laptops saw a flat diagram; it is removed). Below 1100 px the panel stacks under the model.
 - WebGL unavailable, the 3D module failing to load, a geometry error, or a lost WebGL context → the 2D section diagram, labelled as generic.
-- Geometry: only the selected building's shard is fetched (cached per session). Repeated parts (windows, balconies, steps, columns, cars, pipes) are `InstancedMesh`; shells, roofs, floor plates and context are merged into single meshes.
+- Geometry: only the selected building's shard is fetched (cached per session). Repeated parts (wall panels, windows, bands, slabs, walls, columns, steps, cars, overlays) are `InstancedMesh`: roughly 50–80 draw calls for the building (most of them the 8 façade orientations and the record tiles) plus one per context building. Floor separation rewrites instance translations only (no new geometry).
 - Rendering is on demand: frames only during input, damping or a transition. Measured: 0 animation frames over 3 s idle, before and after a transition.
 - The canvas follows its container with a `ResizeObserver`. Leaving the route, or changing building, disposes geometries, materials, textures, the environment map, the shadow map, listeners, the observer and the renderer (`forceContextLoss`).
 
 ## Limitations
 
 - **Exterior accuracy is limited to the massing data**: flat roofs at the average height, no setbacks finer than the City's parts, no façade detail. Matching uses the RentSafeTO address point, which can sit on a neighbouring lot; the height check catches most but not all wrong matches. Medium-confidence matches say why.
-- **The interior is illustrative.** Corridors, stairs, the core, parking and plant are not the real floor plan, and the parking level is drawn for every building whether or not it has one. A tinted part shows how a *category* was rated, never where damage is. Category status is not a certified safety-risk score.
+- **The interior is illustrative.** Corridors, unit walls, stairs, the shaft, parking and plant are not the real floor plan, and the parking level is drawn for every building whether or not it has one. Storeys are evenly spaced (sourced height ÷ registered storeys); real storey heights and ground-floor uses are unknown. A tinted zone shows how a *category* was rated, never where damage is, and the exploded view never assigns inspections to floors. Category status is not a certified safety-risk score.
+- **The section cut has no caps**: cut walls and slabs show their inner faces rather than a solid poché.
+- **Very large complexes** (hundreds of metres across) are framed whole, so their storeys read small; zoom in or focus a category.
+- Rooftop parts of multi-part buildings separate with their nearest storey in the exploded view, so a tall rooftop part can float well above its body.
 - **No heating, plumbing or water-supply items** exist in the open data, so the "building systems" zone covers elevators, lighting, ventilation, electrical and intercom only.
 - The 2017–2023 system had **no record/plan items**, so "Safety and records" is always *Not evaluated* for those inspections.
 - The City publishes **no text descriptions** for item ratings. The panel shows the City's item name, the number, the previous rating and the citywide share, and nothing invented.
