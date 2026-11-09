@@ -10,6 +10,7 @@ import { renderChanges } from './sections/changes.js';
 import { renderMovers } from './sections/movers.js';
 import { renderBuilding } from './sections/building.js';
 import { renderFingerprint } from './sections/fingerprint.js';
+import { renderXray, disposeXray } from './sections/xray.js';
 
 const $ = (id) => document.getElementById(id);
 const QUESTIONS = [
@@ -30,6 +31,8 @@ const state = {
   changes: { start: 'all' },
   movers: { n: 10 },
   fp: { score: 92, pairIndex: 0, a: null, b: null, shownA: null, shownB: null },
+  // Building X-Ray: which inspection is shown, selected category, view mode, comparison choice
+  xray: { rsn: null, evalUid: null, zone: null, mode: 'exterior', matchRsn: null },
 };
 let M; // model
 
@@ -57,6 +60,7 @@ const RENDER = {
   home: renderHome,
   building: (ctx) => renderBuilding(ctx, M),
   fingerprint: (ctx) => renderFingerprint(ctx, M, state.fp),
+  xray: (ctx) => renderXray(ctx, M, state.xray),
   q1: renderMap,
   q2: renderAge,
   q3: (ctx) => renderProblems(ctx, state.problems),
@@ -76,8 +80,11 @@ function navigate(hash) {
 function onRoute() {
   const { route, arg } = parseHash();
   if (route === 'building' && arg && M.byPeriod[state.period].latestByRsn.has(arg)) state.selected = arg;
+  // The X-Ray accepts any building with an evaluation in either scoring system.
+  if (route === 'xray' && arg && M.data.byRsn.has(arg)) state.selected = arg;
   if (route === 'fingerprint' && arg && M.byPeriod.cur.latestByRsn.has(arg) && arg !== state.fp.a) Object.assign(state.fp, { a: arg, b: null });
   const changed = route !== state.route;
+  if (changed && state.route === 'xray') disposeXray(); // free the WebGL context and listeners
   state.route = route;
   document.querySelectorAll('.view').forEach((v) => (v.hidden = v.dataset.view !== route));
   document.querySelectorAll('[data-route]').forEach((a) => (a.dataset.route === route ? a.setAttribute('aria-current', 'page') : a.removeAttribute('aria-current')));
@@ -177,6 +184,7 @@ function renderSelection() {
   box.hidden = false;
   box.innerHTML = `<span class="sel-text">Selected: <b>${esc(titleCase(r.address))}</b> · score ${r.score}</span>
     ${state.route !== 'building' ? '<a class="btn btn-primary btn-sm" href="#/building/' + r.rsn + '" style="line-height:30px;text-decoration:none">View report</a>' : ''}
+    ${state.route !== 'xray' ? '<a class="btn btn-sm" href="#/xray/' + r.rsn + '" style="line-height:28px;text-decoration:none">X-Ray</a>' : ''}
     <button type="button" class="icon-button" aria-label="Clear selected building" title="Clear selection">×</button>`;
   box.querySelector('button').addEventListener('click', () => select(null));
 }
@@ -195,8 +203,9 @@ function renderMetaNotes() {
 // ---- interactions -----------------------------------------------------------
 function select(rsn, { open = false } = {}) {
   state.selected = rsn;
-  if (open && rsn) { navigate(`#/building/${rsn}`); return; }
+  if (open && rsn) { navigate(state.route === 'xray' ? `#/xray/${rsn}` : `#/building/${rsn}`); return; }
   if (state.route === 'building' && !rsn) { history.replaceState(null, '', '#/building'); }
+  if (state.route === 'xray' && !rsn) { history.replaceState(null, '', '#/xray'); }
   renderView();
 }
 
@@ -231,6 +240,7 @@ function wireControls() {
   const radios = (name, fn) => document.querySelectorAll(`input[name="${name}"]`).forEach((i) => i.addEventListener('change', () => fn(i.value)));
   radios('period', (v) => {
     state.period = v;
+    state.xray.evalUid = null; // the X-Ray follows the scoring system unless a point is picked again
     if (state.selected && !M.byPeriod[v].latestByRsn.has(state.selected) && state.route !== 'building') state.selected = null;
     fillSearch(); renderMetaNotes(); renderView();
   });

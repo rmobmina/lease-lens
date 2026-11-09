@@ -79,7 +79,7 @@ export function renderBuilding(ctx, M) {
       <span class="pl-rating">rated ${r.ratings[c]} of ${scaleMax}</span>
       <span class="pl-city">poor in ${pct(city.get(c).share)} of buildings</span></li>`).join('')}</ul>` : ''}
     ${poor.length > SHOW_PROBLEMS ? `<button type="button" class="btn btn-quiet" id="b-more">Show all ${poor.length} problems</button>` : ''}
-    <p class="card-links">${pm.era === 'cur' ? `<a href="#/fingerprint/${r.rsn}">See its inspection fingerprint →</a><br>` : ''}<a href="#/q3" data-keep>How common are these problems? →</a></p>`;
+    <p class="card-links"><a href="#/xray/${r.rsn}">Open its Building X-Ray →</a><br>${pm.era === 'cur' ? `<a href="#/fingerprint/${r.rsn}">See its inspection fingerprint →</a><br>` : ''}<a href="#/q3" data-keep>How common are these problems? →</a></p>`;
 
   document.getElementById('b-more')?.addEventListener('click', (e) => {
     document.querySelectorAll('#b-problems li[hidden]').forEach((li) => (li.hidden = false));

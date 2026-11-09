@@ -10,6 +10,13 @@
   <link rel="stylesheet" href="css/dashboard.css" />
   <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+  <!-- Three.js for the Building X-Ray. Nothing is downloaded until the X-Ray view opens (dynamic import). -->
+  <script type="importmap">
+    { "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.min.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+    } }
+  </script>
 </head>
 <body>
   <a class="skip-link" href="#stage">Skip to content</a>
@@ -30,6 +37,7 @@
           <a href="#/" data-route="home" class="nav-item"><span class="nav-icon" aria-hidden="true">⌂</span><span class="nav-text"><b>Overview</b></span></a>
           <a href="#/building" data-route="building" class="nav-item"><span class="nav-icon" aria-hidden="true">⌕</span><span class="nav-text"><b>Check a building</b><small>Its score, problems and history</small></span></a>
 
+          <a href="#/xray" data-route="xray" class="nav-item"><span class="nav-icon" aria-hidden="true">◫</span><span class="nav-text"><b>Building X-Ray</b><small>See what lies under one score</small></span></a>
           <a href="#/fingerprint" data-route="fingerprint" class="nav-item"><span class="nav-icon" aria-hidden="true">▦</span><span class="nav-text"><b>What a score hides</b><small>Two buildings, same score, item by item</small></span></a>
           <a href="../story/temporal.html" class="nav-item"><span class="nav-icon" aria-hidden="true">↕</span><span class="nav-text"><b>Is that score still current?</b><small>How scores changed between inspections</small></span></a>
 
@@ -125,6 +133,75 @@
             <article class="card" id="b-problems"></article>
             <article class="card" id="b-context"></article>
           </div>
+        </div>
+      </section>
+
+      <!-- Building X-Ray: one building's inspection by category, in 3D ------------------ -->
+      <section class="view xr-view" data-view="xray" aria-labelledby="xr-title" hidden>
+        <div id="xr-empty" class="b-empty">
+          <p class="eyebrow">Building X-Ray</p>
+          <h1>A score is only the surface.</h1>
+          <p class="lede">Search for an address above to open its X-Ray: the building's latest RentSafeTO inspection, laid out category by category on a 3D model of the building,
+            next to a building with the same score and the building's own score history.</p>
+          <p class="b-empty-note" id="xr-empty-note"></p>
+          <p class="section-label">Or try</p>
+          <div id="xr-suggest" class="chips"></div>
+        </div>
+
+        <div id="xr-main" class="xr-wrap" hidden>
+          <header class="view-head xr-head">
+            <p class="eyebrow">Building X-Ray</p>
+            <h1 id="xr-title"></h1>
+            <p class="meta" id="xr-meta"></p>
+            <p class="xr-showing" id="xr-showing" aria-live="polite"></p>
+          </header>
+
+          <div class="xr-grid">
+            <article class="xr-stage-card" id="xr-stage-card" aria-label="3D model of the building">
+              <div class="xr-toolbar">
+                <div class="xr-bar-id"><b id="xr-bar-title"></b><span class="xr-bar-meta" id="xr-bar-meta"></span></div>
+                <fieldset class="seg seg-sm" id="xr-mode">
+                  <legend class="visually-hidden">View</legend>
+                  <label><input type="radio" name="xr-mode" value="exterior" checked /><span>Exterior</span></label>
+                  <label><input type="radio" name="xr-mode" value="xray" /><span>X-Ray</span></label>
+                </fieldset>
+                <div class="xr-cam" id="xr-cam" role="group" aria-label="Camera">
+                  <button type="button" class="btn btn-sm" id="xr-all" hidden>← Whole building</button>
+                  <button type="button" class="btn btn-sm" id="xr-rot-left" aria-label="Rotate the building left">↺</button>
+                  <button type="button" class="btn btn-sm" id="xr-rot-right" aria-label="Rotate the building right">↻</button>
+                  <button type="button" class="btn btn-sm" id="xr-reset">Reset view</button>
+                </div>
+              </div>
+              <div class="xr-stage" id="xr-stage"></div>
+              <div class="xr-foot">
+                <p class="xr-prov" id="xr-prov" aria-live="polite"></p>
+                <div class="xr-legend legend" id="xr-legend" aria-label="Legend"></div>
+                <p class="xr-caveat"><b>Exterior geometry is based on available building data. Interior spaces are illustrative and do not represent the actual floor plan.</b>
+                  Colours show how inspectors rated each category, not where problems are.
+                  <span class="xr-hint">Drag to orbit, right-drag or two fingers to pan, scroll to zoom, double-click to focus, click a part to see its items.</span>
+                  <button type="button" class="link-btn xr-method-link" id="xr-method-open">How this works</button></p>
+              </div>
+            </article>
+
+            <aside class="xr-side">
+              <nav class="xr-zones" id="xr-zones" aria-label="Inspection categories"></nav>
+              <section class="xr-panel" id="xr-panel" aria-live="polite"></section>
+            </aside>
+          </div>
+
+          <section class="xr-section" aria-labelledby="xr-cmp-title">
+            <h2 class="fp-h2" id="xr-cmp-title">Same score. Different story.</h2>
+            <p class="xr-section-sub">Two buildings can receive similar overall RentSafeTO scores while having very different inspection results.</p>
+            <div id="xr-compare"></div>
+          </section>
+
+          <section class="xr-section" aria-labelledby="xr-tl-title">
+            <h2 class="fp-h2" id="xr-tl-title">Is this score still current?</h2>
+            <p class="xr-section-sub">Every evaluation of this building. Select a point to open that inspection in the X-Ray.</p>
+            <div id="xr-timeline" class="chart"></div>
+          </section>
+
+          <details class="method xr-method" id="xr-method-box"><summary>How the X-Ray works, and which items are in each category</summary><div id="xr-method"></div></details>
         </div>
       </section>
 
