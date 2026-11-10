@@ -1,0 +1,259 @@
+/* Layer B: the atlas. A light top bar, the map as the canvas, two thin rails of cards over it
+   (left: where you are, the selection, the legend; right: tools and one analysis layer) and the
+   "depth" layer that opens over the map for the X-Ray, the comparison and the text pages.
+   Flat surfaces, thin rules, no gradients; every colour comes from tokens.css. */
+
+body[data-layer="work"] { overflow: hidden; }
+.app { display: flex; flex-direction: column; height: 100vh; height: 100dvh; background: var(--surface-2); }
+
+/* ---- top bar ----------------------------------------------------------------------------------- */
+.atlas-bar { flex: none; height: 56px; display: flex; align-items: center; gap: 20px; padding: 0 16px 0 20px; background: var(--surface); border-bottom: 1px solid var(--line); position: relative; z-index: 1200; }
+.atlas-bar .wordmark { font-size: 21px; flex: none; }
+.search { position: relative; flex: 0 1 420px; min-width: 0; }
+.search input { width: 100%; height: 38px; padding: 0 12px; font: inherit; font-size: 14.5px; color: var(--ink); background: var(--surface); border: 1px solid var(--axis); border-radius: var(--radius-sm); }
+.search input::placeholder { color: var(--muted); }
+.search input:hover { border-color: var(--muted); }
+.search-list { position: absolute; top: calc(100% + 4px); left: 0; right: 0; z-index: 1300; list-style: none; margin: 0; padding: 4px 0; background: var(--surface); border: 1px solid var(--line); box-shadow: var(--shadow-pop); max-height: min(60vh, 420px); overflow-y: auto; }
+.search-list [role="option"] { display: flex; flex-direction: column; padding: 7px 12px 7px 10px; border-left: 3px solid transparent; cursor: pointer; }
+.search-list [role="option"] b { font-weight: 600; font-size: 14px; }
+.search-list [role="option"] span { font-size: 12.5px; color: var(--muted); }
+.search-list [role="option"]:hover { background: var(--surface-2); }
+.search-list [aria-selected="true"] { background: var(--accent-soft); border-left-color: var(--accent); }
+.search-none { padding: 8px 12px; font-size: 13.5px; color: var(--muted); }
+.atlas-nav { display: flex; gap: 24px; margin-left: auto; }
+.atlas-nav a { color: var(--ink-2); text-decoration: none; font-weight: 550; font-size: 14.5px; padding: 17px 0 15px; border-bottom: 2px solid transparent; }
+.atlas-nav a:hover { color: var(--ink); }
+.atlas-nav a[aria-current="page"] { color: var(--accent); border-bottom-color: var(--accent); }
+.menu-button { display: none; font: inherit; font-size: 14px; font-weight: 600; height: 36px; padding: 0 12px; border-radius: var(--radius-sm); border: 1px solid var(--axis); background: var(--surface); color: var(--ink); cursor: pointer; }
+
+/* ---- the canvas ----------------------------------------------------------------------------------- */
+.atlas-main { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr); }
+body.is-story .atlas-main { grid-template-columns: minmax(320px, 380px) minmax(0, 1fr); }
+.atlas-canvas { position: relative; min-width: 0; min-height: 0; overflow: hidden; outline: none; }
+.map-wrap { position: absolute; inset: 0; view-transition-name: atlas; }
+#map { position: absolute; inset: 0; background: var(--surface-2); }
+.atlas-canvas > .status { position: absolute; left: 50%; top: 16px; transform: translateX(-50%); z-index: 900; background: var(--surface); padding: 8px 14px; box-shadow: var(--shadow-float); font-size: 14px; }
+
+/* ---- rails of cards ------------------------------------------------------------------------------------ */
+.rail { position: absolute; top: 16px; bottom: 16px; z-index: 800; display: flex; flex-direction: column; gap: 10px; pointer-events: none; }
+.rail > * { pointer-events: auto; }
+.rail-left { left: 16px; width: min(360px, calc(100% - 32px)); }
+.rail-right { right: 16px; width: min(440px, 40%); align-items: flex-end; }
+.rail .card { border-color: var(--line); box-shadow: var(--shadow-float); padding: 14px 16px; }
+
+.title-card { flex: none; }
+.title-card h1 { font-family: var(--font-display); font-size: 22px; font-weight: 600; line-height: 1.15; letter-spacing: -0.01em; margin-top: 6px; outline: none; text-wrap: balance; }
+.atlas-sub { font-size: 14px; color: var(--ink-2); margin-top: 4px; }
+/* With something selected the title card shrinks to the breadcrumb; the heading stays for screen readers. */
+.title-card.is-compact { padding-top: 10px !important; padding-bottom: 10px !important; }
+.title-card.is-compact h1, .title-card.is-compact .atlas-sub { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; margin: 0; }
+.crumbs { list-style: none; display: flex; flex-wrap: wrap; margin: 0; padding: 0; font-size: 13px; line-height: 1.5; }
+.crumbs li + li::before { content: "›"; color: var(--muted); margin: 0 6px; }
+.crumb { font: inherit; background: none; border: 0; padding: 0; color: var(--accent); cursor: pointer; text-decoration: underline; text-underline-offset: 2px; text-decoration-color: color-mix(in srgb, var(--accent) 35%, transparent); }
+.crumb:hover { text-decoration-color: currentColor; }
+.crumbs [aria-current] { color: var(--ink); font-weight: 600; text-decoration: none; }
+.in-view { margin-top: 10px; border-top: 1px solid var(--line); padding-top: 8px; font-size: 13.5px; }
+.in-view summary { cursor: pointer; color: var(--accent); font-weight: 600; width: fit-content; }
+.in-view .near-list { max-height: 240px; overflow-y: auto; margin-top: 6px; }
+
+/* place panel: building or ward, beside the map */
+.place { flex: 0 1 auto; min-height: 140px; overflow-y: auto; outline: none; animation: rail-in 0.24s cubic-bezier(0.2, 0.7, 0.2, 1); }
+.place-head { display: flex; justify-content: space-between; gap: 10px; align-items: flex-start; }
+.place-kicker { font-size: 12.5px; color: var(--muted); }
+.place h2 { font-family: var(--font-display); font-size: 22px; font-weight: 600; line-height: 1.15; letter-spacing: -0.01em; margin-top: 2px; outline: none; }
+.place-close { flex: none; margin: -4px -8px 0 0; font-size: 20px; }
+.score-line { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 10px; margin-top: 12px; }
+.score-num { font-size: 40px; font-weight: 700; letter-spacing: -0.025em; line-height: 1; font-variant-numeric: tabular-nums; }
+.score-of { color: var(--muted); font-size: 15px; margin-left: -8px; }
+.score-line .band { margin-top: 0; font-size: 12.5px; padding: 2px 9px; }
+.place-date { font-size: 13px; color: var(--ink-2); margin-top: 8px; display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
+.place-facts { display: grid; grid-template-columns: repeat(4, minmax(0, auto)); justify-content: space-between; gap: 4px 12px; margin: 12px 0 0; padding: 10px 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+.place-facts dt { font-size: 11.5px; color: var(--muted); }
+.place-facts dd { margin: 0; font-weight: 600; font-size: 14px; font-variant-numeric: tabular-nums; }
+.place-rank { font-size: 13px; color: var(--ink-2); margin-top: 10px; }
+.place-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 12px; }
+.place-actions .btn { height: 36px; padding: 0 10px; font-size: 13.5px; }
+.place-actions .btn-primary { grid-column: 1 / -1; }
+.place-actions .btn[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
+.place-more { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line); }
+.place-h3 { font-size: 13.5px; font-weight: 650; margin-top: 12px; }
+.place-more > .place-h3:first-child { margin-top: 0; }
+.place-sub { font-size: 13px; color: var(--ink-2); margin-top: 4px; }
+.place-note { font-size: 13px; color: var(--ink); background: var(--surface-2); padding: 8px 10px; margin-top: 10px; border-left: 3px solid var(--axis); }
+.place-stat { margin-top: 12px; font-size: 14px; line-height: 1.4; }
+.stat-num { display: block; font-size: 34px; font-weight: 700; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; line-height: 1.05; }
+.stat-num.is-high { color: var(--warn); }
+.place-link { font-size: 13.5px; margin-top: 10px; font-weight: 600; }
+.place .near-list { margin-top: 6px; }
+.place .near-list button { padding: 7px 4px; font-size: 13.5px; }
+.place-tl { margin-top: 4px; }
+.place-tl .xr-tl-summary { font-size: 13px; }
+
+/* legend */
+.legend-card { margin-top: auto; flex: none; padding: 12px 14px !important; font-size: 13px; max-height: 50%; overflow-y: auto; }
+.legend-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
+.legend-title { font-weight: 650; font-size: 13px; line-height: 1.35; }
+.ch-scale { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 3px; }
+.ch-scale li { display: flex; align-items: center; gap: 8px; font-variant-numeric: tabular-nums; font-size: 12.5px; }
+.ch-sw { width: 24px; height: 12px; flex: none; border: 1px solid color-mix(in srgb, var(--ink) 14%, transparent); }
+.legend-note { font-size: 12px; color: var(--ink-2); margin-top: 8px; }
+.dash-key { display: inline-block; width: 18px; border-top: 1.5px dashed var(--ward-line); vertical-align: middle; margin: 0 2px 0 0; }
+.legend-sys { font-size: 12px; color: var(--muted); margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--line); display: flex; align-items: center; gap: 6px; }
+.legend-describe { font-size: 12.5px; margin-top: 6px; }
+.legend-text { font-size: 12.5px; color: var(--ink-2); margin-top: 6px; }
+.dot-keys { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 4px; font-size: 12.5px; }
+.dot-keys li { display: flex; align-items: center; }
+.dot-key { width: 14px; display: inline-grid; place-items: center; margin-right: 8px; }
+.dot-key::before { content: ""; width: var(--r); height: var(--r); border-radius: 50%; background: var(--k); box-shadow: 0 0 0 1px var(--surface); }
+.cl-key { display: flex; gap: 12px; align-items: center; margin-top: 8px; font-size: 12.5px; color: var(--ink-2); }
+.red-ink { color: var(--warn); font-weight: 600; }
+
+/* tools and pop-up panels */
+.tools { display: flex; gap: 6px; }
+.tool { font: inherit; font-size: 13.5px; font-weight: 600; height: 34px; padding: 0 12px; background: var(--surface); color: var(--ink); border: 1px solid var(--line); border-radius: var(--radius-sm); box-shadow: var(--shadow-float); cursor: pointer; }
+.tool:hover { border-color: var(--axis); }
+.tool[aria-expanded="true"], .tool.is-on { color: var(--accent); border-color: var(--accent); }
+.tool.is-on::after { content: ""; display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); margin-left: 6px; vertical-align: middle; }
+.pop-panel { width: min(310px, 100%); display: grid; gap: 14px; flex: none; animation: rail-in-r 0.18s ease-out; }
+.lens-pick { border: 0; padding: 0; margin: 0; }
+.lens-pick legend { display: flex; align-items: center; gap: 6px; font-weight: 650; font-size: 13.5px; padding: 0; margin-bottom: 4px; }
+.lens-opt { display: flex; align-items: center; gap: 8px; padding: 4px 0; font-size: 14px; cursor: pointer; }
+.lens-opt input { accent-color: var(--accent); margin: 0; width: 16px; height: 16px; }
+.lens-group { font-size: 12px; font-weight: 650; color: var(--muted); margin-top: 10px; }
+.lens-group small { font-weight: 500; color: var(--accent); margin-left: 4px; font-size: 11.5px; }
+.seg-3 { grid-template-columns: repeat(3, minmax(0, 1fr)) !important; }
+.layers-foot { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding-top: 10px; border-top: 1px solid var(--line); font-size: 13px; }
+
+/* the one analysis layer */
+.lens { width: 100%; flex: 0 1 auto; min-height: 0; overflow-y: auto; padding: 0 16px 16px !important; animation: rail-in-r 0.24s cubic-bezier(0.2, 0.7, 0.2, 1); }
+.lens-head { display: flex; justify-content: space-between; gap: 10px; align-items: flex-start; position: sticky; top: 0; z-index: 2; background: var(--surface); padding: 14px 0 8px; margin-bottom: 4px; border-bottom: 1px solid var(--line); }
+.lens-scope { font-size: 12.5px; color: var(--muted); }
+.lens-title { font-family: var(--font-display); font-size: 19px; font-weight: 600; line-height: 1.2; outline: none; }
+.lens-view { padding-top: 6px; }
+.lens .view-intro { font-size: 13.5px; margin: 0 0 10px; display: block; max-width: none; }
+.lens .finding { margin-top: 12px; padding: 10px 12px; }
+.lens .finding-value { font-size: 28px; }
+.lens .seg { margin-bottom: 10px; }
+.lens .ward-block { min-height: 0; border: 0; padding: 0; background: none; }
+.lens .ward-chart { max-height: none; overflow: visible; margin-top: 0; }
+.lens .method { margin-top: 10px; padding: 0; }
+.lens #age-chart { height: 300px; }
+.lens #change-chart { height: 250px; }
+.lens .story-visual { max-width: none; }
+.lens .mini-stats { margin-top: 10px; }
+
+/* ---- the map's own marks (Leaflet) --------------------------------------------------------------------- */
+.leaflet-container { font-family: var(--font-ui); background: var(--surface-2); }
+.leaflet-container:focus-visible { outline: 3px solid var(--focus); outline-offset: -3px; }
+.leaflet-clusters-pane, .leaflet-buildings-pane { transition: opacity 0.35s ease; }
+.wards-inert .leaflet-wards-pane path.leaflet-interactive { pointer-events: none; }
+.leaflet-wards-pane path { transition: fill-opacity 0.2s linear; }
+.leaflet-control-zoom a { color: var(--ink) !important; background: var(--surface) !important; border-color: var(--line) !important; }
+.leaflet-control-zoom { border: 1px solid var(--line) !important; box-shadow: var(--shadow-float) !important; }
+.leaflet-control-attribution { background: color-mix(in srgb, var(--surface) 85%, transparent) !important; color: var(--muted); }
+.leaflet-control-attribution a { color: var(--ink-2); }
+body.has-lens .leaflet-bottom.leaflet-right { right: min(456px, calc(40% + 16px)); }
+
+/* clusters: a small donut. Size = buildings; red arc = the share of them in the lowest 10%. */
+.cl { background: none; border: 0; }
+.cl-disc { --ring: 4px; width: var(--d); height: var(--d); border-radius: 50%; position: relative; flex: none; display: grid; place-items: center;
+  background: conic-gradient(var(--low-10) 0turn calc(var(--p) * 1turn), var(--accent) calc(var(--p) * 1turn) 1turn);
+  box-shadow: 0 0 0 1.5px var(--surface), 0 1px 4px rgba(0, 0, 0, 0.22); }
+.cl-disc::before { content: ""; position: absolute; inset: var(--ring); border-radius: 50%; background: var(--surface); }
+.cl-disc b { position: relative; font: 650 12px/1 var(--font-ui); color: var(--ink); font-variant-numeric: tabular-nums; }
+.cl .cl-disc { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); cursor: pointer; }
+.cl:hover .cl-disc { --ring: 5px; }
+.cl.is-out .cl-disc { opacity: 0.35; }
+.cl.is-anim .cl-disc { animation: cl-in 0.3s cubic-bezier(0.2, 0.7, 0.2, 1) both; }
+.cl:focus { outline: none; }
+.cl:focus-visible .cl-disc { outline: 2px solid var(--focus); outline-offset: 3px; }
+@keyframes cl-in { from { transform: translate(-50%, -50%) scale(0.5); opacity: 0; } }
+
+/* labels: the selected ward and the selected building only, never every address */
+.leaflet-tooltip.ward-label { background: none; border: 0; box-shadow: none; padding: 0; font: 650 13.5px/1.25 var(--font-ui); color: var(--ink); text-align: center;
+  text-shadow: 0 0 4px var(--surface), 0 0 4px var(--surface), 0 0 2px var(--surface); }
+.leaflet-tooltip.ward-label::before { display: none; }
+.ward-label small { display: block; font-weight: 500; font-size: 11.5px; color: var(--ink-2); }
+.leaflet-tooltip.sel-label { background: var(--accent); color: var(--accent-ink); border: 0; border-radius: var(--radius-sm); font: 600 12.5px/1.3 var(--font-ui); padding: 3px 8px; box-shadow: var(--shadow-float); white-space: nowrap; }
+.leaflet-tooltip.sel-label::before { border-top-color: var(--accent); }
+.sel-label b { margin-left: 6px; font-variant-numeric: tabular-nums; }
+.sel-ring { animation: sel-in 0.3s ease-out; transform-box: fill-box; transform-origin: center; }
+@keyframes sel-in { from { opacity: 0; transform: scale(1.6); } }
+
+/* ---- depth: the levels below the map ------------------------------------------------------------------------ */
+.depth { position: absolute; inset: 0; z-index: 1000; background: var(--surface-2); overflow-y: auto; animation: depth-in 0.28s ease-out; }
+.depth-bar { position: sticky; top: 0; z-index: 30; display: flex; align-items: center; gap: 16px; padding: 10px 24px; background: var(--surface); border-bottom: 1px solid var(--line); }
+.depth-back { flex: none; }
+.depth .view { overflow: visible; min-height: 0; min-width: 0; }
+/* wide tables scroll inside their own box instead of widening the page */
+.depth .xr-wrap, .depth .fp-wrap, .depth .xr-section, .depth details, .depth .page { min-width: 0; max-width: 100%; }
+.depth .fp-table-scroll, .depth #xr-method { max-width: 100%; overflow-x: auto; }
+.depth .truth-table { display: block; overflow-x: auto; }
+.depth { overflow-x: hidden; } /* last guard: clipped helper text must not add sideways scroll */
+/* headings that receive focus when a level opens: no ring for that programmatic focus */
+h1[tabindex="-1"]:focus:not(:focus-visible), h2[tabindex="-1"]:focus:not(:focus-visible) { outline: none; }
+.depth .xr-stage-card { top: 64px; }
+.depth .story-view { min-height: calc(100% - 56px); padding: 32px; }
+@keyframes depth-in { from { opacity: 0; } }
+@keyframes rail-in { from { opacity: 0; transform: translateX(-10px); } }
+@keyframes rail-in-r { from { opacity: 0; transform: translateX(10px); } }
+
+/* Going down a level: a short crossfade (View Transitions where supported). */
+::view-transition-old(root), ::view-transition-new(root) { animation-duration: 0.3s; }
+.vt-depth::view-transition-group(atlas) { animation: none; }
+
+/* ---- the guided story, docked beside the map ------------------------------------------------------------------- */
+body.is-story .title-card, body.is-story .tools, body.is-story .pop-panel, body.is-story .atlas-nav { display: none; }
+body.is-story .story-panel { border-right: 1px solid var(--line); min-height: 0; }
+
+/* ---- small screens: the rails become a top card and bottom sheets ----------------------------------------------- */
+@media (max-width: 760px) {
+  .atlas-bar { gap: 10px; padding: 0 10px 0 14px; }
+  .atlas-bar .wordmark { font-size: 18px; }
+  .search { flex: 1 1 auto; }
+  .menu-button { display: block; flex: none; }
+  .atlas-nav { display: none; position: absolute; top: 100%; right: 0; left: 0; flex-direction: column; gap: 0; background: var(--surface); border-bottom: 1px solid var(--line); box-shadow: var(--shadow-pop); padding: 6px 16px; }
+  .atlas-nav.open { display: flex; }
+  .atlas-nav a { padding: 12px 0; border-bottom: 1px solid var(--line); }
+  .atlas-nav a:last-child { border-bottom: 0; }
+  .atlas-nav a[aria-current="page"] { border-bottom-color: var(--line); }
+
+  .rail { top: 10px; bottom: 0; }
+  .rail-left { left: 10px; right: 10px; width: auto; }
+  .rail-right { left: 10px; right: 10px; width: auto; }
+  .title-card { margin-right: 94px; padding: 10px 12px !important; }
+  .title-card h1 { font-size: 18px; margin-top: 2px; }
+  .atlas-sub { font-size: 13px; }
+  body.has-place .in-view { display: none; }
+  .tools { flex-direction: column; position: absolute; top: 0; right: 0; }
+  .pop-panel { position: absolute; top: 0; right: 92px; width: min(300px, calc(100vw - 112px)); max-height: 70vh; overflow-y: auto; }
+  .rail .place, .rail .lens { position: relative; margin: auto -10px 0; max-height: 58%; border-radius: 10px 10px 0 0; border-bottom: 0; animation-name: sheet-in; }
+  .rail .lens { position: absolute; left: 0; right: 0; bottom: 0; margin: 0 -10px; max-height: 62%; z-index: 3; }
+  .legend-card { margin-bottom: 10px; max-height: 40%; }
+  body.has-place .legend-card, body.has-lens .legend-card { display: none; }
+  .place-facts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .leaflet-bottom.leaflet-right { bottom: 0; }
+  body.has-place .leaflet-control-zoom, body.has-lens .leaflet-control-zoom { display: none; }
+  body.has-lens .leaflet-bottom.leaflet-right { right: 0; }
+
+  .depth-bar { padding: 8px 12px; gap: 10px; }
+  body.is-story .story-annot { display: none; } /* the panel already states it; the target may be off-screen */
+  .depth-bar .crumbs { display: none; }
+  .depth-body .view { padding: 16px 12px 24px; }
+
+  body.is-story .atlas-main { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto; }
+  body.is-story .story-panel { grid-row: 2; max-height: 46vh; overflow-y: auto; border-right: 0; border-top: 1px solid var(--line); padding: 14px 16px; }
+  body.is-story .atlas-canvas { grid-row: 1; }
+}
+@keyframes sheet-in { from { transform: translateY(24px); opacity: 0; } }
+
+@media (min-width: 761px) and (max-width: 1100px) {
+  .rail-left { width: min(320px, 44%); }
+  .rail-right { width: min(380px, 48%); }
+  body.is-story .atlas-main { grid-template-columns: minmax(300px, 340px) minmax(0, 1fr); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .place, .lens, .pop-panel, .depth, .cl.is-anim .cl-disc, .sel-ring { animation: none !important; }
+  .leaflet-clusters-pane, .leaflet-buildings-pane, .leaflet-wards-pane path { transition: none; }
+}

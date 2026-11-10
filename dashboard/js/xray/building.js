@@ -5,27 +5,23 @@
 //                 within ~110 m is drawn as neutral context.
 //   ILLUSTRATIVE  The façade detail (windows, frames, floor bands, pilasters, base course, entrance canopy,
 //                 garage door, balconies, parapets) is a regular pattern spaced by the registered storeys and
-//                 scaled to the building's height class. Everything inside — slabs (real outline, illustrative
-//                 storey height), corridors along each wing of the real plan, unit walls, stair, elevator
-//                 shaft, columns, rooftop plant and the parking level — is a conceptual layout fitted inside
-//                 the real footprint. The site (presentation base, walkway, driveway, trees) is a neutral
-//                 setting. None of it is the building's actual design or floor plan.
+//                 scaled to the building's height class. The rooms inside the cutaway (rooms.js), the floor
+//                 slabs around them (real outline, illustrative storey height), the rooftop plant and the site
+//                 (presentation base, walkway, driveway, trees) are generic. None of it is the building's
+//                 actual design or floor plan.
 //
-// Structure (neutral materials) and data highlights (translucent "overlay" volumes per inspection category)
-// are separate objects, so the data never recolours the architecture.
-//
-// Façade walls are grouped into 8 orientation buckets so the scene can cut away the walls facing the
-// camera, and are built storey by storey so the exploded view keeps each floor's walls and windows with
-// its slab. Floor-level objects carry a level index so the scene can separate floors.
+// The cutaway is a single notch at one corner of the main wing (cutaway.js): the scene clips the façade,
+// roof and outline with a box there and shows the room stack for that corner. Everything else stays
+// solid. Structure is never recoloured by data; only the rooms' floor tint, outlines and the records sheet
+// carry the inspection results.
 //
 // Frames: data x = east, y = north. Three.js X = east, Y = up, Z = south (= −north).
 
-import { BUCKETS, cleanRing, area, pointInPoly, wallEdges, corners, convexHull, innerFrame, wingFrames, syntheticMass, storeyLayout } from './footprint.js';
-
-export const PARKING_DEPTH = 3.2;
+import { BUCKETS, cleanRing, pointInPoly, wallEdges, corners, convexHull, innerFrame, wingFrames, syntheticMass, storeyLayout } from './footprint.js';
+import { cutawayPlan, SLAB as CUT_SLAB } from './cutaway.js';
+import { buildCutaway } from './rooms.js';
 const WALL = 0.3;      // façade thickness
-const SLAB = 0.3;      // floor slab thickness
-const PLAN_CUT = 1.35; // interior walls are drawn cut at this height, like a plan section
+const SLAB = CUT_SLAB; // floor slab thickness
 
 // façade pattern by height class: bay width, window width [share of bay, cap], window height [share of storey, cap]
 const TIERS = {
@@ -41,8 +37,6 @@ export function buildBuilding(THREE, entry, mat) {
   const root = new THREE.Group();
   const facadeRoot = new THREE.Group(), roofRoot = new THREE.Group(), interior = new THREE.Group(), site = new THREE.Group(), ctxRoot = new THREE.Group();
   root.add(facadeRoot, roofRoot, interior, site, ctxRoot);
-  const explodables = [];
-  const overlays = { exterior: [], shared: [], systems: [], records: [], grounds: [] };
   const pickables = [];
 
   // ---- masses ---------------------------------------------------------------------------------------
@@ -181,7 +175,6 @@ export function buildBuilding(THREE, entry, mat) {
       mesh.userData = { zone: 'exterior', facade: true };
       pickables.push(mesh);
       g.add(mesh);
-      explodables.push(track(mesh, b[kind + 'Lv']));
     }
     facadeRoot.add(g);
     const c = b.sum[2] ? [b.sum[0] / b.sum[2], b.sum[1] / b.sum[2]] : [0, 0];
@@ -193,18 +186,7 @@ export function buildBuilding(THREE, entry, mat) {
   outlineLines.raycast = () => {};
   facadeRoot.add(outlineLines);
 
-  // exploded view: faint dashed verticals at the real corners tie the separated floors together
-  const guideCorners = [];
-  for (const m of bodies) for (const [x, y] of corners(m.rings[0])) if (guideCorners.length < 28) guideCorners.push({ x, z: -y, m });
-  const guideGeo = keep(new THREE.BufferGeometry());
-  guideGeo.setAttribute('position', new THREE.Float32BufferAttribute(new Float32Array(Math.max(1, guideCorners.length) * 6), 3));
-  const guides = new THREE.LineSegments(guideGeo, mat('guide'));
-  guides.raycast = () => {};
-  guides.frustumCulled = false;
-  guides.visible = false;
-  root.add(guides);
-
-  // ---- roof: slab + membrane, parapets, rooftop parts (lifts away in X-Ray) ----------------------------
+  // ---- roof: slab + membrane, parapets, rooftop parts --------------------------------------------------
   for (const m of bodies) {
     const roof = new THREE.Mesh(keep(extrude(THREE, m.rings, 0.4)), [mat('roof'), mat('roofEdge')]);
     roof.position.y = m.top - 0.4;
@@ -212,9 +194,8 @@ export function buildBuilding(THREE, entry, mat) {
     roof.userData = { zone: 'exterior' };
     pickables.push(roof);
     roofRoot.add(roof);
-    explodables.push({ obj: roof, level: S.topLevel(m), y0: roof.position.y, roof: true });
   }
-  addInstanced(roofRoot, parapets.map((p) => p.item), mat('parapet'), parapets.map((p) => p.level), { roof: true, zone: 'exterior' });
+  addInstanced(roofRoot, parapets.map((p) => p.item), mat('parapet'), { zone: 'exterior' });
   for (const m of rooftop) {
     const pent = new THREE.Mesh(keep(extrude(THREE, m.rings, m.top - m.base)), [mat('roof'), approx ? mat('facadeApprox', 0) : mat('penthouse')]);
     pent.position.y = m.base;
@@ -222,155 +203,62 @@ export function buildBuilding(THREE, entry, mat) {
     pent.userData = { zone: 'exterior' };
     pickables.push(pent);
     roofRoot.add(pent);
-    explodables.push({ obj: pent, level: Math.round(m.base / fh), y0: m.base, roof: true });
   }
 
-  // ---- illustrative interior -------------------------------------------------------------------------
-  const L = { cols: [], parts: [], steps: [], posts: [], cab: [], ovShared: [], ovSystems: [], ovGrounds: [], cars: [], cabins: [], paint: [], plant: [], fans: [], bulk: [] };
-  const lv = Object.fromEntries(Object.keys(L).map((k) => [k, []]));
-  const push = (k, item, level) => { L[k].push(item); lv[k].push(level); };
-  let anchorShared = null, anchorSystems = null, anchorGrounds = null;
-  const roofTop = S.topLevel(main);
-  const plantH = Math.min(2.6, Math.max(1.4, S.H * 0.12));    // rooftop plant scaled to the building
-  let plantTop = main.top;
-
+  // ---- cutaway: notch plan, floor slabs around it, the room stack per corner ---------------------------
+  const plan = cutawayPlan({ F, bodies, storeys: S.storeys, fh, base: main.base, prefer: { su: sgn, sv: sideDir } });
+  // slabs (real outline) at every storey the notch exposes, and the ceiling above it
   for (const m of bodies) {
-    const big = Math.abs(area(m.rings[0])) >= 80 && m.top - m.base >= 2.2;
-    const nLev = S.levels(m), L0 = S.baseLevel(m);
-    // slabs: one extrusion of the REAL outline, instanced once per storey
-    const ys = [], levels = [];
-    for (let f = 0; f < nLev; f++) { ys.push(m.base + f * fh - SLAB); levels.push(L0 + f); }
+    const ys = [];
+    for (let f = 0; f < S.levels(m); f++) {
+      const y = m.base + f * fh;
+      if (y >= plan.yb - 0.05 && y <= plan.yt + SLAB + 0.05) ys.push(y - SLAB);
+    }
+    if (!ys.length) continue;
     const slabs = new THREE.InstancedMesh(keep(extrude(THREE, m.rings, SLAB)), [mat('floor'), mat('slabEdge')], ys.length);
     ys.forEach((y, i) => slabs.setMatrixAt(i, new THREE.Matrix4().makeTranslation(0, y, 0)));
     slabs.castShadow = slabs.receiveShadow = true;
     structure(slabs);
     interior.add(slabs);
-    explodables.push(track(slabs, levels));
-    if (!big) continue;
-
-    wingsOf.get(m).forEach((W, wi) => {
-      const isMain = m === main && wi === 0;
-      const at = (du, dv) => [W.cx + W.ux * du + W.vx * dv, W.cy + W.uy * du + W.vy * dv];
-      const ang = Math.atan2(W.uy, W.ux);
-      const box = (k, du, dv, y0, y1, su, sv, level) => { const [x, y] = at(du, dv); push(k, [x, (y0 + y1) / 2, y, ang, su, y1 - y0, sv], level); };
-      const corrW = Math.min(1.8, W.B * 0.42);
-      const stairL = isMain ? Math.min(5.6, W.A * 0.5) : 0, stairW = Math.min(2.8, W.B * 0.75);
-      const u0 = -W.A, u1 = W.A;
-      const coreS = Math.min(2.4, W.B * 0.55);
-      const coreU = W.A * 0.3, coreV = -(corrW / 2 + coreS / 2 + 0.15);
-      const blocked = (du, dv) => isMain && ((Math.abs(du - coreU) < coreS / 2 + 0.7 && dv < 0 && dv > coreV - coreS / 2 - 0.3) || du < u0 + stairL + 0.3);
-      const inside = (du, dv) => { const [x, y] = at(du, dv); return pointInPoly(x, y, m.rings); };
-
-      for (let f = 0; f < nLev; f++) {
-        const y = m.base + f * fh, lvl = L0 + f, hh = fh - SLAB;
-        // corridor floor (data overlay: shared spaces), and the lobby on the ground floor
-        box('ovShared', (u0 + stairL + u1) / 2, 0, y + 0.01, y + 0.06, u1 - u0 - stairL, corrW, lvl);
-        if (f === 0 && m.base === 0 && isMain) box('ovShared', W.A * -0.1, W.B * 0.45, y + 0.01, y + 0.07, W.A * 0.7, W.B * 0.8, lvl);
-        // corridor walls (plan cut) with door openings, and unit demising walls out to the façade
-        const run = u1 - u0 - stairL;
-        const bays = Math.max(1, Math.round(run / 6.5));
-        const bay = run / bays;
-        for (const side of [-1, 1]) {
-          for (let k = 0; k < bays; k++) {
-            const du = u0 + stairL + bay * (k + 0.5);
-            if (blocked(du, side * corrW / 2)) continue;
-            box('parts', du + 0.55, side * corrW / 2, y, y + PLAN_CUT, bay - 1.1, 0.14, lvl);
-            const wall = u0 + stairL + bay * k;
-            if (k > 0 && !blocked(wall, side * (corrW / 2 + 1)) && inside(wall, side * W.B)) {
-              const len = W.B - corrW / 2;
-              box('parts', wall, side * (corrW / 2 + len / 2), y, y + PLAN_CUT, 0.14, len, lvl);
-            }
-          }
-        }
-        for (let du = u0 + stairL + 1; du <= u1 - 0.5; du += 7.2) {
-          for (const side of [-1, 1]) if (!blocked(du, side * (corrW / 2 + 0.35))) box('cols', du, side * (corrW / 2 + 0.35), y, y + hh, 0.42, 0.42, lvl);
-        }
-        if (!isMain) continue;
-        // stair: enclosure (data overlay: shared), two flights and a landing per storey
-        box('ovShared', u0 + stairL / 2, 0, y + 0.02, y + hh - 0.05, stairL, stairW, lvl);
-        const n = 9, rise = fh / 2 / n, runS = (stairL - 1.2) / n;
-        for (let s = 0; s < n; s++) {
-          box('steps', u0 + 1.2 + runS * (s + 0.5), -stairW / 4, y + rise * s, y + rise * (s + 1), runS, stairW / 2 - 0.08, lvl);
-          box('steps', u0 + 1.2 + (stairL - 1.2) - runS * (s + 0.5), stairW / 4, y + fh / 2 + rise * s, y + fh / 2 + rise * (s + 1), runS, stairW / 2 - 0.08, lvl);
-        }
-        box('steps', u0 + 0.6, 0, y + fh / 2 - 0.2, y + fh / 2, 1.2, stairW, lvl);
-        // elevator shaft: corner posts (structure) + shaft volume (data overlay: building systems)
-        box('ovSystems', coreU, coreV, y, y + fh, coreS, coreS, lvl);
-        for (const [a, b] of [[-1, -1], [-1, 1], [1, -1], [1, 1]]) box('posts', coreU + a * coreS / 2, coreV + b * coreS / 2, y, y + fh, 0.16, 0.16, lvl);
-        if (f === Math.floor(nLev / 2)) box('cab', coreU, coreV, y + 0.1, y + 2.3, coreS * 0.72, coreS * 0.72, lvl);
-      }
-
-      if (m === main) {
-        // parking bays under every wing of the main body
-        const pd = -PARKING_DEPTH;
-        box('ovGrounds', 0, 0, pd + 0.01, pd + 0.06, W.A * 2, W.B * 2, -1);
-        for (let du = -W.A + 1.6; du <= W.A - 1.6; du += 2.7) {
-          for (const dv of [-W.B * 0.62, W.B * 0.62]) {
-            if (W.B < 4.5 || !inside(du, dv * 1.25)) continue;
-            if (Math.abs(Math.round(du * 7 + dv)) % 5 !== 0) {   // leave some bays empty
-              box('cars', du, dv, pd + 0.18, pd + 0.78, 1.85, 4.3, -1);
-              box('cabins', du, dv + (dv > 0 ? 0.25 : -0.25), pd + 0.78, pd + 1.25, 1.6, 2.2, -1);
-            }
-            box('paint', du + 1.35, dv, pd + 0.01, pd + 0.03, 0.1, 4.9, -1);
-          }
-        }
-        for (let du = -W.A + 2; du <= W.A - 2; du += 7.2) for (const dv of [-W.B * 0.3, W.B * 0.3]) box('cols', du, dv, pd, -SLAB, 0.5, 0.5, -1);
-      }
-      if (!isMain) return;
-      anchorShared = { pos: T(...at((u0 + stairL + u1) / 2, 0), m.base + Math.floor(nLev / 2) * fh + 1.2), level: L0 + Math.floor(nLev / 2) };
-      anchorGrounds = { pos: T(...at(W.A * 0.45, 0), -PARKING_DEPTH + 1.2), level: -1 };
-
-      // rooftop plant (systems) — sits on the roof and lifts with it, sized to the building
-      const ry = m.top;
-      // each piece of plant gets its own translucent "building systems" shell, so the roof itself stays solid
-      const pk = (k, du, dv, h, su, sv) => {
-        const [x, y] = at(du, dv);
-        push(k, [x, ry + h / 2, y, ang, su, h, sv], roofTop);
-        if (k === 'plant') push('ovSystems', [x, ry + h / 2 + 0.1, y, ang, su + 0.7, h + 0.45, sv + 0.7], roofTop);
-        plantTop = Math.max(plantTop, ry + h + 0.35);
-      };
-      pk('plant', coreU, coreV, plantH, coreS + 1.8, coreS + 1.4);
-      if (tierName !== 'low') pk('bulk', u0 + stairL / 2, 0, Math.min(2.4, plantH), stairL + 0.4, stairW + 0.4);   // stair bulkhead
-      const rtu = Math.max(1, Math.min(4, Math.floor(W.A / 5)));
-      const uh = Math.min(1.3, plantH * 0.7);
-      for (let i = 0; i < rtu; i++) {
-        const du = -W.A * 0.55 + (i * W.A * 1.1) / rtu, dv = W.B * 0.45;
-        pk('plant', du, dv, uh, 2.4, 1.6);
-        const [x, y] = at(du, dv);
-        push('fans', [x, ry + uh + 0.08, y, 0, 1.1, 0.16, 1.1], roofTop);
-      }
-      anchorSystems = { pos: T(...at(coreU, coreV), ry + plantH + 0.2), level: roofTop, roof: true };
-    });
-
-    if (m === main) {
-      // parking slab (real outline) and low perimeter walls
-      const pd = -PARKING_DEPTH;
-      const pkSlab = new THREE.Mesh(keep(extrude(THREE, m.rings, SLAB)), [mat('concrete'), mat('slabEdge')]);
-      pkSlab.position.y = pd - SLAB;
-      pkSlab.receiveShadow = true;
-      structure(pkSlab);
-      interior.add(pkSlab);
-      for (const e of wallEdges(m.rings)) push('parts', [e.mx - e.nx * 0.12, pd + 0.5, e.my - e.ny * 0.12, e.ang, e.len, 1.0, 0.24], -1);
-    }
   }
+  const cutaways = new Map();             // corner key -> built room stack (lazily)
+  const cutawayAt = (key) => {
+    if (!cutaways.has(key)) {
+      const c = plan.corners.find((x) => x.key === key);
+      const built = buildCutaway(THREE, plan, c, bodies, mat);
+      built.corner = c;
+      built.group.userData.cornerKey = key;
+      interior.add(built.group);
+      cutaways.set(key, built);
+    }
+    return cutaways.get(key);
+  };
 
-  addInstanced(interior, L.cols, mat('concrete'), lv.cols, { structure: true });
-  addInstanced(interior, L.parts, [mat('partition'), mat('partition'), mat('poche'), mat('partition'), mat('partition'), mat('partition')], lv.parts, { structure: true });
-  addInstanced(interior, L.steps, mat('concrete'), lv.steps, { structure: true });
-  addInstanced(interior, L.posts, mat('concrete'), lv.posts, { structure: true });
-  addInstanced(interior, L.cab, mat('cab'), lv.cab, { structure: true });
-  addInstanced(interior, L.cars, mat('car'), lv.cars, { structure: true });
-  addInstanced(interior, L.cabins, mat('carGlass'), lv.cabins, { structure: true });
-  addInstanced(interior, L.paint, mat('paint'), lv.paint, { structure: true });
-  addInstanced(roofRoot, L.plant, mat('equipment'), lv.plant, { roof: true, zone: 'systems' });
-  addInstanced(roofRoot, L.bulk, mat('penthouse'), lv.bulk, { roof: true, zone: 'exterior' });
-  if (L.fans.length) addInstanced(roofRoot, L.fans, mat('equipmentDark'), lv.fans, { roof: true, zone: 'systems', geometry: keep(new THREE.CylinderGeometry(0.5, 0.5, 1, 20)) });
-  overlay('shared', L.ovShared, lv.ovShared, interior);
-  const sysPairs = L.ovSystems.map((it, i) => [it, lv.ovSystems[i]]);
-  const shaft = sysPairs.filter((p) => p[1] !== roofTop), plantZone = sysPairs.filter((p) => p[1] === roofTop);
-  overlay('systems', shaft.map((p) => p[0]), shaft.map((p) => p[1]), interior);
-  overlay('systems', plantZone.map((p) => p[0]), plantZone.map((p) => p[1]), roofRoot, true);
-  overlay('grounds', L.ovGrounds, lv.ovGrounds, interior);
+  let plantTop = main.top;
+  // rooftop plant: generic equipment sized to the building (exterior detail; picks "building systems")
+  {
+    const ang = Math.atan2(F.uy, F.ux);
+    const at = (du, dv) => [F.cx + F.ux * du + F.vx * dv, F.cy + F.uy * du + F.vy * dv];
+    const plantH = Math.min(2.6, Math.max(1.4, S.H * 0.12));
+    const plant = [], fans = [], bulk = [];
+    const ry = main.top;
+    const pk = (list, du, dv, hh, su, sv) => { const [x, y] = at(du, dv); list.push([x, ry + hh / 2, y, ang, su, hh, sv]); };
+    const coreS = Math.min(2.4, F.B * 0.55);
+    pk(plant, F.A * 0.3, -(Math.min(1.8, F.B * 0.42) / 2 + coreS / 2 + 0.15), plantH, coreS + 1.8, coreS + 1.4);
+    if (tierName !== 'low') pk(bulk, -F.A + Math.min(5.6, F.A * 0.5) / 2, 0, Math.min(2.4, plantH), Math.min(5.6, F.A * 0.5) + 0.4, Math.min(2.8, F.B * 0.75) + 0.4);
+    const rtu = Math.max(1, Math.min(4, Math.floor(F.A / 5)));
+    const uh = Math.min(1.3, plantH * 0.7);
+    for (let i = 0; i < rtu; i++) {
+      const du = -F.A * 0.55 + (i * F.A * 1.1) / rtu, dv = F.B * 0.45;
+      pk(plant, du, dv, uh, 2.4, 1.6);
+      const [x, y] = at(du, dv);
+      fans.push([x, ry + uh + 0.08, y, 0, 1.1, 0.16, 1.1]);
+    }
+    addInstanced(roofRoot, plant, mat('equipment'), { zone: 'systems' });
+    addInstanced(roofRoot, bulk, mat('penthouse'), { zone: 'exterior' });
+    addInstanced(roofRoot, fans, mat('equipmentDark'), { zone: 'systems', geometry: keep(new THREE.CylinderGeometry(0.5, 0.5, 1, 20)) });
+    plantTop = ry + plantH + 0.35;
+  }
 
   // ---- site: presentation base, walkway, driveway, waste enclosure, records position, trees ------------
   // The base's top sits just below the ground floor (−0.02 m) so it never shows inside the cutaway; the
@@ -424,12 +312,8 @@ export function buildBuilding(THREE, entry, mat) {
     }
   }
   if (!wastePos) wastePos = outsideAlong(bodies, F.cx, F.cy, ex, ey, 2.5);
-  const wux = Math.cos(wasteAng), wuy = Math.sin(wasteAng), wvx = -wuy, wvy = wux;
-  const bins = [];
-  for (const [du, w, h, d] of [[-1.1, 1.6, 1.3, 1.1], [0.9, 1.6, 1.3, 1.1]]) bins.push([wastePos[0] + wux * du, h / 2, wastePos[1] + wuy * du, wasteAng, w, h, d]);
-  bins.push([wastePos[0] - wvx * 0.9, 0.8, wastePos[1] - wvy * 0.9, wasteAng, 4.6, 1.6, 0.15]);
-  addInstanced(site, bins, mat('equipmentDark'), bins.map(() => -1), { structure: true });
-  overlay('grounds', [[wastePos[0], 1.0, wastePos[1], wasteAng, 5.2, 2.0, 2.6]], [-1], site);
+  // (waste and parking are shown inside the cutaway; the site keeps only the driveway)
+  const bins = [[wastePos[0], 0, wastePos[1]]];
   keepOut.push([wastePos[0], wastePos[1], wastePos[0], wastePos[1], 4.5]);
   // records layer: a row of tiles in front of the far half of the street façade (always in view), clear of
   // the entrance walk
@@ -491,56 +375,26 @@ export function buildBuilding(THREE, entry, mat) {
     context.push(mesh);
   }
 
-  const anchors = {
-    shared: anchorShared ?? { pos: T(F.cx, F.cy, fh), level: 0 },
-    systems: anchorSystems ?? { pos: T(F.cx, F.cy, S.H + 1), level: roofTop, roof: true },
-    grounds: anchorGrounds ?? { pos: T(F.cx, F.cy, -1), level: -1 },
-    records: { pos: T(recAt[0], recAt[1], 2.2), level: -1 },
-  };
   // footprint hull (Three.js x, z) and the site elements the camera keeps in frame
   const hull = convexHull(allPts).map(([x, y]) => [x, -y]);
   const siteFrame = bins.map(([x, , y]) => [x, 2, -y]);
   if (entrance) siteFrame.push([entrance.mx + entrance.nx * 2.2, 3, -(entrance.my + entrance.ny * 2.2)]);
 
-  let lastGap = -1, lastLift = -1;
-  const topLevel = Math.max(...bodies.map(S.topLevel));
   return {
-    root, facadeRoot, roofRoot, interior, site, outline: outlineLines, guides, buckets, context, overlays, pickables, anchors, approx,
-    records: { at: recAt, ang: recAng },
-    H: S.H, storeys: S.storeys, fh, tier: tierName, bounds: bb, axis: wa, view, topLevel, plantTop, hull, siteFrame,
-    cutAt: { x: F.cx, z: -F.cy },
-    offset: (level, gap) => (level < 0 ? 0 : (level + 1) * gap),
-    // Move every floor-level object: `gap` metres between storeys, `lift` metres for the roof (X-Ray).
-    setLevels(gap, lift) {
-      if (Math.abs(gap - lastGap) < 1e-4 && Math.abs(lift - lastLift) < 1e-4) return;
-      lastGap = gap; lastLift = lift;
-      const off = (l) => (l < 0 ? 0 : (l + 1) * gap);
-      for (const e of explodables) {
-        if (e.mesh) {
-          const a = e.mesh.instanceMatrix.array;
-          for (let i = 0; i < e.levels.length; i++) a[i * 16 + 13] = e.base[i] + off(e.levels[i]) + (e.roof ? lift : 0);
-          e.mesh.instanceMatrix.needsUpdate = true;
-          e.mesh.computeBoundingSphere();
-          e.mesh.computeBoundingBox();
-        } else e.obj.position.y = e.y0 + off(e.level) + (e.roof ? lift : 0);
-      }
-      const p = guideGeo.attributes.position;
-      guideCorners.forEach(({ x, z, m }, i) => {
-        p.setXYZ(i * 2, x, m.base, z);
-        p.setXYZ(i * 2 + 1, x, m.top - 0.4 + off(S.topLevel(m)) + lift, z);
-      });
-      p.needsUpdate = true;
-      guides.computeLineDistances();
+    root, facadeRoot, roofRoot, interior, site, outline: outlineLines, buckets, context, pickables, approx,
+    // the records sheet stands on the street side; `wall` is the façade point its leader line meets
+    records: { at: recAt, ang: recAng, wall: [recAt[0] - sx * 3, recAt[1] - sy * 3] },
+    H: S.H, storeys: S.storeys, fh, tier: tierName, bounds: bb, axis: wa, view, plantTop, hull, siteFrame,
+    plan, cutawayAt,
+    dispose() {
+      for (const c of cutaways.values()) c.dispose();
+      own.forEach((g) => g.dispose());
+      root.traverse((o) => { if (o.isInstancedMesh) o.dispose(); });
     },
-    dispose() { own.forEach((g) => g.dispose()); root.traverse((o) => { if (o.isInstancedMesh) o.dispose(); }); },
   };
 
   // ---- helpers bound to this build ------------------------------------------------------------------
   function structure(o) { o.raycast = () => {}; o.userData.structure = true; }
-  function track(mesh, levels, roof = false) {
-    const a = mesh.instanceMatrix.array;
-    return { mesh, levels, base: Float32Array.from({ length: levels.length }, (_, i) => a[i * 16 + 13]), roof };
-  }
   function instanced(list, material, geometry = unit) {
     if (!list.length) return null;
     const m = new THREE.InstancedMesh(geometry, material, list.length);
@@ -556,52 +410,62 @@ export function buildBuilding(THREE, entry, mat) {
     m.raycast = () => {};
     return m;
   }
-  function addInstanced(parent, list, material, levels, { roof = false, zone = null, structure: st = false, geometry } = {}) {
+  function addInstanced(parent, list, material, { zone = null, structure: st = false, geometry } = {}) {
     if (!list.length) return null;
     const m = instanced(list, material, geometry);
     m.castShadow = m.receiveShadow = true;
     if (zone) { m.userData = { zone }; pickables.push(m); } else if (st) structure(m);
     parent.add(m);
-    explodables.push(track(m, levels, roof));
     return m;
-  }
-  function overlay(zone, list, levels, parent, roof = false) {
-    if (!list.length) return;
-    const m = instanced(list, mat('overlay', zone));
-    m.userData = { zone, overlay: true };
-    m.renderOrder = 2;
-    parent.add(m);
-    overlays[zone].push(m);
-    pickables.push(m);
-    explodables.push(track(m, levels, roof));
   }
 }
 
-// One upright tile per record item, coloured by its ACTUAL rating class. An abstract documentation layer
-// beside the building: paperwork has no location inside it.
-export function buildRecordTiles(THREE, rec, items, tileMat, plinthMat) {
+// Records: an abstract inspection sheet on two posts beside the building, one tile per record item
+// coloured by its ACTUAL rating class, with a thin leader line to the façade. Paperwork has no location
+// inside the building, so it is never drawn as a room.
+export function buildRecordSheet(THREE, rec, items, tileMat, boardMat, postMat, leaderMat) {
+  const own = [];
+  const box = new THREE.BoxGeometry(1, 1, 1);
+  own.push(box);
   const g = new THREE.Group();
+  const sheet = new THREE.Group();
+  sheet.position.set(rec.at[0], 0, -rec.at[1]);
+  sheet.rotation.y = rec.ang;
+  g.add(sheet);
   const n = Math.max(items.length, 1);
-  const step = 1.25, w = 1.0, h = 1.5;
-  const span = (n - 1) * step;
-  const ux = Math.cos(rec.ang), uy = Math.sin(rec.ang);
-  const tile = new THREE.BoxGeometry(w, h, 0.08);
-  items.forEach((it, i) => {
-    const d = -span / 2 + i * step;
-    const m = new THREE.Mesh(tile, tileMat(it));
-    m.position.set(rec.at[0] + ux * d, 0.35 + h / 2, -(rec.at[1] + uy * d));
-    m.rotation.y = rec.ang;
-    m.userData = { zone: 'records', item: it.col, tile: true };
+  const cols = Math.min(5, n), rows = Math.ceil(n / cols);
+  const ts = 0.6, gap = 0.14, pad = 0.28, head = 0.26;
+  const bw = cols * ts + (cols - 1) * gap + pad * 2, bh = rows * ts + (rows - 1) * gap + pad * 2 + head;
+  const y0 = 1.0;
+  const add = (material, x, y, z, sx, sy, sz, data) => {
+    const m = new THREE.Mesh(box, material);
+    m.position.set(x, y, z);
+    m.scale.set(sx, sy, sz);
+    m.userData = { zone: 'records', ...data };
     m.castShadow = true;
-    g.add(m);
+    sheet.add(m);
+    return m;
+  };
+  add(boardMat, 0, y0 + bh / 2, 0, bw, bh, 0.08);
+  for (const z of [-0.045, 0.045]) add(postMat, 0, y0 + bh - head / 2, z, bw, head, 0.01);
+  for (const x of [-bw / 2 + 0.3, bw / 2 - 0.3]) add(postMat, x, y0 / 2, 0, 0.08, y0, 0.08);
+  items.forEach((it, i) => {
+    const c = i % cols, r = Math.floor(i / cols);
+    const x = -bw / 2 + pad + c * (ts + gap) + ts / 2;
+    const y = y0 + bh - head - pad - r * (ts + gap) - ts / 2;
+    for (const z of [-0.06, 0.06]) add(tileMat(it), x, y, z, ts, ts, 0.04, { item: it.col, tile: true });
   });
-  const plinth = new THREE.Mesh(new THREE.BoxGeometry(span + 1.6, 0.3, 1.1), plinthMat);
-  plinth.position.set(rec.at[0], 0.15, -rec.at[1]);
-  plinth.rotation.y = rec.ang;
-  plinth.userData = { zone: 'records' };
-  plinth.receiveShadow = true;
-  g.add(plinth);
-  g.userData.dispose = () => { tile.dispose(); plinth.geometry.dispose(); };
+  // leader: up from the top of the sheet, then across to the façade
+  const topY = y0 + bh, ly = topY + 0.6;
+  const pts = [rec.at[0], topY, -rec.at[1], rec.at[0], ly, -rec.at[1], rec.at[0], ly, -rec.at[1], rec.wall[0], ly, -rec.wall[1]];
+  const lg = new THREE.BufferGeometry();
+  lg.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
+  own.push(lg);
+  const leader = new THREE.LineSegments(lg, leaderMat);
+  leader.raycast = () => {};
+  g.add(leader);
+  g.userData.dispose = () => own.forEach((x) => x.dispose());
+  g.userData.top = new THREE.Vector3(rec.at[0], topY, -rec.at[1]);
   return g;
 }
 
@@ -627,7 +491,7 @@ function boundsOf(masses) {
     for (let i = 0; i < r.length; i += 2) { x0 = Math.min(x0, r[i]); x1 = Math.max(x1, r[i]); y0 = Math.min(y0, r[i + 1]); y1 = Math.max(y1, r[i + 1]); }
     top = Math.max(top, m.top);
   }
-  return { min: { x: x0, y: -PARKING_DEPTH, z: -y1 }, max: { x: x1, y: top + 1, z: -y0 }, top };
+  return { min: { x: x0, y: 0, z: -y1 }, max: { x: x1, y: top + 1, z: -y0 }, top };
 }
 
 function outsideAlong(bodies, cx, cy, dx, dy, margin) {

@@ -86,7 +86,7 @@ function wire(ctx) {
   wired = true;
   $('fp-score').addEventListener('change', (e) => ctx.setFp({ score: +e.target.value, pairIndex: 0 }));
   $('fp-next').addEventListener('click', () => ctx.setFp((s) => ({ pairIndex: s.pairIndex + 1 })));
-  $('fp-reset').addEventListener('click', () => ctx.setFp({ a: null, b: null, pairIndex: 0 }, '#/fingerprint'));
+  $('fp-reset').addEventListener('click', () => ctx.setFp({ a: null, b: null, pairIndex: 0 }, '#/compare'));
   const pick = (input, slot) => {
     const go = () => {
       const r = ctx.findBuilding(input.value);
@@ -143,7 +143,7 @@ function drawBuilding(card, p, slot, ctx, pm) {
   const r = p.rec;
   head.innerHTML = `
     <p class="card-label">Building ${slot.toUpperCase()}</p>
-    <h2 class="fp-name"><a href="#/building/${r.rsn}">${esc(titleCase(r.address))}</a></h2>
+    <h2 class="fp-name"><a href="#/explore?b=${r.rsn}">${esc(titleCase(r.address))}</a></h2>
     <p class="fp-meta">Ward ${+r.ward} · ${esc(r.wardName)}${r.yearBuilt ? ` · built ${r.yearBuilt}` : ''} · ${r.units ?? '–'} units</p>
     <p class="fp-score"><span class="fp-score-num">${r.score}</span><span class="fp-score-of">/100</span>
       <span class="fp-score-sub">${p.low.length ? `<b>${p.low.length}</b> of ${p.rated} items rated 0 or 1` : `none of ${p.rated} items rated 0 or 1`}</span></p>`;

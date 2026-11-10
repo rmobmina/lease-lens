@@ -44,6 +44,9 @@ export function renderProblems(ctx, state) {
   const x = d3.scaleLinear().domain([0, Math.max(0.05, xMax)]).nice().range([x0, width - valueW]);
   const barH = Math.min(18, rowH - (narrow ? 26 : 12));
   const barColor = cssVar('--ink-2');
+  // The guided story can highlight one group of items (ctx.highlight: a Set of item columns).
+  const hl = ctx.highlight;
+  const fillFor = (d) => (!hl ? barColor : hl.has(d.col) ? cssVar('--accent') : cssVar('--axis'));
 
   // light gridlines + top axis in %
   svg.append('g').attr('class', 'grid').attr('transform', `translate(0,${H - 22})`)
@@ -60,7 +63,7 @@ export function renderProblems(ctx, state) {
     .text((d) => d.label)
     .append('tspan').attr('class', 'row-sub').text((d) => (d.record && group === 'all' ? '  · record/plan' : ''));
   // bar with a 4px rounded data end, square at the baseline
-  g.append('path').attr('fill', barColor)
+  g.append('path').attr('fill', fillFor).attr('class', (d) => (hl && hl.has(d.col) ? 'is-highlight' : null))
     .attr('d', (d) => {
       const w = Math.max(2, x(d.share) - x0), r = Math.min(4, w / 2), y0 = barY, h = barH;
       return `M${x0},${y0}h${w - r}a${r},${r} 0 0 1 ${r},${r}v${h - 2 * r}a${r},${r} 0 0 1 -${r},${r}h-${w - r}z`;

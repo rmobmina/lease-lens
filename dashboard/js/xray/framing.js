@@ -1,7 +1,7 @@
 // Building X-Ray: camera fitting. Pure (no Three.js), tested in Node.
 //
 // Given the points that make up the visible model (footprint corners at the lowest and highest visible
-// heights, exploded floors and site elements included), a fixed view direction, the vertical field of
+// heights and site elements included), a fixed view direction, the vertical field of
 // view, the canvas aspect ratio and a safe area, find the camera position that brings the model as close
 // as possible while every point projects inside the safe area. With the orientation fixed, each
 // screen-edge constraint is linear in the camera position, and the horizontal and vertical constraints

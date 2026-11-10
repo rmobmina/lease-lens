@@ -8,7 +8,15 @@ import { tip, esc, formatDate, signed, cssVar, anchorEvent } from '../ui.js';
 
 const SYSTEM = { pre: '2017 – 2023 system', cur: '2023 – now system' };
 
-export function renderTimeline(box, { points, shown, era, P, systemChange, onPick }) {
+// `where` names what a point opens, so the same chart reads correctly beside the map ('inMap': the
+// point opens the X-Ray) and inside the X-Ray ('inXray': it replaces the inspection shown above).
+const WORDS = {
+  inXray: { shown: 'Shown in the X-Ray above.', pick: 'Click to show this inspection in the X-Ray.', aShown: ' Shown in the X-Ray.', aPick: ' Press Enter to show it in the X-Ray.', group: 'Enter to show one in the X-Ray' },
+  inMap: { shown: 'The latest evaluation, shown on the map.', pick: 'Click to inspect this evaluation in the X-Ray.', aShown: ' Shown on the map.', aPick: ' Press Enter to inspect it in the X-Ray.', group: 'Enter to inspect one in the X-Ray' },
+};
+
+export function renderTimeline(box, { points, shown, era, P, systemChange, onPick, where = 'inXray' }) {
+  const W = WORDS[where];
   box.innerHTML = '';
   const summary = document.createElement('p');
   summary.className = 'xr-tl-summary';
@@ -40,7 +48,7 @@ export function renderTimeline(box, { points, shown, era, P, systemChange, onPic
   const y = d3.scaleLinear().domain([Math.min(50, Math.floor((minScore - 5) / 10) * 10), 100]).range([height - m.bottom, m.top]);
 
   const svg = d3.select(box).append('svg').attr('viewBox', `0 0 ${width} ${height}`).attr('width', width).attr('height', height)
-    .attr('class', 'xr-tl').attr('role', 'group').attr('aria-label', `Score history: ${points.length} evaluation${points.length === 1 ? '' : 's'}. Use Tab to move between points and Enter to show one in the X-Ray.`);
+    .attr('class', 'xr-tl').attr('role', 'group').attr('aria-label', `Score history: ${points.length} evaluation${points.length === 1 ? '' : 's'}. Use Tab to move between points and ${W.group}.`);
 
   // system change marker (only if the building's history spans it)
   const change = new Date(systemChange + 'T00:00:00').getTime();
@@ -68,7 +76,7 @@ export function renderTimeline(box, { points, shown, era, P, systemChange, onPic
     .attr('transform', (p) => `translate(${x(p.rec.time)},${y(p.rec.score)})`)
     .attr('tabindex', 0).attr('role', 'button')
     .attr('aria-pressed', (p) => String(p.rec === shown))
-    .attr('aria-label', (p) => `${formatDate(p.rec.date)}, score ${p.rec.score}, ${SYSTEM[p.era]}. ${deltaText(p)}${p === latestInEra ? ' Latest in this system.' : ''}${p.rec === shown ? ' Shown in the X-Ray.' : ' Press Enter to show it in the X-Ray.'}`);
+    .attr('aria-label', (p) => `${formatDate(p.rec.date)}, score ${p.rec.score}, ${SYSTEM[p.era]}. ${deltaText(p)}${p === latestInEra ? ' Latest in this system.' : ''}${p.rec === shown ? W.aShown : W.aPick}`);
   g.append('circle').attr('r', 16).attr('fill', 'transparent'); // generous hit target
   g.filter((p) => p.rec === shown).append('circle').attr('r', 10).attr('fill', 'none').attr('stroke', accent).attr('stroke-width', 2);
   g.append('circle').attr('r', (p) => (p === latestInEra ? 6.5 : 5))
@@ -80,7 +88,7 @@ export function renderTimeline(box, { points, shown, era, P, systemChange, onPic
     .text((p) => signed(p.delta));
 
   const html = (p) => `<div class="tt-title">${p.rec.score} / 100</div><div class="tt-sub">${formatDate(p.rec.date)} · ${SYSTEM[p.era]}</div>
-    <dl><dt>Change</dt><dd>${deltaText(p)}</dd></dl><p class="tt-hint">${p.rec === shown ? 'Shown in the X-Ray above.' : 'Click to show this inspection in the X-Ray.'}</p>`;
+    <dl><dt>Change</dt><dd>${deltaText(p)}</dd></dl><p class="tt-hint">${p.rec === shown ? W.shown : W.pick}</p>`;
   g.on('mouseenter', (ev, p) => tip.show(html(p), ev)).on('mousemove', (ev) => tip.move(ev)).on('mouseleave', () => tip.hide())
     .on('focus', function (ev, p) { tip.show(html(p), anchorEvent(this)); }).on('blur', () => tip.hide())
     .on('click', (ev, p) => { tip.hide(); onPick(p.rec.uid); })

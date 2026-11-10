@@ -1,34 +1,41 @@
 // Building X-Ray: Three.js scene. Lazy-loaded by sections/xray.js when the view opens.
 //
 // Three views share one model:
-//   exterior  the sourced massing with an illustrative façade pattern
-//   xray      an architectural cutaway: the roof lifts, the walls facing the camera slide out and fade
-//             (they follow the camera as it orbits), the illustrative interior and the category
-//             highlights fade in — a staged, reversible ~850 ms sequence
-//   exploded  the cutaway with storeys separated by a reader-controlled gap
+//   exterior  the sourced massing with its illustrative façade pattern, nothing cut
+//   cutaway   one corner of the building is opened (a box-shaped notch a few storeys high, cutaway.js) to
+//             show a short stack of illustrative rooms; the rest of the massing stays solid. While the
+//             reader orbits, the opening moves to the street corner facing them.
+//   focus     one inspection category: its room is outlined in civic blue, the others are dimmed (not
+//             hidden), and the camera frames it. The exterior closes the cutaway and outlines the
+//             façade; records frame the inspection sheet beside the building.
 //
-// Rendering is on demand: frames are drawn only for input, a transition, damping or a selection fade.
+// The cut is a set of six clipping planes intersected (clipIntersection), applied to the façade, roof
+// and silhouette materials only: slabs, rooms, the site and the context are never clipped. Opening and
+// closing sweep the cut in from the façade (~600 ms, instant with reduced motion).
+//
+// Rendering is on demand: frames are drawn only for input, a transition, damping or a highlight fade.
 
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
-import { buildBuilding, buildRecordTiles, PARKING_DEPTH } from './building.js';
+import { buildBuilding, buildRecordSheet } from './building.js';
 import { createMaterials } from './materials.js';
 import { createAnnotations } from './annotations.js';
 import { fitView, pushOutside } from './framing.js';
+import { facingCorner, SCENES } from './cutaway.js';
 
 const FOV = 30;
-const REVEAL_MS = 850;
-const EXPLODE_MS = 650;
+const OPEN_MS = 620, CLOSE_MS = 260;
 const ZONES = ['exterior', 'systems', 'shared', 'records', 'grounds'];
-const STRUCTURE = ['floor', 'slabEdge', 'concrete', 'partition', 'poche', 'cab', 'car', 'carGlass', 'paint'];
 const ROOF = ['roof', 'roofEdge', 'parapet', 'penthouse'];
 const FACADE = ['facade', 'facadeApprox', 'wallInside', 'glass', 'band', 'base', 'frame', 'door'];
-const BASE_EMPHASIS = { ok: 0.22, some: 0.42, high: 0.5, none: 0.36 };  // translucent by default; only the selection is strong
+// room materials (one variant per scene zone, so a room can be dimmed on its own)
+const ROOM = ['room', 'roomEnd', 'floorTint', 'trim', 'stair', 'metal', 'runner', 'unitDoor', 'light', 'concrete', 'cab', 'equipment',
+  'equipmentDark', 'panel', 'duct', 'pipe', 'bin', 'binAlt', 'paint', 'carBody', 'carGlass', 'tire'];
+const DIM = 0.42;                // how far unselected rooms fade toward the sky colour
 
 const clamp01 = (v) => Math.min(1, Math.max(0, v));
 const ease = (t) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
-const smooth = (a, b, v) => { const t = clamp01((v - a) / (b - a)); return t * t * (3 - 2 * t); };
 
 export function createXrayScene(container, { onSelect, onHover, onContextLost, palette, reducedMotion }) {
   const canvasWrap = document.createElement('div');
@@ -61,9 +68,9 @@ export function createXrayScene(container, { onSelect, onHover, onContextLost, p
   const camera = new THREE.PerspectiveCamera(FOV, 1, 0.5, 6000);
 
   // sky fill, a key sun (shadows) and a weak cool fill from the opposite side for modelling
-  const hemi = new THREE.HemisphereLight(0xffffff, 0xd8d0c2, 0.58);
+  const hemi = new THREE.HemisphereLight(0xffffff, 0xd8d0c2, 0.62);
   const sun = new THREE.DirectionalLight(0xfff3e2, 3.0);
-  const fill = new THREE.DirectionalLight(0xdfe8f5, 0.55);
+  const fill = new THREE.DirectionalLight(0xdfe8f5, 0.6);
   sun.castShadow = true;
   sun.shadow.mapSize.set(2048, 2048);
   sun.shadow.bias = -0.0006;
@@ -73,15 +80,17 @@ export function createXrayScene(container, { onSelect, onHover, onContextLost, p
 
   const kit = createMaterials(THREE);
   const mat = kit.mat;
-  // Section plane for the cutaway: vertical, facing the camera, swept from in front of the building to
-  // just past its centre. Everything architectural is clipped by it; context, site and records are not.
-  const section = new THREE.Plane(new THREE.Vector3(0, 0, -1), 1e6);
-  const CLIPPED = new Set([...FACADE, ...ROOF, ...STRUCTURE, 'overlay', 'outline', 'guide']);
+  // the notch: six planes, intersected. Region = a ∈ (aMin, aMax), b ∈ (bMin, bMax), y ∈ (y0, y1) in the
+  // active corner's frame. Planes start "closed" (an empty region).
+  const planes = Array.from({ length: 6 }, () => new THREE.Plane(new THREE.Vector3(0, 1, 0), -1e6));
+  const CLIPPED = new Set([...FACADE, ...ROOF, 'outline']);
   function clipMaterials() {
     for (const m of kit.all()) {
       if (!CLIPPED.has(m.userData.name) || m.clippingPlanes?.length) continue;
-      m.clippingPlanes = [section];
-      if (m.isMeshStandardMaterial && m.userData.name !== 'overlay') m.side = THREE.DoubleSide; // cut walls show their inner faces
+      m.clippingPlanes = planes;
+      m.clipIntersection = true;
+      m.clipShadows = true;
+      if (m.isMeshStandardMaterial) m.side = THREE.DoubleSide;   // cut walls show their inner faces
       m.needsUpdate = true;
     }
   }
@@ -105,9 +114,11 @@ export function createXrayScene(container, { onSelect, onHover, onContextLost, p
 
   const state = {
     mode: 'exterior', selected: null, hover: null, statuses: {}, labels: {}, palette, disposed: false,
-    building: null, tiles: null, home: null, atHome: false, sep: 0.55,
-    p: 0, e: 0,                                        // reveal and explode progress, 0..1
-    emph: Object.fromEntries(ZONES.map((z) => [z, 0])),
+    building: null, sheet: null, home: null, atHome: false,
+    corner: null, cut: null,         // active corner key and its built room stack
+    open: 0, pending: null,          // notch openness 0..1; corner waiting for the notch to close
+    dragging: false,
+    dim: Object.fromEntries(ZONES.map((z) => [z, 0])),
   };
 
   // ---- building --------------------------------------------------------------------------------------
@@ -123,43 +134,49 @@ export function createXrayScene(container, { onSelect, onHover, onContextLost, p
     camera.far = span * 4;
     camera.updateProjectionMatrix();
     b.R = R;
-    b.slide = THREE.MathUtils.clamp(R * 0.22, 3.5, 10);
-    b.lift = Math.max(3, b.fh * 1.3);
-    // widest floor gap: the exploded model grows by about its own height (or half its footprint for low,
-    // wide buildings), with each gap kept between 0.8 and 1.6 storeys so floors stay clearly related
-    const plan = Math.hypot(bb.max.x - bb.min.x, bb.max.z - bb.min.z);
-    b.maxGap = THREE.MathUtils.clamp(Math.max(b.H, plan * 0.5) / (b.topLevel + 1), b.fh * 0.8, b.fh * 1.6);
+    state.open = 0;
+    state.pending = null;
+    useCorner(b.plan.home);
     kit.applyPalette(state.palette, state.statuses);
     applyColours();
     clipMaterials();
-    state.home = null;          // a new building always gets its own fitted three-quarter view
+    state.home = null;          // a new building always gets its own fitted view
     frameHome(false, 'none');
     placeLights();
+    syncOpen(true);
     applyVisuals();
   }
   function clearBuilding() {
-    clearTiles();
+    clearSheet();
     if (!state.building) return;
     scene.remove(state.building.root);
     state.building.dispose();
     state.building = null;
+    state.cut = null;
   }
-  function clearTiles() {
-    if (!state.tiles) return;
-    state.tiles.parent?.remove(state.tiles);
-    state.tiles.userData.dispose();
-    state.tiles = null;
+  function clearSheet() {
+    if (!state.sheet) return;
+    state.sheet.parent?.remove(state.sheet);
+    state.sheet.userData.dispose();
+    state.sheet = null;
   }
   // items: [{ col, cls }] — the record items of the inspection shown and their rating classes
   function setRecords(items) {
     if (!state.building) return;
-    clearTiles();
+    clearSheet();
     const list = items.length ? items : [{ col: 'none', cls: 'none' }];
-    state.tiles = buildRecordTiles(THREE, state.building.records, list, (it) => mat('tile', it.cls), mat('plinth'));
-    state.building.site.add(state.tiles);
+    state.sheet = buildRecordSheet(THREE, state.building.records, list, (it) => mat('tile', it.cls), mat('board'), mat('trim', 'records'), mat('leader'));
+    state.building.site.add(state.sheet);
     kit.applyPalette(state.palette, state.statuses);
     applyVisuals();
     requestRender();
+  }
+  function useCorner(key) {
+    const b = state.building;
+    state.corner = key;
+    state.cut = b.cutawayAt(key);
+    for (const o of b.interior.children) if (o.userData.cornerKey) o.visible = o.userData.cornerKey === key && state.open > 0.001;
+    kit.applyPalette(state.palette, state.statuses);   // the first stack built creates the room materials
   }
 
   // ---- lights fitted to the building and the default view -----------------------------------------------
@@ -179,81 +196,77 @@ export function createXrayScene(container, { onSelect, onHover, onContextLost, p
   }
 
   // ---- camera ----------------------------------------------------------------------------------------------
-  function viewDistance(radius) {
-    const v = THREE.MathUtils.degToRad(camera.fov);
-    const h = 2 * Math.atan(Math.tan(v / 2) * camera.aspect);
-    return radius / Math.sin(Math.min(v, h) / 2);
-  }
-  function gapNow(e = state.e) { return state.building ? e * state.sep * state.building.maxGap : 0; }
-  // three-quarter view onto the long, street-facing façade; the cutaway looks in from a little higher
+  const tall = () => { const b = state.building, bb = b.bounds; return b.H > Math.hypot(bb.max.x - bb.min.x, bb.max.z - bb.min.z) * 1.4; };
+  // exterior: three-quarter view onto the long, street-facing façade; cutaway: looking into the open corner
   function homeAngles(mode) {
-    const b = state.building, bb = b.bounds;
-    const tall = b.H > Math.hypot(bb.max.x - bb.min.x, bb.max.z - bb.min.z) * 1.4;
-    const deg = mode === 'exterior' ? (tall ? 66 : 60) : mode === 'xray' ? (tall ? 64 : 58) : (tall ? 60 : 55);
-    return { theta: Math.atan2(b.view.dx, -b.view.dy), phi: THREE.MathUtils.degToRad(deg) };
-  }
-  // The visible model as points: footprint hull at the lowest and highest visible heights (lifted roof,
-  // rooftop plant and exploded floors included), the site elements beside it, and the records layer.
-  // Neighbouring buildings are not included. `live` uses the current transition state instead of the
-  // destination of the current mode.
-  function modelPoints(mode = state.mode, live = false) {
     const b = state.building;
-    const ext = live ? state.p < 0.5 : mode === 'exterior';
-    const gap = live ? gapNow() : mode === 'exploded' ? state.sep * b.maxGap : 0;
-    const lift = live ? ease(clamp01(state.p / 0.4)) * b.lift : ext ? 0 : b.lift;
-    const top = topAt(gap, lift);
-    const bot = ext ? 0 : -PARKING_DEPTH - 0.35;
+    if (mode === 'exterior' || !state.cut) return { theta: Math.atan2(b.view.dx, -b.view.dy), phi: THREE.MathUtils.degToRad(tall() ? 66 : 60) };
+    // low enough to see under the storey above the opening (the rooms are a few metres deep)
+    const o = state.cut.out;
+    return { theta: Math.atan2(o.x, o.z), phi: THREE.MathUtils.degToRad(76) };
+  }
+  // The whole model as points: footprint hull from the ground to the top (rooftop plant included), the
+  // site elements beside it, and the records sheet when it shows. Neighbouring buildings are not included.
+  function modelPoints(mode = state.mode) {
+    const b = state.building;
+    const top = topOf();
     const pts = [];
-    for (const [x, z] of b.hull) pts.push([x, bot, z], [x, top, z]);
+    for (const [x, z] of b.hull) pts.push([x, 0, z], [x, top, z]);
     for (const p of b.siteFrame) pts.push(p, [p[0], 0, p[2]]);
-    if (!ext && state.tiles) {
-      const bx = new THREE.Box3().setFromObject(state.tiles);
-      for (const x of [bx.min.x, bx.max.x]) for (const y of [bx.min.y, bx.max.y]) for (const z of [bx.min.z, bx.max.z]) pts.push([x, y, z]);
-    }
+    if (mode !== 'exterior' && state.sheet) boxPoints(new THREE.Box3().setFromObject(state.sheet), pts);
     return pts;
   }
-  function topAt(gap, lift) { const b = state.building; return Math.max(b.bounds.top + 0.9, b.plantTop) + (b.topLevel + 1) * gap + lift; }
-  // The camera never enters the building: whatever moved it (zoom, pan, double-click, focus, a tween), if it
-  // ends up inside the footprint prism (plus a margin) it backs out along its own line of sight.
+  function boxPoints(bx, pts = []) {
+    for (const x of [bx.min.x, bx.max.x]) for (const y of [bx.min.y, bx.max.y]) for (const z of [bx.min.z, bx.max.z]) pts.push([x, y, z]);
+    return pts;
+  }
+  function topOf() { const b = state.building; return Math.max(b.bounds.top + 0.9, b.plantTop); }
+  // The camera never enters the building: whatever moved it, if it ends up inside the footprint prism
+  // (plus a margin) it backs out along its own line of sight.
   function keepOutside() {
     const b = state.building;
     if (!b) return false;
-    const top = topAt(gapNow(), ease(clamp01(state.p / 0.4)) * b.lift);
     const t = controls.target, c = camera.position;
-    const out = pushOutside([t.x, t.y, t.z], [c.x, c.y, c.z], b.hull, top, Math.max(1.5, b.fh * 0.7));
+    const out = pushOutside([t.x, t.y, t.z], [c.x, c.y, c.z], b.hull, topOf(), Math.max(1.5, b.fh * 0.7));
     if (!out) return false;
     c.set(out[0], out[1], out[2]);
     return true;
   }
-  // canvas kept free around the model: ~10% padding, and room for the label columns at the sides
+  // canvas kept free around the model: ~10% padding, and room for the label column at the sides
   function safeInsets(mode = state.mode) {
     const w = canvasWrap.clientWidth || 600, h = canvasWrap.clientHeight || 420;
-    const labels = w < 560 ? 0 : mode === 'exterior' ? Math.min(150, w * 0.15) : Math.min(172, w * 0.21);
+    const labels = w < 560 || mode !== 'cutaway' ? 0 : Math.min(160, w * 0.17);
     const side = Math.max(w * 0.07, labels) / w;
     return { l: side, r: side, t: h < 480 ? 0.08 : 0.1, b: h < 480 ? 0.07 : 0.09 };
   }
   function currentSpherical() { return new THREE.Spherical().setFromVector3(camera.position.clone().sub(controls.target)); }
   // keep: 'none' = default angles for the mode, 'azimuth' = keep the reader's heading, 'both' = keep both
-  function frameHome(animate = true, keep = 'none', ms = 800) {
+  function frameHome(animate = true, keep = 'none', ms = 800, mode = state.mode === 'focus' ? 'cutaway' : state.mode) {
     if (!state.building) return;
-    const def = homeAngles(state.mode);
+    const def = homeAngles(mode);
     let theta = def.theta, phi = def.phi;
     if (state.home && keep !== 'none') {
       const cur = currentSpherical();
       theta = cur.theta;
       if (keep === 'both') phi = cur.phi;
     }
-    const pts = modelPoints();
+    fitTo(modelPoints(mode), theta, phi, animate ? ms : 0, true);
+    state.atHome = true;
+  }
+  function fitTo(pts, theta, phi, ms, isHome = false) {
     const fit = fitView(pts, { theta, phi, fov: camera.fov, aspect: camera.aspect, insets: safeInsets(), near: camera.near * 4 });
     const target = new THREE.Vector3(...fit.target);
-    const r = Math.max(...pts.map((p) => target.distanceTo(new THREE.Vector3(...p))));
-    state.home = { target, dist: fit.distance, theta, phi, r };
-    state.atHome = true;
-    controls.minDistance = Math.max(4, r * 0.15);
-    controls.maxDistance = Math.max(fit.distance * 2.6, controls.minDistance * 2);
-    scene.fog.near = fit.distance * 1.25;
-    scene.fog.far = fit.distance * 3.6;
-    moveTo(target, fit.distance, theta, phi, animate ? ms : 0);
+    if (isHome || !state.home) {
+      const r = Math.max(...modelPoints('cutaway').map((p) => target.distanceTo(new THREE.Vector3(...p))));
+      state.home = { target, dist: fit.distance, theta, phi, r };
+      controls.minDistance = Math.max(4, r * 0.12);
+      controls.maxDistance = Math.max(fit.distance * 2.6, controls.minDistance * 2);
+      scene.fog.near = fit.distance * 1.25;
+      scene.fog.far = fit.distance * 3.6;
+    }
+    // a framed view is always reachable by panning: the pan limit grows to include its target
+    state.panLimit = Math.max(state.home.r * 0.9, target.distanceTo(state.home.target) + 1);
+    moveTo(target, Math.max(fit.distance, controls.minDistance), theta, phi, ms);
   }
   function moveTo(target, dist, azimuth, polar, ms = 700) {
     const s = new THREE.Spherical().setFromVector3(camera.position.clone().sub(controls.target));
@@ -271,131 +284,195 @@ export function createXrayScene(container, { onSelect, onHover, onContextLost, p
     };
     tween('camera', 0, 1, (k) => apply(ease(k)), fresh || reducedMotion() ? 0 : ms);
   }
-  function zoneBox(zone) {
-    const b = state.building, box = new THREE.Box3();
-    if (zone === 'records') { if (state.tiles) box.setFromObject(state.tiles); return box; }
-    for (const m of b.overlays[zone] ?? []) {
-      if (!m.boundingBox) m.computeBoundingBox();
-      box.union(m.boundingBox.clone().applyMatrix4(m.matrixWorld));
-    }
-    return box;
-  }
+  // Focus: a room (with a margin of building around it), the records sheet, or the whole exterior.
   function focusZone(zone) {
     const b = state.building;
     if (!b) return;
-    if (!zone || zone === 'exterior') return frameHome(true, 'azimuth');
-    b.root.updateMatrixWorld(true);
-    const box = zoneBox(zone);
-    if (box.isEmpty()) return frameHome(true, 'azimuth');
-    const sph = box.getBoundingSphere(new THREE.Sphere());
-    // zones that repeat on every floor (corridors, shaft) focus on one representative floor, at the label
-    const anchor = anchorOf(zone);
-    const r = Math.min(sph.radius * 1.1, Math.max(16, b.R * 0.65));
-    const center = anchor && sph.radius > r ? anchor : sph.center;
-    const dist = THREE.MathUtils.clamp(viewDistance(Math.max(r, 8)), controls.minDistance * 1.1, controls.maxDistance);
-    const s = currentSpherical();
     state.atHome = false;
-    moveTo(center, dist, null, Math.min(Math.max(s.phi, THREE.MathUtils.degToRad(48)), THREE.MathUtils.degToRad(68)));
+    if (!zone) return frameHome(true, 'azimuth');
+    if (zone === 'exterior') {
+      const a = homeAngles('exterior'), cur = currentSpherical();
+      return fitTo(modelPoints('exterior'), state.home ? cur.theta : a.theta, a.phi, 800);
+    }
+    if (zone === 'records') {
+      if (!state.sheet) return frameHome(true, 'azimuth');
+      // the sheet itself with a few metres around it (its leader runs to the façade behind), seen face-on
+      // from the side away from the building (tiles are on both faces), turned a little toward the building
+      const box = new THREE.Box3().setFromObject(state.sheet);
+      const sc = box.getCenter(new THREE.Vector3());
+      box.expandByVector(new THREE.Vector3(2.2, 0, 2.2));
+      box.min.y = 0; box.max.y += 1.6;
+      const pts = boxPoints(box);
+      // outward: from the sheet's anchor on the façade toward the sheet (data frame y → world −z)
+      const r = b.records, n = new THREE.Vector3(r.at[0] - r.wall[0], 0, -(r.at[1] - r.wall[1])).normalize();
+      const face = Math.atan2(n.x, n.z), h = homeAngles('exterior').theta;
+      const turn = Math.sign(Math.sin(h - face)) * THREE.MathUtils.degToRad(22);
+      // the first heading whose fitted camera is clear of the building (a sheet in a concave bay of the
+      // footprint can sit inside its convex hull); otherwise the wider view with the lower storeys
+      const phi = THREE.MathUtils.degToRad(74), d = THREE.MathUtils.degToRad;
+      for (const th of [face + turn, face - turn, face + 2.2 * turn, face - 2.2 * turn, h]) {
+        const fit = fitView(pts, { theta: th, phi, fov: camera.fov, aspect: camera.aspect, insets: safeInsets(), near: camera.near * 4 });
+        const cam = new THREE.Vector3().setFromSphericalCoords(Math.max(fit.distance, controls.minDistance), phi, th).add(new THREE.Vector3(...fit.target));
+        if (!pushOutside(fit.target, cam.toArray(), b.hull, topOf(), Math.max(1.5, b.fh * 0.7))) return fitTo(pts, th, phi, 800);
+      }
+      const wide = boxPoints(new THREE.Box3().setFromObject(state.sheet));
+      const low = Math.min(b.H, Math.max(3 * b.fh, 8));
+      for (const [x, z] of b.hull) wide.push([x, 0, z], [x, low, z]);
+      return fitTo(wide, h, d(68), 800);
+    }
+    const slot = state.cut?.slots.find((s) => s.zone === zone);
+    if (!slot) return frameHome(true, 'azimuth');
+    // the room itself, a little of the storeys above and below, looking straight into its long open side
+    const bx = slot.box.clone();
+    bx.min.y = Math.max(-0.4, bx.min.y - b.fh * 0.55);
+    bx.max.y += b.fh * 0.55;
+    const c = state.cut.corner;
+    const ox = -(c.aHat[0] * 0.3 + c.bHat[0]), oz = c.aHat[1] * 0.3 + c.bHat[1];
+    fitTo(boxPoints(bx), Math.atan2(ox, oz), THREE.MathUtils.degToRad(78), 800);
   }
-  controls.addEventListener('start', () => { state.atHome = false; });
-  // keep panning near the building
+  controls.addEventListener('start', () => { state.atHome = false; state.dragging = true; });
+  controls.addEventListener('end', () => { state.dragging = false; });
+  // keep panning near the building; in the cutaway, the opening follows the reader around the building
   controls.addEventListener('change', () => {
     if (state.home) {
-      const c = state.home.target, lim = state.home.r * 0.9, t = controls.target;
+      // (with a tolerance: re-clamping a target already on the limit would nudge it by float noise, and
+      // OrbitControls would report that as a change on every frame, so rendering would never go idle)
+      const c = state.home.target, lim = state.panLimit ?? state.home.r * 0.9, t = controls.target;
       const off = t.clone().sub(c);
-      if (off.length() > lim) { off.setLength(lim); t.copy(c).add(off); }
+      if (off.length() > lim + 0.01) { off.setLength(lim); t.copy(c).add(off); }
     }
-    requestRender();
+    if (state.dragging && state.mode === 'cutaway' && state.building) {
+      const d = camera.position.clone().sub(controls.target);
+      const next = facingCorner(state.building.plan, d.x, -d.z, state.pending ?? state.corner);
+      if (next !== (state.pending ?? state.corner)) switchCorner(next);
+    }
+    if (viewMoved(false)) requestRender();
   });
+  // OrbitControls (0.160) re-clamps its target on every update, and for some coordinates that rounds back
+  // and forth by ~1e-16; it then reports a change forever and rendering would never go idle. Motion below
+  // a micrometre counts as none. `commit` = remember this view as the last one checked.
+  const seen = { p: new THREE.Vector3(NaN, NaN, NaN), t: new THREE.Vector3(), q: new THREE.Quaternion() };
+  function viewMoved(commit = true) {
+    const moved = Number.isNaN(seen.p.x) || seen.p.distanceToSquared(camera.position) > 1e-12
+      || seen.t.distanceToSquared(controls.target) > 1e-12 || 1 - Math.abs(seen.q.dot(camera.quaternion)) > 1e-12;
+    if (commit) { seen.p.copy(camera.position); seen.t.copy(controls.target); seen.q.copy(camera.quaternion); }
+    return moved;
+  }
 
-  // ---- appearance: one function maps (reveal, explode, selection) to every material and transform --------
-  const camDir = new THREE.Vector3();
+  // ---- the notch -----------------------------------------------------------------------------------
+  const openTarget = () => (state.mode === 'exterior' || (state.mode === 'focus' && state.selected === 'exterior') ? 0 : 1);
+  function syncOpen(instant = false) {
+    if (state.pending) return;            // a corner switch is under way; it opens to the target itself
+    const to = openTarget(), from = state.open;
+    if (Math.abs(to - from) < 1e-4) return;
+    tween('open', from, to, (x) => { state.open = x; }, instant || reducedMotion() ? 0 : (to > from ? OPEN_MS : CLOSE_MS) * Math.abs(to - from));
+  }
+  // close the notch, move it to another corner, open it again
+  function switchCorner(key) {
+    if (reducedMotion() || state.open < 0.01) { state.pending = null; useCorner(key); syncOpen(true); requestRender(); return; }
+    state.pending = key;
+    tween('open', state.open, 0, (x) => {
+      state.open = x;
+      if (x <= 0 && state.pending) {
+        const k = state.pending;
+        state.pending = null;
+        useCorner(k);
+        tweens.delete('open');
+        tween('open', 0, openTarget(), (y) => { state.open = y; }, OPEN_MS * 0.8);
+      }
+    }, CLOSE_MS);
+  }
+  const aW = new THREE.Vector3(), bW = new THREE.Vector3(), kW = new THREE.Vector3();
+  function placeNotch() {
+    const b = state.building, c = state.cut?.corner;
+    const k = ease(clamp01(state.open));
+    if (!c || k < 0.001) { planes[0].set(new THREE.Vector3(0, -1, 0), 1e6); planes[1].set(new THREE.Vector3(0, 1, 0), -1e6 + 1); for (let i = 2; i < 6; i++) planes[i].set(new THREE.Vector3(0, 1, 0), 1e6); return; }
+    const P = b.plan;
+    aW.set(c.aHat[0], 0, -c.aHat[1]); bW.set(c.bHat[0], 0, -c.bHat[1]); kW.set(c.K[0], 0, -c.K[1]);
+    const ak = aW.dot(kW), bk = bW.dot(kW);
+    const aMin = -c.ma - 2.4, bMin = -c.mb - 2.4;          // just outside the façade (balconies included)
+    const aMax = THREE.MathUtils.lerp(aMin - 0.1, P.W, k), bMax = THREE.MathUtils.lerp(bMin - 0.1, P.D, k);
+    planes[0].normal.copy(aW); planes[0].constant = -ak - aMax;          // a < aMax
+    planes[1].normal.copy(aW).negate(); planes[1].constant = ak + aMin;  // a > aMin
+    planes[2].normal.copy(bW); planes[2].constant = -bk - bMax;          // b < bMax
+    planes[3].normal.copy(bW).negate(); planes[3].constant = bk + bMin;  // b > bMin
+    planes[4].normal.set(0, -1, 0); planes[4].constant = P.yb + 0.005;   // y > floor of the stack
+    planes[5].normal.set(0, 1, 0); planes[5].constant = -P.yt;           // y < ceiling of the stack
+  }
+  // a point inside the open notch (its clipped geometry is invisible, so it can't be picked or occlude)
+  function inNotch(p) { return state.open > 0.01 && planes.every((pl) => pl.distanceToPoint(p) < 0); }
+
+  // ---- appearance -------------------------------------------------------------------------------------------
   const tmpColor = new THREE.Color();
   function applyColours() {
     const P = state.palette;
     scene.background.set(P.sky);
     scene.fog.color.set(P.sky);
     hemi.groundColor.set(P.ground);
-    for (const m of kit.all()) {
-      if (!m.emissive) continue;
-      m.emissive.set(P.accent);
-    }
+    for (const m of kit.all()) if (m.emissive && m.userData.name !== 'light') m.emissive.set(P.accent);
   }
   function applyVisuals() {
     const b = state.building;
     if (!b) return;
-    const P = state.p, E = state.e;
-    const seg = (a, z) => ease(clamp01((P - a) / (z - a)));
-    const roofK = seg(0, 0.4), cutK = seg(0.1, 0.6), inK = seg(0.3, 0.75), hiK = seg(0.55, 1);
-    b.setLevels(gapNow(), roofK * b.lift);
-
-    // section plane follows the camera and sweeps in with the reveal
-    camDir.copy(camera.position).sub(controls.target).setY(0).normalize();
-    const cx = b.cutAt.x, cz = b.cutAt.z;     // through the main wing's corridor
-    const offset = THREE.MathUtils.lerp(b.R * 1.3 + 4, 0.9, cutK);
-    section.normal.copy(camDir).negate();
-    section.constant = camDir.x * cx + camDir.z * cz + (cutK > 0.001 ? offset : 1e6);
-    // façade: the walls facing the camera slide outward and fade; the rest stay (and separate with their floors)
+    placeNotch();
+    const k = ease(clamp01(state.open));
+    const P = state.palette;
+    // façade: never faded; outlined and faintly tinted when the exterior is selected or hovered
     const extSel = state.selected === 'exterior', extHot = state.hover === 'exterior';
-    for (const bk of b.buckets) {
-      const front = smooth(0.3, 0.7, bk.normal.dot(camDir));   // walls turned toward the reader; the section cuts the rest
-      const cut = cutK * front;
-      bk.cut = cut;
-      bk.group.position.copy(bk.normal).multiplyScalar(cut * b.slide);
-      bk.group.visible = cut < 0.995;
-      for (const k of FACADE) fade(mat(k, bk.index), 1 - cut, extSel ? 0.1 : extHot ? 0.06 : 0);
-    }
+    for (const bk of b.buckets) for (const n of FACADE) emissive(mat(n, bk.index), extSel ? 0.1 : extHot ? 0.06 : 0);
+    for (const n of ROOF) emissive(mat(n), extSel ? 0.08 : 0);
     const ol = mat('outline');
-    ol.opacity = 0.75 * (1 - 0.6 * cutK) * (1 - E);
-    ol.color.set(extSel || extHot ? state.palette.accent : state.palette.outline);
-    for (const k of ROOF) fade(mat(k), 1, extSel ? 0.1 : 0);       // the roof lifts and is cut, never ghosted
-    b.guides.visible = E > 0.01;
-    mat('guide').opacity = 0.5 * E;
-    b.interior.visible = inK > 0.001;
-    for (const k of STRUCTURE) fade(mat(k), inK);
-    for (const z of ZONES) {
-      const o = mat('overlay', z);
-      o.opacity = hiK * state.emph[z];
-      o.visible = o.opacity > 0.004;
-      o.emissiveIntensity = z === state.selected ? 0.12 : 0;
+    ol.color.set(extSel || extHot ? P.accent : P.outline);
+    ol.opacity = extSel ? 0.95 : 0.75;
+    // rooms: the active corner's stack shows while the notch is open
+    for (const o of b.interior.children) if (o.userData.cornerKey) o.visible = o === state.cut?.group && k > 0.001;
+    for (const z of SCENES) {
+      const d = state.dim[z];
+      for (const n of ROOM) {
+        const m = kit.peek(n, z);
+        if (!m) continue;
+        m.color.copy(m.userData.baseColor).lerp(tmpColor.set(P.sky), d);
+        if (n !== 'light') m.emissiveIntensity = state.hover === z && state.selected !== z ? 0.06 : 0;
+      }
+      const edge = kit.peek('slotEdge', z);
+      if (edge) edge.opacity = k * (state.selected === z ? 0.95 : state.hover === z ? 0.55 : 0);
     }
-    if (state.tiles) {
-      state.tiles.visible = hiK > 0.001;
-      const dim = state.selected && state.selected !== 'records';
-      for (const m of kit.named('tile').concat(kit.named('plinth'))) fade(m, hiK * (dim ? 0.3 : 1));
+    mat('cutLine').opacity = 0.85 * k;
+    if (state.sheet) {
+      state.sheet.visible = state.mode !== 'exterior' || state.selected === 'records';
+      const d = state.dim.records;
+      for (const m of kit.named('tile').concat(kit.named('board'), [mat('trim', 'records')])) m.color.copy(m.userData.baseColor).lerp(tmpColor.set(P.sky), d);
+      mat('leader').opacity = 0.6 * (1 - d);
     }
-    mat('contact').opacity = 0.32 * (1 - cutK);
-    // neighbouring massing recedes toward the background, more so inside the building
-    const recede = 0.42 + 0.33 * cutK;
-    const P2 = state.palette;
-    mat('context').color.set(P2.mat.context).lerp(tmpColor.set(P2.sky), recede);
-    mat('contextEdge').color.set(P2.mat.contextEdge).lerp(tmpColor.set(P2.sky), recede * 0.8);
-    // the façade casts no shadow while it is cut away, so the interior is lit
-    for (const bk of b.buckets) bk.group.traverse((o) => { if (o.isMesh) o.castShadow = bk.cut < 0.5; });
+    // neighbouring massing recedes toward the background, more so in focus
+    const recede = state.mode === 'focus' ? 0.6 : 0.45;
+    mat('context').color.set(P.mat.context).lerp(tmpColor.set(P.sky), recede);
+    mat('contextEdge').color.set(P.mat.contextEdge).lerp(tmpColor.set(P.sky), recede * 0.8);
   }
-  function fade(m, o, emissive = 0) {
-    const op = clamp01(o);
-    const transparent = op < 0.999 || m.userData.base < 1;
-    if (m.transparent !== transparent) { m.transparent = transparent; m.needsUpdate = true; }
-    m.opacity = op * (m.userData.base ?? 1);
-    m.depthWrite = op > 0.6;
-    m.visible = op > 0.004;
-    if (m.emissive) m.emissiveIntensity = emissive;
-  }
-  function emphasisTarget(z) {
-    const s = state.statuses[z] ?? 'none';
-    if (state.selected) return z === state.selected ? 0.7 : 0.08;
-    return Math.min(0.95, BASE_EMPHASIS[s] + (state.hover === z ? 0.2 : 0));
-  }
+  function emissive(m, v) { if (m.emissive) m.emissiveIntensity = v; }
+  const dimTarget = (z) => (state.selected && state.selected !== z && state.mode !== 'exterior' ? (z === 'records' ? 0.5 : DIM) : 0);
 
   // context buildings between the camera and the selected building fade out
-  const ray = new THREE.Ray(), hitPt = new THREE.Vector3(), focusPts = [new THREE.Vector3(), new THREE.Vector3()];
+  // (sight lines to the building's middle and top, and in the cutaway to the room stack's bottom, middle
+  // and the focused room, so even a low neighbour in front of the opening fades)
+  const ray = new THREE.Ray(), hitPt = new THREE.Vector3(), focusPts = [];
   function fadeContext() {
     const b = state.building;
     if (!b) return;
     const bb = b.bounds;
-    focusPts[0].set((bb.min.x + bb.max.x) / 2, b.H * 0.4, (bb.min.z + bb.max.z) / 2);
-    focusPts[1].set(focusPts[0].x, b.H, focusPts[0].z);
+    focusPts.length = 0;
+    const mid = new THREE.Vector3((bb.min.x + bb.max.x) / 2, b.H * 0.4, (bb.min.z + bb.max.z) / 2);
+    focusPts.push(mid, mid.clone().setY(b.H));
+    if (state.mode !== 'exterior' && state.cut && state.open > 0.01) {
+      const st = state.cut.stack, c = st.getCenter(new THREE.Vector3());
+      focusPts.push(c, c.clone().setY(st.min.y + 0.8));
+      const slot = state.cut.slots.find((x) => x.zone === state.selected);
+      if (slot) focusPts.push(slot.box.getCenter(new THREE.Vector3()), slot.anchor);
+    }
+    if (state.selected === 'records' && state.sheet?.visible) {
+      const sb = new THREE.Box3().setFromObject(state.sheet);
+      focusPts.push(sb.getCenter(new THREE.Vector3()), sb.getCenter(new THREE.Vector3()).setY(sb.min.y + 0.4));
+    }
     for (const m of b.context) {
       let hidden = false;
       for (const p of focusPts) {
@@ -426,18 +503,19 @@ export function createXrayScene(container, { onSelect, onHover, onContextLost, p
     last = now;
     for (const [key, t] of [...tweens]) {
       const k = Math.min(1, (now - t.start) / t.ms);
+      if (tweens.get(key) !== t) continue;
       t.apply(t.from + (t.to - t.from) * k);
-      if (k >= 1) tweens.delete(key);
+      if (k >= 1 && tweens.get(key) === t) tweens.delete(key);
     }
     let settling = false;
     const rm = reducedMotion();
     for (const z of ZONES) {
-      const target = emphasisTarget(z), cur = state.emph[z];
-      if (Math.abs(target - cur) > 0.003) { state.emph[z] = rm ? target : cur + (target - cur) * Math.min(1, dt / 110); settling = !rm; } else state.emph[z] = target;
+      const target = dimTarget(z), cur = state.dim[z];
+      if (Math.abs(target - cur) > 0.003) { state.dim[z] = rm ? target : cur + (target - cur) * Math.min(1, dt / 120); settling = !rm; } else state.dim[z] = target;
     }
-    const damping = tweens.has('camera') ? false : controls.update();
+    const damping = tweens.has('camera') ? false : controls.update() && viewMoved();
     applyVisuals();
-    keepOutside();         // after the roof lift / floor separation of this frame, before drawing
+    keepOutside();
     fadeContext();
     renderer.render(scene, camera);
     placeLabels();
@@ -448,6 +526,11 @@ export function createXrayScene(container, { onSelect, onHover, onContextLost, p
         const e = projectedExtent();
         canvasWrap.dataset.fit = [e.x0, e.y0, e.x1, e.y1].map((n) => n.toFixed(3)).join(',');
         canvasWrap.dataset.cam = `${camera.position.x.toFixed(2)},${camera.position.y.toFixed(2)},${camera.position.z.toFixed(2)}`;
+        const t = controls.target;
+        canvasWrap.dataset.target = `${t.x.toFixed(2)},${t.y.toFixed(2)},${t.z.toFixed(2)}`;
+        canvasWrap.dataset.mode = state.mode;
+        canvasWrap.dataset.corner = state.corner ?? '';
+        canvasWrap.dataset.open = state.open.toFixed(2);
       }
     }
   }
@@ -455,23 +538,23 @@ export function createXrayScene(container, { onSelect, onHover, onContextLost, p
   // ---- annotations -------------------------------------------------------------------------------------------
   const v = new THREE.Vector3();
   const raycaster = new THREE.Raycaster();
+  const camDir = new THREE.Vector3();
   function anchorOf(zone) {
     const b = state.building;
     if (zone === 'exterior') {
-      // on the most camera-facing wall that is still standing
+      // on the most camera-facing wall
+      camDir.copy(camera.position).sub(controls.target).setY(0).normalize();
       let best = null, score = -Infinity;
       for (const bk of b.buckets) {
-        if ((bk.cut ?? 0) > 0.5 || bk.length < 2) continue;
+        if (bk.length < 2) continue;
         const s = bk.normal.dot(camDir);
         if (s > score) { score = s; best = bk; }
       }
-      return best ? best.anchor.clone().add(best.group.position) : null;
+      return best ? best.anchor.clone() : null;
     }
-    const a = b.anchors[zone];
-    if (!a) return null;
-    const p = a.pos.clone();
-    p.y += b.offset(a.level, gapNow()) + (a.roof ? ease(clamp01(state.p / 0.4)) * b.lift : 0);
-    return p;
+    if (zone === 'records') return state.sheet?.visible ? state.sheet.userData.top.clone().setY(state.sheet.userData.top.y + 0.2) : null;
+    if (!state.cut || state.open < 0.6) return null;
+    return state.cut.slots.find((s) => s.zone === zone)?.anchor.clone() ?? null;
   }
   function occluded(p) {
     const b = state.building;
@@ -479,47 +562,43 @@ export function createXrayScene(container, { onSelect, onHover, onContextLost, p
     const d = dir.length();
     raycaster.set(camera.position, dir.normalize());
     raycaster.far = d - 0.6;
-    const walls = b.buckets.filter((bk) => (bk.cut ?? 0) < 0.5).map((bk) => bk.group);
-    return raycaster.intersectObjects(walls, true).length > 0;
+    return raycaster.intersectObjects([b.facadeRoot, b.roofRoot], true).some((h) => !inNotch(h.point));
   }
   function placeLabels() {
     const b = state.building;
     const w = canvasWrap.clientWidth, h = canvasWrap.clientHeight;
     if (!b) { notes.update([], { w, h }); return; }
-    const inside = state.p > 0.5;
-    const narrow = w < 560, short = h < 380;
-    // the model's projected extent, so label columns sit beside it
+    const narrow = w < 560 || h < 380;
     const ext = projectedExtent();
-    const x0 = ext.x0 * w, x1 = ext.x1 * w;
     const items = [];
     for (const zone of ZONES) {
       const l = state.labels[zone];
       if (!l) continue;
       const hot = zone === state.hover, sel = zone === state.selected;
-      // one strong label at a time: with a selection only it (and the hovered one) shows; without one the
-      // categories with poor ratings get full labels and the rest shrink to their title
-      let show = state.selected ? sel || hot : inside ? true : zone === 'exterior';
-      if (narrow || short) show = show && (sel || hot || (!state.selected && zone === 'exterior' && !inside));
+      // one strong label at a time. Cutaway with nothing selected: a short title for each room. Focus: only
+      // the selected category (and whatever is hovered). Exterior: only on hover.
+      let show = sel || hot;
+      if (!state.selected && state.mode === 'cutaway' && SCENES.includes(zone)) show = !narrow || hot;
       const p = show ? anchorOf(zone) : null;
       let x = 0, y = 0, visible = false;
       if (p) {
         v.copy(p).project(camera);
         x = (v.x * 0.5 + 0.5) * w; y = (-v.y * 0.5 + 0.5) * h;
         visible = v.z < 1 && x > 4 && x < w - 4 && y > 4 && y < h - 4;
-        if (visible && zone !== 'exterior' && inside && occluded(p)) visible = false;
+        if (visible && zone !== 'exterior' && occluded(p)) visible = false;
       }
       items.push({
         key: zone, x, y, visible, title: l.title, sub: l.sub, status: l.status, hot, selected: sel,
-        dim: !!state.selected && !sel, compact: (!!state.selected && !sel) || (!state.selected && inside && (l.status === 'ok' || l.status === 'none')),
+        dim: !!state.selected && !sel, compact: !sel && !hot,
       });
     }
-    notes.update(items, { w, h, x0, x1 });
+    notes.update(items, { w, h, x0: ext.x0 * w, x1: ext.x1 * w });
   }
   function setLabels(labels) { state.labels = labels; requestRender(); }
   // projected extent of the visible model, 0..1 of the canvas (y down)
   function projectedExtent() {
     let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
-    for (const p of modelPoints(state.mode, true)) {
+    for (const p of modelPoints(state.mode)) {
       v.set(p[0], p[1], p[2]).project(camera);
       const sx = v.x * 0.5 + 0.5, sy = -v.y * 0.5 + 0.5;
       x0 = Math.min(x0, sx); x1 = Math.max(x1, sx); y0 = Math.min(y0, sy); y1 = Math.max(y1, sy);
@@ -530,7 +609,6 @@ export function createXrayScene(container, { onSelect, onHover, onContextLost, p
   // ---- picking -----------------------------------------------------------------------------------------------
   const ndc = new THREE.Vector2();
   function shown(o) { for (let n = o; n; n = n.parent) if (!n.visible) return false; return true; }
-  function opaque(o) { const m = Array.isArray(o.material) ? o.material[0] : o.material; return m.opacity > (o.userData.overlay ? 0.01 : 0.45); }
   function hitAt(ev) {
     const b = state.building;
     if (!b) return null;
@@ -538,12 +616,12 @@ export function createXrayScene(container, { onSelect, onHover, onContextLost, p
     ndc.set(((ev.clientX - r.left) / r.width) * 2 - 1, -((ev.clientY - r.top) / r.height) * 2 + 1);
     raycaster.setFromCamera(ndc, camera);
     raycaster.far = Infinity;
-    const targets = b.pickables.concat(state.tiles ? [state.tiles] : []);
-    const hits = raycaster.intersectObjects(targets, true).filter((h) => h.object.userData.zone && shown(h.object) && opaque(h.object));
-    if (!hits.length) return null;
-    // in the cutaway, anything inside wins over the walls behind it
-    return state.p > 0.5 ? hits.find((h) => h.object.userData.zone !== 'exterior') ?? hits[0] : hits[0];
+    const targets = b.pickables.concat(state.cut && state.open > 0.5 ? state.cut.pickables : [], state.sheet?.visible ? [state.sheet] : []);
+    const hits = raycaster.intersectObjects(targets, true).filter((h) => h.object.userData.zone && shown(h.object)
+      && !(CLIPPED.has(materialName(h.object)) && inNotch(h.point)));
+    return hits[0] ?? null;
   }
+  function materialName(o) { const m = Array.isArray(o.material) ? o.material[0] : o.material; return m.userData.name; }
   function setHover(zone, ev) {
     if (zone !== state.hover) {
       state.hover = zone;
@@ -576,6 +654,7 @@ export function createXrayScene(container, { onSelect, onHover, onContextLost, p
     clearTimeout(clickTimer);
     const h = hitAt(ev);
     if (!h) return;
+    state.atHome = false;
     moveTo(h.point, Math.max(controls.minDistance, camera.position.distanceTo(controls.target) * 0.6), null, null);
   };
   const onMove = (ev) => {
@@ -607,35 +686,23 @@ export function createXrayScene(container, { onSelect, onHover, onContextLost, p
   resize();
   const ro = new ResizeObserver(() => {
     if (!resize()) return;
-    // stay centred: re-fit if the reader hasn't moved away from the default framing
-    if (state.building && state.home && state.atHome) frameHome(false, 'both');
+    // stay framed: re-fit if the reader hasn't moved the camera themselves
+    if (state.building && state.home) {
+      if (state.atHome) frameHome(false, 'both');
+      else if (state.mode === 'focus' && !state.dragging) focusZone(state.selected);
+    }
     requestRender();
   });
   ro.observe(canvasWrap);
 
-  // ---- mode transitions ----------------------------------------------------------------------------------------
+  // ---- modes -------------------------------------------------------------------------------------------------
   function setMode(mode) {
+    if (!['exterior', 'cutaway', 'focus'].includes(mode)) mode = 'cutaway';
     if (mode === state.mode) return;
-    const prev = state.mode;
     state.mode = mode;
-    const rm = reducedMotion();
-    const pTo = mode === 'exterior' ? 0 : 1, eTo = mode === 'exploded' ? 1 : 0;
-    if (state.p !== pTo) {
-      const from = state.p;
-      tween('reveal', from, pTo, (x) => { state.p = x; }, rm ? 0 : REVEAL_MS * Math.abs(pTo - from));
-    }
-    if (state.e !== eTo) {
-      const from = state.e;
-      tween('explode', from, eTo, (x) => { state.e = x; }, rm ? 0 : EXPLODE_MS * Math.abs(eTo - from) + (prev === 'exterior' ? 250 : 0));
-    }
-    // frame the destination: bounds after the roof lift and floor separation, computed before animating
-    if (state.selected && state.selected !== 'exterior' && mode !== 'exterior') focusZoneLater(); else frameHome(true, state.atHome ? 'none' : 'azimuth');
-  }
-  // focus after the levels have moved, so the camera aims at where the zone ends up
-  function focusZoneLater() {
-    const zone = state.selected;
-    const ms = reducedMotion() ? 0 : Math.max(REVEAL_MS, EXPLODE_MS) * 0.6;
-    setTimeout(() => { if (!state.disposed && state.selected === zone) focusZone(zone); }, ms);
+    syncOpen();
+    if (mode === 'focus') focusZone(state.selected);
+    else frameHome(true, state.atHome ? 'none' : 'azimuth');
   }
 
   return {
@@ -646,24 +713,22 @@ export function createXrayScene(container, { onSelect, onHover, onContextLost, p
     setSelected(zone) {
       if (zone === state.selected) return;
       state.selected = zone;
+      syncOpen();
       requestRender();
-      if (state.mode !== 'exterior' || zone === 'exterior' || !zone) focusZone(zone);
+      if (state.mode === 'focus' && zone) focusZone(zone);
     },
     setMode,
-    // the camera follows the separation so the whole exploded model stays in frame, keeping its angle
-    setSeparation(v, { reframe = false } = {}) {
-      state.sep = clamp01(v);
-      requestRender();
-      if (state.mode !== 'exploded' || !state.building) return;
-      if (state.selected) { if (reframe) focusZone(state.selected); return; }
-      if (state.atHome || reframe) frameHome(true, 'both', 320);
-    },
     focus(zone) { focusZone(zone ?? state.selected); },
-    reset() { frameHome(true, 'none'); },
+    reset() { state.mode === 'focus' ? focusZone(state.selected) : frameHome(true, 'none'); },
     rotate(deg) {
       const s = currentSpherical();
       state.atHome = false;
       moveTo(controls.target.clone(), s.radius, s.theta + THREE.MathUtils.degToRad(deg), s.phi, 450);
+      if (state.mode === 'cutaway' && state.building) {
+        const th = s.theta + THREE.MathUtils.degToRad(deg);
+        const next = facingCorner(state.building.plan, Math.sin(th), -Math.cos(th), state.corner);
+        if (next !== state.corner) switchCorner(next);
+      }
     },
     setPalette(p) { state.palette = p; kit.applyPalette(p, state.statuses); applyColours(); requestRender(); },
     hover: (z) => setHover(z),

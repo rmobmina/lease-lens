@@ -14,7 +14,10 @@ import { renderCompare } from './xray-compare.js';
 const $ = (id) => document.getElementById(id);
 const reducedMotion = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
 const SHARDS = 64;                // must match scripts/build_massing.py
-const LIST_ORDER = ['exterior', 'systems', 'shared', 'records', 'grounds']; // top of the building to the bottom
+const LIST_ORDER = ['exterior', 'shared', 'systems', 'grounds', 'records']; // the façade, the rooms top to bottom, the records sheet
+const MODES = ['exterior', 'cutaway', 'focus'];
+// Focus with nothing chosen opens the category that needs the most attention (ties: list order)
+const STATUS_RANK = { high: 3, some: 2, ok: 1, none: 0 };
 
 let scene3d = null;               // { api, loading, failed }
 let wired = false;
@@ -23,7 +26,8 @@ const cityRates = new Map();      // era -> Map(col -> citywide share rated poor
 const shardCache = new Map();     // shard number -> Promise<{rsn: entry}>
 const massing = new Map();        // rsn -> entry (or a fallback entry when loading failed)
 
-function loadMassing(rsn) {
+// Shared with the map, which draws the same footprint for the selected building.
+export function loadMassing(rsn) {
   const k = Number(rsn) % SHARDS;
   if (!shardCache.has(k)) {
     shardCache.set(k, fetch(`data/massing/${k}.json`).then((r) => { if (!r.ok) throw new Error(`massing shard ${k}: ${r.status}`); return r.json(); })
@@ -54,10 +58,13 @@ export function renderXray(ctx, M, xs) {
     return;
   }
   empty.hidden = true; main.hidden = false;
-  if (location.hash !== `#/xray/${rsn}`) history.replaceState(null, '', `#/xray/${rsn}`);
+  if (location.hash.startsWith("#/xray") && location.hash !== `#/xray/${rsn}`) history.replaceState(null, '', `#/xray/${rsn}`);
 
-  // A new building resets the inspection being shown and the comparison choice.
+  // A new building resets the inspection being shown and the comparison choice. Older states (X-Ray /
+  // Exploded views) open as the cutaway.
   if (xs.rsn !== rsn) Object.assign(xs, { rsn, evalUid: null, matchRsn: null });
+  if (!MODES.includes(xs.mode)) xs.mode = xs.mode ? 'cutaway' : 'exterior';
+  if (xs.mode === 'focus' && !xs.zone) xs.mode = 'cutaway';
   const latestInPeriod = pm.latestByRsn.get(rsn);
   const rec = all.find((r) => r.uid === xs.evalUid) ?? latestInPeriod ?? all.at(-1);
   const isDefault = rec === (latestInPeriod ?? all.at(-1));
@@ -68,6 +75,7 @@ export function renderXray(ctx, M, xs) {
   renderHead(rec, pm, isDefault, latestInPeriod, all);
   renderZoneList(profile, xs);
   renderPanel(profile, xs, M, prevSame);
+  renderFinding(profile, xs);
   renderLegend();
   const entry = massing.get(rsn);
   if (!entry) {
@@ -104,13 +112,12 @@ function renderHead(rec, pm, isDefault, latestInPeriod, all) {
     `Ward ${+rec.ward} · ${esc(rec.wardName)}`,
     rec.yearBuilt ? `Built ${rec.yearBuilt}` : 'Year built not recorded',
     `${rec.storeys ?? '–'} storeys · ${rec.units ?? '–'} units`,
-    `<a href="#/building/${rec.rsn}">Building report</a>`,
   ].map((s) => `<span>${s}</span>`).join('');
   const system = rec.era === 'cur' ? '2023 – now scoring system' : '2017 – 2023 scoring system';
   const notes = [];
   if (!isDefault) notes.push(`<button type="button" class="btn btn-quiet btn-sm" id="xr-back-latest">Back to the ${latestInPeriod ? 'latest' : 'most recent'} inspection</button>`);
   else if (!latestInPeriod) notes.push(`<span class="muted">No evaluation in the ${esc(pm.P.long)}, so the most recent one from the other system is shown.</span>`);
-  if (rec.era !== pm.era && latestInPeriod) notes.push(`<span class="muted">This inspection uses a different scoring system from the one chosen in the sidebar.</span>`);
+  if (rec.era !== pm.era && latestInPeriod) notes.push(`<span class="muted">This inspection uses a different scoring system from the one chosen in Layers.</span>`);
   $('xr-showing').innerHTML = `<span class="xr-showing-main">Showing the inspection of <b>${formatDate(rec.date)}</b> · score <b>${rec.score}</b>/100 · ${system}${all.length > 1 ? ` · ${rec === all.at(-1) ? 'most recent' : `${all.indexOf(rec) + 1} of ${all.length} inspections`}` : ''}</span>${notes.join(' ')}`;
   $('xr-back-latest')?.addEventListener('click', () => { lastCtx.xs.evalUid = null; rerender(); });
 }
@@ -145,15 +152,35 @@ function renderZoneList(profile, xs) {
   });
 }
 
-// One entry point for the list, the labels and the model. Interior categories can't be seen from
-// outside, so choosing one opens the cutaway; choosing the exterior returns to the outside view.
+// One entry point for the list, the labels and the model: choosing a category opens its Focus view;
+// clearing it returns to the whole building with the cutaway open.
 function selectZone(zone) {
   if (!lastCtx) return;
   const xs = lastCtx.xs;
   xs.zone = zone;
-  if (zone && zone !== 'exterior' && xs.mode === 'exterior') xs.mode = 'xray';
-  if (zone === 'exterior' && xs.mode !== 'exterior') xs.mode = 'exterior';
+  if (zone) xs.mode = 'focus';
+  else if (xs.mode === 'focus') xs.mode = 'cutaway';
   rerender();
+}
+
+// The one-line key finding under the toolbar: the category in focus, or the inspection as a whole.
+function renderFinding(profile, xs) {
+  const z = xs.zone && profile.zones.find((d) => d.key === xs.zone);
+  const label = (k) => zoneByKey.get(k).label;
+  let text;
+  if (z) {
+    text = z.status === 'none' ? `<b>${esc(label(z.key))}:</b> not evaluated in this inspection.`
+      : `<b>${esc(label(z.key))}:</b> ${z.poor ? `${z.poor} of ${z.applicable} applicable items rated poorly (${pct(z.share)})` : `none of ${z.applicable} applicable items rated poorly`}.`;
+  } else {
+    const worst = [...profile.zones].filter((d) => d.poor).sort((a, b) => b.poor - a.poor || (b.share ?? 0) - (a.share ?? 0))[0];
+    text = !profile.poor ? `None of ${profile.applicable} rated items scored poorly in this inspection.`
+      : `${profile.poor} of ${profile.applicable} rated items scored poorly${worst ? `, ${worst.poor === profile.poor ? 'all' : 'most'} in <b>${esc(label(worst.key).toLowerCase())}</b> (${worst.poor} of ${worst.applicable})` : ''}.`;
+  }
+  $('xr-finding').innerHTML = text;
+}
+
+function defaultFocus(profile) {
+  return [...profile.zones].sort((a, b) => STATUS_RANK[b.status] - STATUS_RANK[a.status] || (b.share ?? 0) - (a.share ?? 0) || LIST_ORDER.indexOf(a.key) - LIST_ORDER.indexOf(b.key))[0]?.key ?? 'shared';
 }
 
 // ---- detail panel ---------------------------------------------------------------------------
@@ -180,7 +207,7 @@ function renderPanel(profile, xs, M, prevSame) {
   if (!z) {
     box.innerHTML = `<p class="card-label">Inspection of ${formatDate(rec.date)}</p>
       <h2 class="xr-panel-title">${profile.poor ? `${profile.poor} of ${profile.applicable} items rated poorly` : `None of ${profile.applicable} items rated poorly`}</h2>
-      <p class="card-text">Select a category in the list, a label, or a highlighted zone on the model to see every item inspectors rated in it. Interior categories open the X-Ray cutaway.</p>
+      <p class="card-text">Choose a category in the list, a label, or a room on the model to see every item inspectors rated in it. The model opens that category's Focus view.</p>
       <p class="xr-scale">${scaleText}</p>
       ${profile.unmapped.length ? `<p class="xr-warn">${profile.unmapped.length} item(s) in this file have no category yet: ${profile.unmapped.map(esc).join(', ')}.</p>` : ''}`;
     return;
@@ -207,7 +234,7 @@ function renderPanel(profile, xs, M, prevSame) {
   };
   box.innerHTML = `<p class="card-label">Inspection category</p>
     <h2 class="xr-panel-title"><span class="xr-swatch s-${z.status}" aria-hidden="true"></span>${esc(meta.label)}</h2>
-    <p class="xr-panel-note">${esc(meta.note)} <span class="muted">On the model: ${esc(meta.place.toLowerCase())}.</span></p>
+    <p class="xr-panel-note">${esc(meta.note)} <span class="muted">On the model: ${esc(PLACE[z.key])}.</span></p>
     <dl class="xr-stats">
       <div><dt>Inspected</dt><dd>${formatDate(rec.date)}</dd></div>
       <div><dt>Applicable items</dt><dd>${z.applicable}</dd></div>
@@ -222,11 +249,19 @@ function renderPanel(profile, xs, M, prevSame) {
     <p class="xr-scale">${scaleText}</p>`;
 }
 
+// where each category appears in the cutaway model (illustrative spaces, not real locations)
+const PLACE = {
+  exterior: 'the whole façade and roof, outlined in blue',
+  shared: 'an illustrative corridor with unit doors and a stair',
+  systems: 'an illustrative services room: elevator shaft, air handling, electrical panels and pipes',
+  grounds: 'illustrative ground-level parking and a waste room',
+  records: 'an abstract inspection sheet beside the building, one tile per record item; paperwork has no place in the building',
+};
+
 // ---- legend -----------------------------------------------------------------------------------
 function renderLegend() {
-  $('xr-legend').innerHTML = ['ok', 'some', 'high', 'none'].map((k) =>
-    `<span class="key"><span class="xr-swatch s-${k}" aria-hidden="true"></span>${STATUS[k].label}</span>`).join('') +
-    `<span class="xr-legend-note">“Concentrated” = ${CONCENTRATED.minPoor}+ items and ${CONCENTRATED.minShare * 100}%+ of the category's applicable items rated poorly.</span>`;
+  $('xr-legend').innerHTML = `<span class="xr-legend-lead">Room floor tint:</span>` + ['ok', 'some', 'high', 'none'].map((k) =>
+    `<span class="key"><span class="xr-swatch s-${k}" aria-hidden="true"></span>${STATUS[k].label}</span>`).join('');
 }
 
 // ---- top bar + provenance ------------------------------------------------------------------------
@@ -259,7 +294,12 @@ function renderProvenance(entry, rec) {
   } else {
     detail = `${esc(m.note || 'No reliable geometry match.')} The grey hatched block is sized from the registered storeys${rec.units ? ' and units' : ''}; its shape and footprint are <b>not</b> this building's.`;
   }
-  box.innerHTML = `<span class="xr-prov-badge p-${entry.provenance}">${p.label}</span><span class="xr-prov-text">${detail}</span>`;
+  const short = entry.provenance === 'massing' || entry.provenance === 'footprint'
+    ? `City of Toronto 3D Massing, ${m.confidence === 'high' ? 'high' : 'medium'} match confidence. The rooms in the cutaway are illustrative.`
+    : 'Not this building\u2019s real shape. The rooms in the cutaway are illustrative.';
+  $('xr-prov-detail').innerHTML = detail;
+  box.innerHTML = `<span class="xr-prov-badge p-${entry.provenance}">${p.label}</span><span class="xr-prov-text">${short}</span>
+    <button type="button" class="info-btn" data-info="xray-model" data-info-from="xr-prov-detail" aria-label="About this model: geometry source, rating definitions and limits">i</button>`;
 }
 
 // ---- stage: 3D scene (lazy) or 2D diagram (only without WebGL) ---------------------------------------
@@ -267,7 +307,9 @@ function readPalette() {
   const c = cssVar;
   const names = ['facade', 'wallInside', 'glass', 'band', 'roof', 'roofEdge', 'parapet', 'penthouse', 'floor', 'slabEdge', 'concrete', 'partition', 'poche',
     'equipment', 'equipmentDark', 'cab', 'car', 'carGlass', 'paint', 'context', 'contextFaded', 'contextEdge', 'contextEdgeFaded', 'ground', 'plinth',
-    'base', 'frame', 'door', 'pad', 'paving', 'asphalt', 'trunk', 'foliage', 'guide'];
+    'base', 'frame', 'door', 'pad', 'paving', 'asphalt', 'trunk', 'foliage',
+    'room', 'roomEnd', 'roomFloor', 'trim', 'stair', 'metal', 'runner', 'unitDoor', 'light', 'panel', 'duct', 'pipe', 'bin', 'binAlt',
+    'carBody', 'tire', 'board', 'cutLine', 'leader'];
   const kebab = (n) => n.replace(/[A-Z]/g, (m) => `-${m.toLowerCase()}`);
   return {
     accent: c('--accent'), sky: c('--xr-sky'), ground: c('--xr-ground'), outline: c('--xr-outline'),
@@ -306,11 +348,7 @@ function renderStage(profile, xs, entry) {
   $('xr-cam').hidden = !use3d;
   $('xr-focus').disabled = !xs.zone;
   $('xr-all').disabled = !xs.zone;
-  $('xr-focus').textContent = xs.zone ? `◎ Focus on ${zoneByKey.get(xs.zone).short.toLowerCase()}` : '◎ Focus on category';
-  $('xr-sep-wrap').hidden = !use3d || xs.mode !== 'exploded';
-  $('xr-explode-note').hidden = !use3d || xs.mode !== 'exploded';
-  $('xr-sep').value = Math.round((xs.sep ?? 0.55) * 100);
-  sepText();
+  $('xr-focus').textContent = xs.zone ? `Frame ${zoneByKey.get(xs.zone).short.toLowerCase()}` : 'Frame category';
   $('xr-stage-card').dataset.mode = xs.mode;
   document.querySelectorAll('input[name="xr-mode"]').forEach((i) => (i.checked = i.value === xs.mode));
 
@@ -371,14 +409,8 @@ function renderStage(profile, xs, entry) {
   const items = recordItems(profile);
   const rk = items.map((i) => i.cls).join();
   if (scene3d.recKey !== rk) { scene3d.recKey = rk; api.setRecords(items); }
-  api.setSeparation(xs.sep ?? 0.55);
   api.setSelected(xs.zone);
   api.setMode(xs.mode);
-}
-
-function sepText() {
-  const v = +$('xr-sep').value;
-  $('xr-sep').setAttribute('aria-valuetext', `Floors separated, ${v}% of the maximum gap`);
 }
 
 let webglCache = null;
@@ -460,15 +492,21 @@ function renderSuggestions(ctx, M) {
 function wire() {
   if (wired) return;
   wired = true;
-  document.querySelectorAll('input[name="xr-mode"]').forEach((i) => i.addEventListener('change', () => { lastCtx.xs.mode = i.value; rerender(); }));
+  document.querySelectorAll('input[name="xr-mode"]').forEach((i) => i.addEventListener('change', () => {
+    const xs = lastCtx.xs;
+    xs.mode = i.value;
+    // Focus needs a category: the one that needs the most attention
+    if (xs.mode === 'focus' && !xs.zone) {
+      const rec = buildingEvaluations(lastCtx.M.data.byRsn.get(xs.rsn) ?? []).find((r) => r.uid === xs.evalUid) ?? lastCtx.ctx.pm.latestByRsn.get(xs.rsn);
+      if (rec) xs.zone = defaultFocus(zoneProfile(rec, lastCtx.M.data.cats[rec.era]));
+    }
+    rerender();
+  }));
   $('xr-rot-left').addEventListener('click', () => scene3d?.api?.rotate(-45));
   $('xr-rot-right').addEventListener('click', () => scene3d?.api?.rotate(45));
   $('xr-reset').addEventListener('click', () => scene3d?.api?.reset());
   $('xr-all').addEventListener('click', () => selectZone(null));
   $('xr-focus').addEventListener('click', () => scene3d?.api?.focus(lastCtx?.xs.zone));
-  const sep = $('xr-sep');
-  sep.addEventListener('input', () => { lastCtx.xs.sep = +sep.value / 100; sepText(); scene3d?.api?.setSeparation(lastCtx.xs.sep); });
-  sep.addEventListener('change', () => scene3d?.api?.setSeparation(lastCtx.xs.sep, { reframe: true }));
   $('xr-method-open').addEventListener('click', () => { const d = $('xr-method-box'); d.open = true; d.scrollIntoView({ behavior: reducedMotion() ? 'auto' : 'smooth', block: 'start' }); });
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' && lastCtx?.xs.zone && !$('xr-main').hidden && document.querySelector('[data-view="xray"]:not([hidden])')) selectZone(null);
@@ -481,9 +519,10 @@ function renderMethod() {
   const row = (z) => `<tr><th scope="row">${esc(z.label)}</th><td>${z.items.cur.map((c) => esc(LL.prettyCat(c))).join(', ')}</td><td>${z.items.pre.length ? z.items.pre.map((c) => esc(LL.prettyCat(c))).join(', ') : '<span class="muted">none</span>'}</td></tr>`;
   $('xr-method').innerHTML = `<ul>
     <li><b>Exterior: real geometry where it exists.</b> The outer shape and height come from the City of Toronto's 3D Massing data (2025, Open Government Licence – Toronto), matched to the RentSafeTO address point. A footprint is used only if the point is inside it, or it is the clear nearest within 15 m, and its height must fit the registered storeys (2.3–4.8 m per storey). Otherwise the building is drawn as a hatched approximate block and labelled so. The match type and confidence are shown under the model.</li>
-    <li><b>Interior: illustrative.</b> Exterior geometry is based on available building data. Interior spaces are illustrative and do not represent the actual floor plan. Floor plates follow the real outline; the corridor, stair, elevator core, rooftop plant and parking level are generic. Windows, balconies, the entrance and the garage door are a generic pattern scaled to the building's height, not surveyed façade features; the base, paths and trees are a neutral setting, not the real lot. <i>X-Ray</i> cuts the building open along a plane facing you; <i>Exploded</i> pulls the storeys apart. Neither assigns inspection results to particular floors or rooms.</li>
+    <li><b>Interior: illustrative.</b> Exterior geometry is based on available building data. Interior spaces are illustrative and do not represent the actual floor plan. <i>Cutaway</i> opens one corner of the building at street level, a box a few storeys high, and keeps the rest of the sourced massing solid. Inside is the same short stack of generic rooms for every building: ground-level parking and a waste room, a services room (elevator shaft, air handling, electrical panels, pipes) and a corridor with unit doors and a stair. Only their size follows the real wing; the slabs around them follow the real outline. While you orbit, the opening moves to the street corner facing you. Windows, balconies, the entrance, the garage door and the rooftop plant are a generic pattern scaled to the building's height, not surveyed features; the base, paths and trees are a neutral setting, not the real lot.</li>
+    <li><b>Focus</b> outlines one category's room in blue and dims the others. Each room's floor carries a light tint of the category's status. The rooms show the kind of space inspectors look at, never where a problem is: nothing in them is drawn damaged, and results are never assigned to a floor, unit or room.</li>
     <li><b>Colour shows categories, not locations.</b> A tinted part means inspectors rated items in that category poorly. It doesn't mean that part of the real building is damaged, and the records tiles beside the building are an abstract layer: paperwork has no place in the building. Category status is not a certified safety-risk score.</li>
-    <li><b>One inspection at a time.</b> The X-Ray shows one evaluation (by default the latest in the scoring system chosen in the sidebar). Pick any point in the history to see that inspection instead.</li>
+    <li><b>One inspection at a time.</b> The X-Ray shows one evaluation (by default the latest in the scoring system chosen in Layers). Pick any point in the history to see that inspection instead.</li>
     <li><b>Rated poorly</b> means 0 or 1 on the 0–3 scale (2023 – now) or 1 or 2 on the 1–5 scale (2017 – 2023), the same rule as the Common problems view. N/A items don't apply and are never counted; blank items were not recorded.</li>
     <li><b>Category status.</b> Share rated poorly = poorly rated items ÷ applicable (rated) items in the category. <i>No poor ratings</i>: none. <i>Some poor ratings</i>: at least one. <i>Concentrated</i>: at least ${CONCENTRATED.minPoor} items and at least ${CONCENTRATED.minShare * 100}% of applicable items, both required because the exterior category has only four items. <i>Not evaluated</i>: no applicable items. Missing data is never shown as a pass.</li>
     <li><b>No heating or plumbing.</b> RentSafeTO's open data has no heating, plumbing or water items, so the X-Ray doesn't show any.</li>

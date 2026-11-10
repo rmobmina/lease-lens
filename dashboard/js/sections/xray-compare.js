@@ -11,7 +11,7 @@ const MAX_OPTIONS = 40;
 
 export function renderCompare(box, { rec, pm, ctx, M, matchRsn, onChoose, onOpen }) {
   if (!rec) {
-    box.innerHTML = `<p class="card-text">This building has no evaluation in the ${esc(pm.P.long)}, so there's no score to match. Switch the scoring system in the sidebar to compare it.</p>`;
+    box.innerHTML = `<p class="card-text">This building has no evaluation in the ${esc(pm.P.long)}, so there's no score to match. Switch the scoring system in Layers to compare it.</p>`;
     return;
   }
   let res = findMatches(rec, ctx.latest, pm.cats);

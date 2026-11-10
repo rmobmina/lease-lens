@@ -1,232 +1,550 @@
-// Lease Lens dashboard: state, routing (one view at a time), page-wide filters and linked selection.
-// Each view module reads a shared context and draws its own chart.
+// LeaseLens app shell. Two layers: the public homepage (#/) and the atlas, a single map of Toronto
+// explored by zooming in. Detail grows with scale and intent:
+//
+//   Toronto (ward choropleth) → neighbourhood (clusters, then buildings) → building (place panel)
+//   → inspection (Building X-Ray, the "depth" layer) — plus comparison, story visuals and text pages,
+//   which open over the map and close back onto it.
+//
+// Addresses (every level is a link, and Back/Forward work):
+//   #/explore?at=<lat>,<lon>,<zoom>&ward=<code>&b=<RSN>&lens=<id>&sys=pre&show=low10   the map
+//   #/xray/<RSN>   #/compare/<RSN>   #/story/<chapter>   #/about   #/approach   #/help
+// Old addresses (#/q1…q5, #/building/<RSN>, #/explore/<tab>, #/trends/<tab>, #/fingerprint) redirect.
+//
+// History: panning and zooming replace the current entry; selecting a ward or a building, opening an
+// analysis layer from a link, and going down a level push one. The map is never torn down while a
+// deeper level is open, so "Back to map" lands on exactly the same place and zoom.
 
-import { buildModel, wardLowShares, pearson, itemProblemRates, changeSummary, biggestMovers } from './model.js';
-import { fmt, tip, esc, titleCase, formatDate, pct, signed } from './ui.js';
-import { renderMap, focusOnMap, invalidateMap } from './sections/map.js';
+import { buildModel } from './model.js';
+import { tip, esc, titleCase, formatDate, pct, fmt } from './ui.js';
+import { renderWards } from './sections/map.js';
 import { renderAge } from './sections/age.js';
 import { renderProblems } from './sections/problems.js';
 import { renderChanges } from './sections/changes.js';
 import { renderMovers } from './sections/movers.js';
-import { renderBuilding } from './sections/building.js';
+import { renderPlace } from './sections/building.js';
 import { renderFingerprint } from './sections/fingerprint.js';
-import { renderXray, disposeXray } from './sections/xray.js';
+import { renderXray, disposeXray, loadMassing } from './sections/xray.js';
+import { initInfoPopovers } from './components/info-popover.js';
+import { createStory } from './story/controller.js';
+import { drawVisual } from './story/visuals.js';
+import { scoreDistribution } from './story/selectors.js';
+import { initHome, showHome } from './home/home.js';
+import * as Atlas from './atlas/map.js';
+import { initSearch } from './atlas/search.js';
+import { wardChoropleth, choroplethSummary, encodeExplore, decodeExplore, legacyRoute, footprintLatLngs, SMALL_WARD } from './atlas/logic.js';
 
 const $ = (id) => document.getElementById(id);
-const QUESTIONS = [
-  { route: 'q1', short: 'Where' },
-  { route: 'q2', short: 'Building age' },
-  { route: 'q3', short: 'Common problems' },
-  { route: 'q4', short: 'Re-inspections' },
-  { route: 'q5', short: 'Biggest changes' },
+const reducedMotion = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
+const narrow = () => window.innerWidth <= 760;
+
+// ---- analysis layers: one at a time, beside the map ---------------------------------------------------
+// `scale` decides which group is suggested at the current zoom; every layer stays available.
+const LENSES = [
+  { id: 'distribution', label: 'Score distribution', scale: 'city', render: (ctx) => renderDistribution(ctx) },
+  { id: 'wards', label: 'Ward comparison', scale: 'city', citywide: true, render: renderWards },
+  { id: 'changes', label: 'Re-inspection changes', scale: 'city', render: (ctx) => renderChanges(ctx, state.changes) },
+  { id: 'age', label: 'Building age and score', scale: 'local', render: renderAge },
+  { id: 'problems', label: 'Common inspection problems', scale: 'local', render: (ctx) => renderProblems(ctx, state.problems) },
+  { id: 'movers', label: 'Biggest score changes', scale: 'local', render: (ctx) => renderMovers(ctx, state.movers) },
 ];
+const lensById = new Map(LENSES.map((l) => [l.id, l]));
+
+const PAGES = { about: 'About the data', approach: 'Our approach', help: 'Help' };
 
 const state = {
-  route: 'home',
+  layer: 'home',
+  depth: 'map',          // map | xray | compare | story | page
+  page: null,
   period: 'cur',
   ward: '',
-  selected: null,       // building RSN
+  selected: null,        // building RSN, shared by the map, the place panel, the X-Ray and the story
   mapShow: 'all',
+  lens: null,            // active analysis layer id
+  placeTab: 'summary',   // summary | nearby | history
   problems: { group: 'all', showAll: false },
   changes: { start: 'all' },
   movers: { n: 10 },
   fp: { score: 92, pairIndex: 0, a: null, b: null, shownA: null, shownB: null },
-  // Building X-Ray: which inspection is shown, selected category, view mode, comparison choice
-  xray: { rsn: null, evalUid: null, zone: null, mode: 'exterior', matchRsn: null, sep: 0.55 },
+  xray: { rsn: null, evalUid: null, zone: null, mode: 'exterior', matchRsn: null },
 };
-let M; // model
+let M = null;
+let story = null;
+let search = null;
+let lastHash = '#/';
+let lastRoute = '';
+let handled = null;      // the hash the router last handled (hashchange and popstate both fire)
+let lastExplore = null;  // the map's address when a deeper level was opened (Back to map returns here)
+const chCache = new Map();
+const footprints = new Map(); // rsn -> lat/lng rings ([] when the shape is not a reliable match)
 
-// Context passed to every view: the period model, plus ward-filtered views of it.
+// ---- shared context for every view ------------------------------------------------------------------------
+function choropleth(era = state.period) {
+  if (!chCache.has(era)) chCache.set(era, wardChoropleth(M.byPeriod[era]));
+  return chCache.get(era);
+}
 function context() {
   const pm = M.byPeriod[state.period];
   const inWard = (r) => !state.ward || r.ward === state.ward;
   return {
-    pm,
-    ward: state.ward,
-    selected: state.selected,
-    show: state.mapShow,
-    latest: pm.latest.filter(inWard),
-    pairs: pm.pairs.filter((p) => inWard(p.b)),
-    select,
-    setWard,
-    setFp,
-    setPeriod,
-    findBuilding,
+    pm, ward: state.ward, selected: state.selected, show: state.mapShow,
+    latest: pm.latest.filter(inWard), pairs: pm.pairs.filter((p) => inWard(p.b)),
+    ch: choropleth(), highlight: app.highlight,
+    select, setWard, setFp, setPeriod, findBuilding,
     registerShown: (slot, rsn) => { state.fp[slot === 'a' ? 'shownA' : 'shownB'] = rsn; },
   };
 }
+// A building's record in the chosen system, else its latest in the other one.
+function recOf(rsn) {
+  if (!rsn || !M) return null;
+  return M.byPeriod[state.period].latestByRsn.get(rsn) ?? M.byPeriod[state.period === 'cur' ? 'pre' : 'cur'].latestByRsn.get(rsn) ?? null;
+}
 
-const RENDER = {
-  home: renderHome,
-  building: (ctx) => renderBuilding(ctx, M),
-  fingerprint: (ctx) => renderFingerprint(ctx, M, state.fp),
-  xray: (ctx) => renderXray(ctx, M, state.xray),
-  q1: renderMap,
-  q2: renderAge,
-  q3: (ctx) => renderProblems(ctx, state.problems),
-  q4: (ctx) => renderChanges(ctx, state.changes),
-  q5: (ctx) => renderMovers(ctx, state.movers),
-  about: () => {},
-};
-
-// ---- routing --------------------------------------------------------------
+// ---- routing ------------------------------------------------------------------------------------------------
 function parseHash() {
-  const [route = '', arg] = location.hash.replace(/^#\/?/, '').split('/');
-  return { route: RENDER[route] ? route : 'home', arg };
+  const h = location.hash.replace(/^#\/?/, '');
+  const [path, query = ''] = h.split('?');
+  const [route = '', arg] = path.split('/');
+  return { route, arg: arg ? decodeURIComponent(arg) : undefined, query };
 }
 function navigate(hash) {
   if (location.hash === hash) onRoute(); else location.hash = hash;
 }
+function routeIfChanged() { if (location.hash !== handled) onRoute(); }
+
 function onRoute() {
-  const { route, arg } = parseHash();
-  if (route === 'building' && arg && M.byPeriod[state.period].latestByRsn.has(arg)) state.selected = arg;
-  // The X-Ray accepts any building with an evaluation in either scoring system.
-  if (route === 'xray' && arg && M.data.byRsn.has(arg)) state.selected = arg;
-  if (route === 'fingerprint' && arg && M.byPeriod.cur.latestByRsn.has(arg) && arg !== state.fp.a) Object.assign(state.fp, { a: arg, b: null });
-  const changed = route !== state.route;
-  if (changed && state.route === 'xray') disposeXray(); // free the WebGL context and listeners
-  state.route = route;
-  document.querySelectorAll('.view').forEach((v) => (v.hidden = v.dataset.view !== route));
-  document.querySelectorAll('[data-route]').forEach((a) => (a.dataset.route === route ? a.setAttribute('aria-current', 'page') : a.removeAttribute('aria-current')));
-  closeMenu();
-  renderPager();
-  renderView();
-  // The map is created during the first render, so focus it on the frame after.
-  if (route === 'q1') requestAnimationFrame(() => requestAnimationFrame(() => { invalidateMap(); focusOnMap(context()); }));
-  if (changed) {
-    document.querySelector(`.view[data-view="${route}"]`).scrollTop = 0;
-    if (window.innerWidth <= 960) window.scrollTo(0, 0);
-    // Move focus to the new heading for screen-reader and keyboard users.
-    const h = document.querySelector(`.view[data-view="${route}"] h1:not([hidden])`);
-    if (h && document.activeElement?.closest('.nav, .pager, .card, .q-card')) { h.tabIndex = -1; h.focus({ preventScroll: true }); }
+  handled = location.hash;
+  const { route, arg, query } = parseHash();
+  const leg = legacyRoute(route, arg);
+  if (leg) { history.replaceState(null, '', leg); onRoute(); return; }
+
+  // Layer A: the public homepage
+  if (!route) {
+    story?.leave();
+    closeDepth();
+    setLayer('home');
+    document.title = 'LeaseLens · Toronto rental building data';
+    lastHash = location.hash || '#/'; lastRoute = '';
+    return;
   }
-  document.title = route === 'home' ? 'Lease Lens' : `${document.querySelector(`[data-route="${route}"] b`)?.textContent ?? 'About'} · Lease Lens`;
+
+  // Layer B: the atlas
+  setLayer('work');
+  if (!M && !PAGES[route]) return; // routed again once the data has loaded
+
+  if (route === 'story') {
+    const from = lastRoute === 'explore' && state.depth === 'map' ? exploreHash() : lastHash;
+    lastHash = location.hash; lastRoute = 'story';
+    story.enter(arg, from.startsWith('#/story') ? undefined : from);
+    document.title = 'Beyond the Score · LeaseLens';
+    markNav();
+    requestAnimationFrame(Atlas.invalidate);
+    return;
+  }
+  const wasStory = story?.active();
+  story?.leave();
+  if (wasStory) requestAnimationFrame(Atlas.invalidate);
+
+  lastHash = location.hash; lastRoute = route;
+  if (route === 'explore') { applyExplore(decodeExplore(query)); return; }
+  if (route === 'xray') {
+    if (arg && M.data.byRsn.has(arg)) state.selected = arg;
+    openDepth('xray');
+    return;
+  }
+  if (route === 'compare') {
+    if (arg && M.byPeriod.cur.latestByRsn.has(arg) && arg !== state.fp.a) Object.assign(state.fp, { a: arg, b: null });
+    openDepth('compare');
+    return;
+  }
+  if (PAGES[route]) { openDepth('page', route); return; }
+  history.replaceState(null, '', '#/explore');
+  onRoute();
 }
 
-// Render only the visible view, after layout so charts can measure their space.
-function renderView() {
-  tip.hide();
-  renderSelection();
-  requestAnimationFrame(() => {
-    try { RENDER[state.route](context()); } catch (err) { console.error(err); }
+// The map's state comes from its address, so links, reloads and Back/Forward all agree.
+function applyExplore(q) {
+  const periodChanged = (q.period ?? 'cur') !== state.period;
+  state.period = q.period ?? 'cur';
+  state.ward = q.ward && M.wardName.has(q.ward) ? q.ward : '';
+  state.selected = q.selected && M.data.byRsn.has(q.selected) ? q.selected : null;
+  state.lens = q.lens ?? null;
+  state.mapShow = q.mapShow ?? 'all';
+  if (periodChanged) { state.xray.evalUid = null; fillSearch(); renderMetaNotes(); }
+  syncControls();
+  const wasDeep = state.depth !== 'map';
+  closeDepth();
+  renderMapLevel();
+  if (q.view) Atlas.setView(q.view, { animate: !wasDeep });
+  else if (state.selected && recOf(state.selected)?.lat != null) Atlas.showBuilding(recOf(state.selected));
+  else if (state.ward) Atlas.wardsLoaded().then(() => Atlas.showWard(state.ward));
+  else Atlas.wardsLoaded().then(() => Atlas.showCity());
+  const r = recOf(state.selected);
+  document.title = `${r ? `${titleCase(r.address)} · ` : state.ward ? `${M.wardName.get(state.ward)} · ` : ''}Explore · LeaseLens`;
+  lastExplore = location.hash;
+  markNav();
+}
+
+function exploreHash() {
+  return encodeExplore({ ...(Atlas.getView() ?? {}), ward: state.ward, selected: state.selected, lens: state.lens, period: state.period, mapShow: state.mapShow });
+}
+const onMapRoute = () => parseHash().route === 'explore' && state.depth === 'map' && !story?.active();
+// Write the current view into the current history entry (no new entry).
+function commitView() {
+  if (onMapRoute()) history.replaceState(history.state, '', exploreHash());
+  $('nav-explore').setAttribute('href', state.depth === 'map' && onMapRoute() ? exploreHash() : (lastExplore ?? '#/explore'));
+}
+function pushExplore() {
+  if (story?.active()) return;
+  const h = exploreHash();
+  if (location.hash !== h) history.pushState(null, '', h);
+  handled = location.hash;
+  lastHash = location.hash;
+  lastExplore = h;
+}
+
+function setLayer(layer) {
+  if (layer === 'home') showHome(); // lazy: mounts the homepage atlas once
+  if (state.layer === layer && $('app').hidden === (layer === 'home')) return;
+  state.layer = layer;
+  document.body.dataset.layer = layer;
+  $('home').hidden = layer !== 'home';
+  $('app').hidden = layer !== 'work';
+  window.scrollTo(0, 0);
+  closeMenus();
+  if (layer === 'work') { ensureMap(); requestAnimationFrame(Atlas.invalidate); }
+}
+
+function markNav() {
+  const cur = story?.active() ? 'story' : state.depth === 'page' ? state.page : 'explore';
+  document.querySelectorAll('.atlas-nav [data-route]').forEach((a) => (a.dataset.route === cur ? a.setAttribute('aria-current', 'page') : a.removeAttribute('aria-current')));
+}
+
+// ---- the map ---------------------------------------------------------------------------------------------------
+let viewTimer = 0;
+function ensureMap() {
+  Atlas.initMap($('map'), {
+    insets: mapInsets,
+    onBuilding: (rsn) => select(rsn, { fly: false }),
+    onWard: (w) => setWard(w),
+    onLevel: () => { if (M && state.depth === 'map') renderChrome(); },
+    onView: () => {
+      clearTimeout(viewTimer);
+      viewTimer = setTimeout(() => { if (!M) return; commitView(); if (state.depth === 'map') { renderInView(); renderSummary(); } }, 220);
+    },
+    onWardsReady: () => { if (M) renderMapLevel(); },
+    onWardsFailed: () => { if (M) renderLegend(); },
   });
 }
 
-function renderPager() {
-  const i = QUESTIONS.findIndex((q) => q.route === state.route);
-  $('pager').hidden = i < 0;
-  if (i < 0) return;
-  const prev = i === 0 ? { route: '', short: 'Overview' } : QUESTIONS[i - 1];
-  const next = i === QUESTIONS.length - 1 ? { route: 'building', short: 'Check a building' } : QUESTIONS[i + 1];
-  const link = (a, q, dir) => {
-    a.href = `#/${q.route}`;
-    const num = QUESTIONS.indexOf(q) + 1;
-    a.innerHTML = dir === 'prev'
-      ? `<span aria-hidden="true">←</span><span><small>Previous · </small>${num ? `${num}. ` : ''}${q.short}</span>`
-      : `<span><small>Next · </small>${num ? `${num}. ` : ''}${q.short}</span><span aria-hidden="true">→</span>`;
-  };
-  link($('pager-prev'), prev, 'prev');
-  link($('pager-next'), next, 'next');
-  $('pager-dots').innerHTML = QUESTIONS.map((q, j) => `<li><a href="#/${q.route}" aria-label="Question ${j + 1}: ${q.short}" ${j === i ? 'aria-current="step"' : ''}></a></li>`).join('');
-}
-
-// ---- views owned by main ------------------------------------------------------
-function renderHome(ctx) {
-  const { pm, latest, pairs, ward } = ctx;
-  const evals = ward ? pm.recs.filter((r) => r.ward === ward).length : pm.recs.length;
-  const mean = d3.mean(latest, (r) => r.score), median = d3.median(latest, (r) => r.score);
-  const metric = (label, value, sub) => `<div class="metric"><div class="metric-label">${label}</div><div class="metric-value">${value}</div><div class="metric-sub">${sub}</div></div>`;
-  $('metrics').innerHTML = [
-    metric('Buildings evaluated', fmt.n(latest.length), ward ? `in ${esc(M.wardName.get(ward))}` : 'rental apartment buildings'),
-    metric('Average latest score', `${mean.toFixed(1)}<small>/100</small>`, `median ${median} · higher is better`),
-    metric('Evaluations', fmt.n(evals), `${(evals / latest.length).toFixed(1)} per building on average`),
-    metric('Wards represented', new Set(latest.map((r) => r.ward)).size, ward ? 'ward filter is on' : "of Toronto's 25 wards"),
-  ].join('');
-
-  // Each card previews the answer with one number from the current data.
-  const wards = wardLowShares(pm.latest, pm);
-  const wardRow = ward ? wards.find((w) => w.ward === ward) : wards[0];
-  const yb = latest.filter((r) => r.yearBuilt != null);
-  const r = pearson(yb, (d) => d.yearBuilt, (d) => d.score);
-  const items = itemProblemRates(latest, pm).filter((d) => d.rated >= 30).sort((a, b) => b.share - a.share);
-  const ch = changeSummary(pairs);
-  const top = biggestMovers(pairs, 1).up[0];
-  const cards = [
-    { route: 'q1', title: 'Where are the lowest-scoring buildings?', value: wardRow ? pct(wardRow.share) : '–', caption: wardRow ? `of buildings in ${esc(wardRow.name)} are in the city's lowest 10%` : '' },
-    { route: 'q2', title: 'Do older buildings score lower?', value: r == null ? '–' : `r = ${r.toFixed(2)}`, caption: 'a weak link between building age and score' },
-    { route: 'q3', title: 'What problems are most common?', value: items[0] ? pct(items[0].share) : '–', caption: items[0] ? `of buildings had ${esc(items[0].label.toLowerCase())} rated poorly` : '' },
-    { route: 'q4', title: 'Do scores improve when re-inspected?', value: ch.n ? pct(ch.up / ch.n) : '–', caption: 'of re-inspections scored higher than before' },
-    { route: 'q5', title: 'Which buildings changed the most?', value: top ? signed(top.delta) : '–', caption: top ? `points at ${esc(titleCase(top.b.address))}, the biggest jump` : '' },
-  ];
-  if (r != null && Math.abs(r) >= 0.3) cards[1].caption = 'correlation between year built and score';
-  $('question-cards').innerHTML = cards.map((c, i) => `
-    <a class="q-card" href="#/${c.route}">
-      <span class="nav-num" aria-hidden="true">${i + 1}</span>
-      <h3>${c.title}</h3>
-      <span class="qc-value">${c.value}</span>
-      <span class="qc-caption">${c.caption}</span>
-      <span class="qc-go">Explore <span aria-hidden="true">→</span></span>
-    </a>`).join('');
-}
-
-function renderSelection() {
-  // Active ward filter, visible from every view and removable in one click.
-  const chip = $('ward-chip');
-  chip.hidden = !state.ward;
-  if (state.ward) {
-    chip.innerHTML = `<span class="sel-text">Ward: <b>${esc(M.wardName.get(state.ward))}</b></span>
-      <button type="button" class="icon-button" aria-label="Remove ward filter" title="Show all of Toronto">×</button>`;
-    chip.querySelector('button').addEventListener('click', () => setWard(''));
+// The rails cover part of the map; flights frame things in the space that is left.
+function mapInsets() {
+  const box = $('stage').getBoundingClientRect();
+  const r = (el) => (el && !el.hidden && el.offsetParent ? el.getBoundingClientRect() : null);
+  if (narrow()) {
+    const sheet = [r($('place')), r($('lens'))].filter(Boolean).map((b) => box.bottom - b.top);
+    return { left: 0, right: 0, top: (r($('title-card'))?.bottom ?? box.top) - box.top, bottom: Math.max(0, ...sheet) };
   }
-  const box = $('selection');
-  const r = state.selected && M.byPeriod[state.period].latestByRsn.get(state.selected);
-  if (!r) { box.hidden = true; box.innerHTML = ''; return; }
-  box.hidden = false;
-  box.innerHTML = `<span class="sel-text">Selected: <b>${esc(titleCase(r.address))}</b> · score ${r.score}</span>
-    ${state.route !== 'building' ? '<a class="btn btn-primary btn-sm" href="#/building/' + r.rsn + '" style="line-height:30px;text-decoration:none">View report</a>' : ''}
-    ${state.route !== 'xray' ? '<a class="btn btn-sm" href="#/xray/' + r.rsn + '" style="line-height:28px;text-decoration:none">X-Ray</a>' : ''}
-    <button type="button" class="icon-button" aria-label="Clear selected building" title="Clear selection">×</button>`;
-  box.querySelector('button').addEventListener('click', () => select(null));
+  const left = [r($('title-card')), r($('place'))].filter(Boolean).reduce((w, b) => Math.max(w, b.right - box.left), 0);
+  const lens = r($('lens'));
+  return { left, right: lens ? box.right - lens.left : 0, top: 0, bottom: 0 };
 }
 
-function renderMetaNotes() {
+function renderMapLevel() {
+  if (!M) return;
+  const ctx = context();
+  const sel = recOf(state.selected);
+  Atlas.update({ pm: ctx.pm, ward: state.ward, selected: state.selected, show: state.mapShow, ch: ctx.ch, footprint: footprints.get(state.selected) ?? null, selectedRec: sel });
+  if (state.selected && !footprints.has(state.selected)) loadFootprint(state.selected);
+  renderChrome();
+}
+
+// The selected building's real outline, from the same City 3D Massing match the X-Ray uses. Only
+// reliable matches ('massing' or 'footprint' provenance) are drawn; anything else draws nothing.
+function loadFootprint(rsn) {
+  footprints.set(rsn, null);
+  const recs = (M.data.byRsn.get(rsn) ?? []).filter((r) => r.lat != null);
+  const at = recs.reduce((a, r) => (!a || r.time > a.time ? r : a), null);
+  if (!at) { footprints.set(rsn, []); return; }
+  loadMassing(rsn).then((e) => {
+    footprints.set(rsn, e && ['massing', 'footprint'].includes(e.provenance) ? footprintLatLngs(e, at.lat, at.lon) : []);
+  }).catch(() => footprints.set(rsn, [])).then(() => { if (state.selected === rsn && state.depth === 'map') renderMapLevel(); });
+}
+
+// Re-rendering a panel must not drop keyboard focus: remember the focused control and find it again.
+function keepFocus(fn) {
+  const a = document.activeElement;
+  const host = a?.closest('#place, #lens-options, #legend, #in-view');
+  const key = host && (a.id ? `#${a.id}` : ['data-act', 'data-tab', 'data-rsn', 'data-lens', 'value'].map((k) => (a.hasAttribute(k) ? `[${k}="${a.getAttribute(k)}"]` : '')).join(''));
+  fn();
+  if (key && !host.contains(document.activeElement)) (host.querySelector(key) ?? (host.id === 'place' ? $('place-title') : null))?.focus({ preventScroll: true });
+}
+
+function renderChrome() {
+  if (!M) return;
+  keepFocus(renderChromeNow);
+}
+function renderChromeNow() {
+  const ctx = context();
+  renderCrumbs($('crumbs'));
+  renderTitle();
+  renderPlace($('place'), ctx, M, {
+    tab: state.placeTab,
+    onClose: () => (state.selected ? select(null) : setWard('')),
+    onTab: (t) => { state.placeTab = t; renderChrome(); },
+    onInspect: (rsn, uid) => { state.xray.evalUid = uid ?? null; goDeep(`#/xray/${rsn}`); },
+    onSelect: (rsn) => select(rsn, { focus: true }),
+    onPeriod: (e) => setPeriod(e),
+    onLens: (id) => setLens(id),
+  });
+  renderLegend();
+  renderLensMenu();
+  renderLens(ctx);
+  renderInView();
+  renderSummary();
+  document.body.classList.toggle('has-place', !$('place').hidden);
+  $('title-card').classList.toggle('is-compact', !$('place').hidden);
+  document.body.classList.toggle('has-lens', !$('lens').hidden);
+}
+
+function renderTitle() {
+  const sub = {
+    city: 'Zoom in to discover how inspection results vary across the city.',
+    area: 'Nearby buildings are grouped. Keep zooming to separate them.',
+    building: 'Each mark is one building. Select one to see its score.',
+  }[Atlas.getLevel()];
+  $('atlas-sub').textContent = sub;
+}
+
+// Toronto › Ward › Building (› Inspection, in the depth bar)
+function renderCrumbs(el, tail) {
+  const r = recOf(state.selected);
+  const ward = r?.ward ?? state.ward;
+  const items = [`<li><button type="button" class="crumb" data-crumb="city">Toronto</button></li>`];
+  if (ward) items.push(`<li><button type="button" class="crumb" data-crumb="ward" data-ward="${ward}" ${!r && !tail ? 'aria-current="location"' : ''}>${esc(M.wardName.get(ward) ?? `Ward ${+ward}`)}</button></li>`);
+  if (r) items.push(tail ? `<li><button type="button" class="crumb" data-crumb="building">${esc(titleCase(r.address))}</button></li>` : `<li><span aria-current="location">${esc(titleCase(r.address))}</span></li>`);
+  if (tail) items.push(`<li><span aria-current="location">${esc(tail)}</span></li>`);
+  el.innerHTML = items.join('');
+  el.querySelectorAll('[data-crumb]').forEach((b) => b.addEventListener('click', () => {
+    const c = b.dataset.crumb;
+    if (c === 'city') { toMap(() => { state.selected = null; state.ward = ''; pushExplore(); Atlas.showCity(); renderMapLevel(); }); }
+    if (c === 'ward') { const w = b.dataset.ward; toMap(() => { state.selected = null; state.ward = w; pushExplore(); Atlas.showWard(w); renderMapLevel(); }); }
+    if (c === 'building') backToMap();
+  }));
+}
+// Run a map change, leaving the story or a deeper level first (the change itself pushes the entry).
+function toMap(fn) {
+  if (story?.active()) { story.leave(); requestAnimationFrame(Atlas.invalidate); }
+  closeDepth();
+  fn();
+  markNav();
+}
+
+function renderLegend() {
+  const el = $('legend');
   const pm = M.byPeriod[state.period];
-  $('period-note').innerHTML = `Evaluations from ${formatDate(pm.dates[0])} to ${formatDate(pm.dates[1])}. The City changed its scoring in 2023, so the two systems are never mixed.`;
-  const ex = (e) => M.byPeriod[e].excluded;
-  $('data-note').innerHTML = `City of Toronto Open Data,
-    <a href="https://open.toronto.ca/dataset/apartment-building-evaluation/" target="_blank" rel="noopener">Apartment Building Evaluations</a>
-    (pre-2023 and 2023–current files, ${fmt.n(M.data.records.length)} evaluations in total).
-    ${fmt.n(ex('pre').flagged + ex('cur').flagged)} records flagged in the data as created in error, empty of ratings, or duplicated were left out,
-    along with ${fmt.n(ex('pre').noScore + ex('cur').noScore)} with no score. Nothing else was removed or changed. Buildings are matched by their City registration number (RSN).`;
+  const level = Atlas.getLevel();
+  const ch = choropleth();
+  const sys = `<p class="legend-sys">${esc(pm.P.label)} scoring system <button type="button" class="info-btn" data-info="scoring-system" aria-label="About the two scoring systems">i</button></p>`;
+  let body = '';
+  if (level === 'city') {
+    const rl = (r) => (r.cls === 0 ? `under ${pct(r.to)}` : r.to == null ? `${pct(r.from)} or more` : `${pct(r.from)}–${pct(r.to)}`);
+    body = `<div class="legend-head"><p class="legend-title">Share of a ward’s buildings in the lowest 10%</p>
+        <button type="button" class="info-btn" data-info="map-wards" aria-label="How to read the ward map">i</button></div>
+      <ol class="ch-scale">${[...ch.ranges].reverse().map((r) => `<li><span class="ch-sw" style="background:var(--ch-${r.cls})"></span><span>${rl(r)}</span></li>`).join('')}</ol>
+      <p class="legend-note">Citywide: <b>${pct(ch.city)}</b> of buildings score ${pm.t10} or below.</p>
+      <p class="legend-note"><span class="dash-key" aria-hidden="true"></span> Dashed outline: fewer than ${SMALL_WARD} evaluated buildings.</p>`;
+  } else if (level === 'area') {
+    body = `<div class="legend-head"><p class="legend-title">Groups of nearby buildings</p>
+        <button type="button" class="info-btn" data-info="map-areas" aria-label="How to read the groups">i</button></div>
+      <div class="cl-key"><span class="cl-disc" style="--d:36px;--p:0.25" aria-hidden="true"><b>12</b></span>
+        <p>Number: buildings in the group<br><span class="red-ink">Red arc</span>: share in the lowest 10% (score ${pm.t10} or below)</p></div>`;
+  } else {
+    const key = (v, label, r) => `<li><span class="dot-key" style="--k:var(${v});--r:${r}px"></span>${label}</li>`;
+    body = `<div class="legend-head"><p class="legend-title">Latest score, by building</p>
+        <button type="button" class="info-btn" data-info="map-buildings" aria-label="How to read the building marks">i</button></div>
+      <ul class="dot-keys">${key('--low-10', `Lowest 10%: ${pm.t10} or below`, 11)}${key('--low-25', `Next 15%: ${pm.t10 + 1}–${pm.t25}`, 9)}${state.mapShow === 'all' ? key('--dot', `Above ${pm.t25}`, 7) : ''}</ul>`;
+  }
+  el.innerHTML = `${body}${sys}<button type="button" class="link-btn legend-describe" id="describe-btn" aria-expanded="false" aria-controls="describe-text">Describe this map</button>
+    <p class="legend-text" id="describe-text" hidden>${esc(choroplethSummary(ch, (v) => pct(v)))}</p>`;
+  $('describe-btn').addEventListener('click', (e) => {
+    const t = $('describe-text'); t.hidden = !t.hidden; e.currentTarget.setAttribute('aria-expanded', String(!t.hidden));
+  });
 }
 
-// ---- interactions -----------------------------------------------------------
-function select(rsn, { open = false } = {}) {
+// A text equivalent of the map for screen readers: what level is showing and what it says.
+let lastSummary = '';
+function renderSummary() {
+  const level = Atlas.getLevel();
+  const ch = choropleth();
+  let s;
+  if (level === 'city') s = `Showing Toronto's 25 wards. ${choroplethSummary(ch, (v) => pct(v))}`;
+  else {
+    const v = Atlas.buildingsInView();
+    const low = v.filter((r) => r.score <= M.byPeriod[state.period].t10).length;
+    s = `${level === 'area' ? 'Showing groups of nearby buildings' : 'Showing individual buildings'}: ${fmt.n(v.length)} in view, ${fmt.n(low)} of them in the lowest 10%.`;
+  }
+  if (s !== lastSummary) { $('map-summary').textContent = s; lastSummary = s; }
+}
+
+// The keyboard route to the buildings on screen (lowest scores first).
+function renderInView() {
+  const box = $('in-view');
+  const level = Atlas.getLevel();
+  if (level === 'city' || state.selected) { box.hidden = true; return; }
+  const v = Atlas.buildingsInView().sort((a, b) => a.score - b.score || a.address.localeCompare(b.address));
+  box.hidden = false;
+  $('in-view-sum').textContent = `${fmt.n(v.length)} building${v.length === 1 ? '' : 's'} in view${v.length > 10 ? ', lowest scores first' : ''}`;
+  const pm = M.byPeriod[state.period];
+  $('in-view-list').innerHTML = v.slice(0, 10).map((r) => `<li><button type="button" data-rsn="${r.rsn}"><span class="nl-name">${esc(titleCase(r.address))}</span>
+    <span class="nl-km">${esc(r.wardName)}</span><span class="nl-score ${r.score <= pm.t10 ? 'low10' : r.score <= pm.t25 ? 'low25' : 'other'}">${r.score}</span></button></li>`).join('');
+  $('in-view-list').querySelectorAll('[data-rsn]').forEach((b) => b.addEventListener('click', () => select(b.dataset.rsn, { focus: true })));
+}
+
+// ---- analysis layers ----------------------------------------------------------------------------------------------
+function renderLensMenu() {
+  const level = Atlas.getLevel();
+  const localFirst = level !== 'city' || state.ward;
+  const groups = [
+    { key: 'city', title: 'Citywide patterns' },
+    { key: 'local', title: state.ward ? `In ${M.wardName.get(state.ward)}` : 'Neighbourhood detail' },
+  ];
+  if (localFirst) groups.reverse();
+  const opt = (l) => `<label class="lens-opt"><input type="radio" name="lens" value="${l.id}" ${state.lens === l.id ? 'checked' : ''} /><span>${esc(l.label)}</span></label>`;
+  $('lens-options').innerHTML = `<label class="lens-opt"><input type="radio" name="lens" value="" ${!state.lens ? 'checked' : ''} /><span>None</span></label>`
+    + groups.map((g, i) => `<p class="lens-group">${esc(g.title)}${i === 0 ? ' <small>suggested at this zoom</small>' : ''}</p>${LENSES.filter((l) => l.scale === g.key).map(opt).join('')}`).join('');
+  $('lens-options').querySelectorAll('input').forEach((i) => i.addEventListener('change', () => setLens(i.value || null)));
+  $('lens-btn').classList.toggle('is-on', !!state.lens);
+}
+
+function renderLens(ctx) {
+  const box = $('lens');
+  const l = state.lens && lensById.get(state.lens);
+  box.hidden = !l;
+  if (!l) return;
+  $('lens-title').textContent = l.label;
+  const ward = state.ward ? M.wardName.get(state.ward) : '';
+  $('lens-scope').textContent = `${l.citywide ? 'All wards' : ward || 'All of Toronto'} · ${ctx.pm.P.label} system`;
+  box.querySelectorAll('.lens-view').forEach((s) => (s.hidden = s.dataset.lens !== l.id));
+  requestAnimationFrame(() => { try { l.render(ctx); } catch (err) { console.error(err); } });
+}
+
+function renderDistribution(ctx) {
+  const el = $('dist-chart');
+  if (!ctx.latest.length) { el.innerHTML = '<p class="empty">No evaluated buildings here in this scoring system.</p>'; return; }
+  drawVisual('distribution', el, { dist: { ...scoreDistribution({ latest: ctx.latest }), label: ctx.pm.P.long } });
+}
+
+function setLens(id, { focus = false } = {}) {
+  state.lens = id && lensById.has(id) ? id : null;
+  if (!story?.active()) commitView();
+  renderChrome();
+  if (focus && state.lens) $('lens-title').focus({ preventScroll: true });
+}
+
+// ---- deeper levels ------------------------------------------------------------------------------------------------------
+// Going down from the map: remember exactly where the map is, then cross-fade into the level.
+function goDeep(hash) {
+  commitView();
+  lastExplore = exploreHash();
+  const run = () => { history.pushState({ fromMap: true }, '', hash); onRoute(); };
+  if (!document.startViewTransition || reducedMotion()) run();
+  else { document.documentElement.classList.add('vt-depth'); document.startViewTransition(run).finished.finally(() => document.documentElement.classList.remove('vt-depth')); }
+}
+
+function backToMap() {
+  if (history.state?.fromMap) { history.back(); return; }
+  navigate(lastExplore ?? encodeExplore({ ward: state.ward, selected: state.selected, lens: state.lens, period: state.period, mapShow: state.mapShow }));
+}
+
+function openDepth(kind, page = null, after) {
+  const prev = state.depth, prevPage = state.page;
+  if (prev === 'xray' && kind !== 'xray') disposeXray();
+  state.depth = kind; state.page = page;
+  document.body.dataset.depth = kind;
+  $('depth').hidden = false;
+  for (const id of ['map-wrap', 'rail-left', 'rail-right']) $(id).inert = true;
+  const view = kind === 'page' ? page : kind;
+  $('depth-body').querySelectorAll('.view').forEach((v) => (v.hidden = v.dataset.view !== view));
+  tip.hide();
+  closeMenus();
+  const r = recOf(state.selected);
+  const tail = { xray: 'Inspection', compare: 'Same score, different story', story: 'Beyond the Score', page: PAGES[page] }[kind];
+  if (M) renderCrumbs($('depth-crumbs'), tail);
+  $('depth-back').hidden = kind === 'story';
+  markNav();
+  document.title = `${kind === 'xray' && r ? `X-Ray: ${titleCase(r.address)}` : tail} · LeaseLens`;
+  if (prev !== kind || prevPage !== page) $('depth').scrollTop = 0;
+  if (M && (kind === 'xray' || kind === 'compare')) {
+    requestAnimationFrame(() => {
+      try { kind === 'xray' ? renderXray(context(), M, state.xray) : renderFingerprint(context(), M, state.fp); } catch (err) { console.error(err); }
+      if (after) requestAnimationFrame(after);
+    });
+  } else if (after) requestAnimationFrame(after);
+  // Going down a level moves focus to its heading (the story keeps focus in its own panel).
+  if ((prev !== kind || prevPage !== page) && !story?.active()) {
+    // after the view has rendered (the X-Ray shows either its empty state or the building)
+    setTimeout(() => {
+      const h = [...$('depth-body').querySelectorAll(`.view[data-view="${view}"] h1`)].find((x) => x.offsetParent);
+      if (h && state.depth === kind) { h.tabIndex = -1; h.focus({ preventScroll: true }); }
+    }, 60);
+  }
+}
+
+function closeDepth() {
+  if (state.depth === 'map') return;
+  if (state.depth === 'xray') disposeXray();
+  state.depth = 'map'; state.page = null;
+  document.body.dataset.depth = 'map';
+  $('depth').hidden = true;
+  for (const id of ['map-wrap', 'rail-left', 'rail-right']) $(id).inert = false;
+  requestAnimationFrame(Atlas.invalidate);
+}
+
+// ---- interactions ---------------------------------------------------------------------------------------------------------
+function select(rsn, { fly = true, focus = false, open = false } = {}) {
+  if (rsn && state.depth === 'xray') { navigate(`#/xray/${rsn}`); return; }
+  if (state.depth !== 'map' && !story?.active()) {
+    // from the comparison or a page: back onto the map, with this building selected
+    navigate(encodeExplore({ selected: rsn, lens: state.lens, period: state.period, mapShow: state.mapShow })); // no view: it flies there
+    return;
+  }
+  if (open && rsn) { goDeep(`#/xray/${rsn}`); return; }
+  const r = recOf(rsn);
+  if (!story?.active()) commitView();
   state.selected = rsn;
-  if (open && rsn) { navigate(state.route === 'xray' ? `#/xray/${rsn}` : `#/building/${rsn}`); return; }
-  if (state.route === 'building' && !rsn) { history.replaceState(null, '', '#/building'); }
-  if (state.route === 'xray' && !rsn) { history.replaceState(null, '', '#/xray'); }
-  renderView();
+  state.placeTab = 'summary';
+  if (r && state.ward && r.ward !== state.ward) state.ward = ''; // the building's own ward becomes the context
+  pushExplore();
+  renderMapLevel();
+  if (r && fly) Atlas.showBuilding(r);
+  if (r) document.title = `${titleCase(r.address)} · Explore · LeaseLens`;
+  if (focus && rsn) requestAnimationFrame(() => $('place-title')?.focus({ preventScroll: true }));
+  if (!rsn && document.activeElement === document.body) $('atlas-h1').focus({ preventScroll: true });
+}
+
+function setWard(ward, { fly = true } = {}) {
+  if (!story?.active()) commitView();
+  state.ward = ward;
+  state.selected = null;
+  pushExplore();
+  renderMapLevel();
+  if (fly) ward ? Atlas.showWard(ward) : Atlas.showCity();
+  syncControls();
 }
 
 // Fingerprint state: a patch object, or a function of the current state that returns one.
 function setFp(patch, hash) {
   Object.assign(state.fp, typeof patch === 'function' ? patch(state.fp) : patch);
-  if (hash && location.hash !== hash) history.replaceState(null, '', hash);
-  else if (state.fp.a && state.route === 'fingerprint') history.replaceState(null, '', `#/fingerprint/${state.fp.a}`);
-  renderView();
+  if (!story?.active()) {
+    if (hash && location.hash !== hash) history.replaceState(history.state, '', hash);
+    else if (state.fp.a && state.depth === 'compare') history.replaceState(history.state, '', `#/compare/${state.fp.a}`);
+  }
+  if (state.depth === 'compare') renderFingerprint(context(), M, state.fp);
 }
 
 function setPeriod(v) {
   const input = document.querySelector(`input[name="period"][value="${v}"]`);
   if (input && !input.checked) { input.checked = true; input.dispatchEvent(new Event('change')); }
-}
-
-function setWard(ward) {
-  state.ward = ward;
-  $('ward').value = ward;
-  renderView();
-  if (state.route === 'q1') requestAnimationFrame(() => focusOnMap({ ...context(), selected: null }));
 }
 
 function findBuilding(text) {
@@ -236,46 +554,121 @@ function findBuilding(text) {
   return latest.find((d) => d.address.toUpperCase() === v) || latest.find((d) => d.address.toUpperCase().startsWith(v)) || latest.find((d) => d.address.toUpperCase().includes(v));
 }
 
+// Re-render whatever is showing (theme change, period change, story state).
+function render(after) {
+  if (!M) return;
+  tip.hide();
+  if (state.depth === 'map') { renderMapLevel(); if (after) requestAnimationFrame(after); }
+  else openDepth(state.depth, state.page, after);
+}
+
+// Form controls always mirror the state (the story changes state without the reader touching them).
+function syncControls() {
+  const check = (name, v) => document.querySelectorAll(`input[name="${name}"]`).forEach((i) => (i.checked = i.value === String(v ?? '')));
+  check('period', state.period);
+  check('map-show', state.mapShow);
+  check('item-group', state.problems.group);
+  check('change-start', state.changes.start);
+  check('movers-n', state.movers.n);
+  check('lens', state.lens);
+  $('ward').value = state.ward;
+}
+
+function renderMetaNotes() {
+  const pm = M.byPeriod[state.period];
+  $('period-note').innerHTML = `Evaluations from ${formatDate(pm.dates[0])} to ${formatDate(pm.dates[1])}.`;
+  const ex = (e) => M.byPeriod[e].excluded;
+  $('data-note').innerHTML = `City of Toronto Open Data,
+    <a href="https://open.toronto.ca/dataset/apartment-building-evaluation/" target="_blank" rel="noopener">Apartment Building Evaluations</a>
+    (pre-2023 and 2023–current files, ${fmt.n(M.data.records.length)} evaluations in total).
+    ${fmt.n(ex('pre').flagged + ex('cur').flagged)} records flagged in the data as created in error, empty of ratings, or duplicated were left out,
+    along with ${fmt.n(ex('pre').noScore + ex('cur').noScore)} with no score. Nothing else was removed or changed. Buildings are matched by their City registration number (RSN).
+    Building shapes: City of Toronto <a href="https://open.toronto.ca/dataset/3d-massing/" target="_blank" rel="noopener">3D Massing</a>; ward boundaries: <a href="https://open.toronto.ca/dataset/city-wards/" target="_blank" rel="noopener">City Wards</a>; streets and shoreline: <a href="https://open.toronto.ca/dataset/toronto-centreline-tcl/" target="_blank" rel="noopener">Toronto Centreline</a>. All under the Open Government Licence – Toronto.`;
+}
+
+// Search covers every evaluated building: the chosen system first, then buildings only in the other one.
+let searchSource = [];
+function fillSearch() {
+  const pm = M.byPeriod[state.period], other = M.byPeriod[state.period === 'cur' ? 'pre' : 'cur'];
+  searchSource = [...pm.latest, ...other.latest.filter((r) => !pm.latestByRsn.has(r.rsn))];
+}
+
 function wireControls() {
   const radios = (name, fn) => document.querySelectorAll(`input[name="${name}"]`).forEach((i) => i.addEventListener('change', () => fn(i.value)));
   radios('period', (v) => {
     state.period = v;
     state.xray.evalUid = null; // the X-Ray follows the scoring system unless a point is picked again
-    if (state.selected && !M.byPeriod[v].latestByRsn.has(state.selected) && state.route !== 'building') state.selected = null;
-    fillSearch(); renderMetaNotes(); renderView();
+    fillSearch(); renderMetaNotes();
+    if (!story?.active()) commitView();
+    render();
   });
-  radios('map-show', (v) => { state.mapShow = v; renderView(); });
-  radios('item-group', (v) => { state.problems.group = v; state.problems.showAll = false; renderView(); });
-  radios('change-start', (v) => { state.changes.start = v; renderView(); });
-  radios('movers-n', (v) => { state.movers.n = +v; renderView(); });
-  $('problem-more').addEventListener('click', () => { state.problems.showAll = !state.problems.showAll; renderView(); });
+  radios('map-show', (v) => { state.mapShow = v; if (!story?.active()) commitView(); render(); });
+  radios('item-group', (v) => { state.problems.group = v; state.problems.showAll = false; renderLens(context()); });
+  radios('change-start', (v) => { state.changes.start = v; renderLens(context()); });
+  radios('movers-n', (v) => { state.movers.n = +v; renderLens(context()); });
+  $('problem-more').addEventListener('click', () => { state.problems.showAll = !state.problems.showAll; renderLens(context()); });
+  $('lens-close').addEventListener('click', () => { setLens(null); $('lens-btn').focus(); });
 
   $('ward').innerHTML += M.wards.map((w) => `<option value="${w.ward}">${+w.ward} · ${esc(w.name)}</option>`).join('');
-  $('ward').addEventListener('change', (e) => setWard(e.target.value));
+  $('ward').addEventListener('change', (e) => toMap(() => setWard(e.target.value)));
 
-  // Searching always opens the building report: that's what a renter typing an address wants.
-  const wireSearch = (input, button) => {
-    const go = () => { const r = findBuilding(input.value); if (r) { input.value = ''; select(r.rsn, { open: true }); } };
-    input.addEventListener('change', go);
-    input.addEventListener('keydown', (e) => { if (e.key === 'Enter') go(); });
-    button?.addEventListener('click', go);
-  };
-  wireSearch($('search'));
-  wireSearch($('hero-search'), $('hero-go'));
-
-  // ← / → move between the five questions (ignored while typing or using the map).
-  document.addEventListener('keydown', (e) => {
-    if (e.altKey || e.ctrlKey || e.metaKey || !['ArrowLeft', 'ArrowRight'].includes(e.key)) return;
-    if (e.target.closest('input, select, textarea, .leaflet-container')) return;
-    const link = $(e.key === 'ArrowLeft' ? 'pager-prev' : 'pager-next');
-    if (!$('pager').hidden) { e.preventDefault(); navigate(link.getAttribute('href')); }
+  search = initSearch($('search'), $('search-list'), {
+    source: () => searchSource,
+    describe: (r) => `${esc(r.wardName)} · ${r.era === state.period ? `score ${r.score}` : `evaluated ${r.date.slice(0, 4)}, other scoring system`}`,
+    // In the X-Ray, another address opens its X-Ray; everywhere else it is selected on the map.
+    onPick: (r) => {
+      if (state.depth === 'xray' && !story?.active()) { navigate(`#/xray/${r.rsn}`); return; }
+      toMap(() => select(r.rsn, { focus: true }));
+    },
   });
+  $('depth-back').addEventListener('click', backToMap);
+}
 
-  // mobile menu
+// ---- shell: menus, keys, theme -------------------------------------------------------------------------------------------
+const MENUS = [['lens-btn', 'lens-menu'], ['layers-btn', 'layers-panel']];
+function closeMenus(except) {
+  for (const [b, p] of MENUS) if (p !== except) { $(p).hidden = true; $(b).setAttribute('aria-expanded', 'false'); }
+  $('atlas-nav').classList.remove('open');
+  $('menu-button').setAttribute('aria-expanded', 'false');
+  document.querySelectorAll('details.menu[open]').forEach((d) => (d.open = false));
+}
+
+function wireShell() {
+  for (const [b, p] of MENUS) {
+    $(b).addEventListener('click', () => {
+      const open = $(p).hidden;
+      closeMenus(p);
+      $(p).hidden = !open;
+      $(b).setAttribute('aria-expanded', String(open));
+      if (open) $(p).querySelector('input:checked, input, select, button')?.focus();
+    });
+  }
   $('menu-button').addEventListener('click', () => {
-    const open = !$('nav-panel').classList.contains('open');
-    $('nav-panel').classList.toggle('open', open);
+    const open = !$('atlas-nav').classList.contains('open');
+    $('atlas-nav').classList.toggle('open', open);
     $('menu-button').setAttribute('aria-expanded', String(open));
+  });
+  $('atlas-nav').addEventListener('click', (e) => {
+    const a = e.target.closest('a');
+    if (!a) return;
+    closeMenus();
+    // "Explore" from a deeper level goes back to the map as it was.
+    if (a.dataset.route === 'explore' && state.depth !== 'map' && !story?.active()) { e.preventDefault(); backToMap(); }
+  });
+  // close pop-up panels on an outside click
+  document.addEventListener('click', (e) => {
+    if (!e.target.closest('.pop-panel, .tool, .info-btn, .popover')) for (const [b, p] of MENUS) if (!$(p).hidden) { $(p).hidden = true; $(b).setAttribute('aria-expanded', 'false'); }
+    document.querySelectorAll('details.menu[open]').forEach((d) => { if (!d.contains(e.target) || e.target.closest('.menu-item')) d.open = false; });
+  });
+  // Escape: close the innermost thing first (menu → panel → selection → ward), never moving the map.
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape' || e.defaultPrevented || state.layer !== 'work') return;
+    const d = document.querySelector('details.menu[open]');
+    if (d) { d.open = false; d.querySelector('summary').focus(); e.preventDefault(); return; }
+    for (const [b, p] of MENUS) if (!$(p).hidden) { $(p).hidden = true; $(b).setAttribute('aria-expanded', 'false'); $(b).focus(); e.preventDefault(); return; }
+    if (state.depth !== 'map' || story?.active() || e.target.closest('input, select, textarea, .popover')) return;
+    if (state.selected) { select(null); e.preventDefault(); }
+    else if (state.ward) { setWard('', { fly: false }); e.preventDefault(); }
   });
 
   // theme toggle (remembered per browser; the page still works if storage is blocked)
@@ -283,46 +676,88 @@ function wireControls() {
     if (t) document.documentElement.dataset.theme = t; else delete document.documentElement.dataset.theme;
     const dark = t ? t === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches;
     $('theme-toggle').querySelector('span').textContent = dark ? 'Light mode' : 'Dark mode';
+    document.dispatchEvent(new CustomEvent('themechange'));
   };
   let saved = null;
   try { saved = localStorage.getItem('lease-lens-theme'); } catch { /* storage unavailable */ }
   applyTheme(saved);
+  const restyle = () => { Atlas.restyle(); render(); };
   $('theme-toggle').addEventListener('click', () => {
     const dark = document.documentElement.dataset.theme ? document.documentElement.dataset.theme === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches;
     const next = dark ? 'light' : 'dark';
     try { localStorage.setItem('lease-lens-theme', next); } catch { /* ignore */ }
     applyTheme(next);
-    renderView();
+    restyle();
   });
-  matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { applyTheme(document.documentElement.dataset.theme); renderView(); });
-}
-function closeMenu() {
-  $('nav-panel').classList.remove('open');
-  $('menu-button').setAttribute('aria-expanded', 'false');
+  matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { applyTheme(document.documentElement.dataset.theme); restyle(); });
+
+  // Entering from the homepage: a short crossfade where the browser supports it. The hero drawing and the
+  // map share a transition name, so the drawing settles into the map's box (a shared box, not a camera
+  // move: the two use different projections).
+  document.addEventListener('click', (e) => {
+    const a = e.target.closest('#home a[href^="#/"]');
+    if (!a || e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey) return;
+    e.preventDefault();
+    enterWorkspace(a.getAttribute('href'));
+  });
 }
 
-function fillSearch() {
-  const latest = M.byPeriod[state.period].latest;
-  $('building-list').innerHTML = [...latest].sort((a, b) => d3.ascending(a.address, b.address))
-    .map((r) => `<option value="${esc(r.address)}">${esc(r.wardName)} · score ${r.score}</option>`).join('');
+export function enterWorkspace(hash) {
+  const swap = () => { history.pushState(null, '', hash); onRoute(); };
+  if (!document.startViewTransition || reducedMotion()) { swap(); return; }
+  document.documentElement.classList.add('vt-enter');
+  const t = document.startViewTransition(swap);
+  t.finished.finally(() => document.documentElement.classList.remove('vt-enter'));
 }
 
-// Re-draw when the available space changes (the map only needs a resize).
+// The map resizes with its box; the open analysis layer redraws for its new width.
 function watchResize() {
   let t, last = '';
   new ResizeObserver(() => {
     clearTimeout(t);
     t = setTimeout(() => {
-      invalidateMap();
+      Atlas.invalidate();
       const s = `${$('stage').clientWidth}x${$('stage').clientHeight}`;
-      if (s === last) return;
+      if (s === last || $('app').hidden) return;
       last = s;
-      if (state.route !== 'q1') renderView();
+      if (state.depth === 'map' && state.lens) renderLens(context());
+      else if (state.depth === 'xray' || state.depth === 'compare') render();
     }, 150);
   }).observe($('stage'));
 }
 
+// ---- the interface the story controller uses ----------------------------------------------------------------------------------
+const app = {
+  get M() { return M; },
+  state,
+  highlight: null,
+  navigate,
+  render,
+  syncControls,
+  setWard: (w) => setWard(w),
+  // One chapter: which level it happens at, how the map is framed and what runs after it is drawn.
+  present({ depth, mapTo, after }) {
+    if (depth === 'map') {
+      closeDepth();
+      renderMapLevel();
+      Atlas.wardsLoaded().then(() => {
+        if (mapTo?.kind === 'city') Atlas.showCity();
+        if (mapTo?.kind === 'ward') Atlas.showWard(mapTo.ward);
+        if (mapTo?.kind === 'building') { const r = recOf(mapTo.rsn); if (r) Atlas.showBuilding(r); }
+      });
+      if (after) setTimeout(after, reducedMotion() ? 80 : 900);
+    } else openDepth(depth, null, after);
+  },
+};
+
 (async function main() {
+  initInfoPopovers();
+  wireShell();
+  initHome({ onPick: (r) => enterWorkspace(`#/explore?b=${r.rsn}`) });
+  window.addEventListener('hashchange', routeIfChanged);
+  window.addEventListener('popstate', routeIfChanged);
+  onRoute(); // the homepage never waits for the inspection data
+
   try {
     const data = await LL.loadAll((msg) => ($('status').textContent = msg));
     M = buildModel(data);
@@ -333,10 +768,11 @@ function watchResize() {
     return;
   }
   $('status').textContent = '';
+  story = createStory(app);
   wireControls();
   fillSearch();
   renderMetaNotes();
-  window.addEventListener('hashchange', onRoute);
-  onRoute();
   watchResize();
+  document.body.dataset.ready = '1';
+  if (state.layer === 'work') onRoute();
 })();

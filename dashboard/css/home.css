@@ -1,0 +1,71 @@
+/* Layer A: the public homepage. Editorial headline on the left, the Toronto atlas on the right.
+   The atlas box has a fixed size before anything loads, so nothing shifts when the drawing arrives. */
+
+body[data-layer="home"] { background: var(--atlas-bg); }
+
+.home { min-height: 100vh; min-height: 100svh; display: grid; grid-template-rows: auto 1fr auto; background: var(--atlas-bg); color: var(--ink); }
+
+/* header ------------------------------------------------------------------------------------- */
+.site-header { display: flex; align-items: center; justify-content: space-between; gap: 24px; padding: 22px clamp(16px, 4vw, 56px); position: relative; z-index: 2; }
+.wordmark { font-family: var(--font-display); font-size: 22px; font-weight: 600; letter-spacing: -0.01em; color: var(--ink); text-decoration: none; }
+.wordmark span { color: var(--accent); }
+.site-nav { display: flex; gap: 28px; }
+.site-nav a { color: var(--ink); text-decoration: none; font-size: 15px; font-weight: 500; padding: 6px 0; border-bottom: 2px solid transparent; }
+.site-nav a:hover { border-bottom-color: var(--accent); }
+.site-menu-btn { display: none; }
+
+/* hero ---------------------------------------------------------------------------------------- */
+.hero { position: relative; display: grid; grid-template-columns: minmax(340px, 5fr) minmax(0, 7fr); column-gap: 32px; min-height: 0; outline: none; }
+.hero-copy { align-self: center; padding: 0 0 8vh clamp(16px, 4vw, 56px); max-width: 600px; position: relative; z-index: 2; }
+.hero-eyebrow { font-size: 13px; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; color: var(--accent); margin-bottom: 20px; }
+.hero-title { font-family: var(--font-display); font-weight: 600; font-size: clamp(40px, 5.2vw, 76px); line-height: 1.02; letter-spacing: -0.025em; text-wrap: balance; }
+.hero-sub { font-size: clamp(17px, 1.35vw, 20px); line-height: 1.5; color: var(--ink-2); margin-top: 22px; max-width: 30em; }
+.hero-actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 34px; }
+.btn-lg { height: 50px; padding: 0 26px; font-size: 16px; display: inline-flex; align-items: center; text-decoration: none; }
+.hero-actions .btn:not(.btn-primary) { background: transparent; border-color: var(--ink); color: var(--ink); }
+.hero-actions .btn:not(.btn-primary):hover { background: var(--surface-2); }
+.hero-link { display: inline-block; margin-top: 22px; font-size: 14.5px; color: var(--ink-2); }
+
+.hero-atlas { margin: 0; position: relative; min-height: 0; display: grid; grid-template-rows: 1fr auto; }
+.atlas-stage { position: relative; overflow: hidden; min-height: 420px; view-transition-name: atlas; }
+.atlas-fallback { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; object-position: center; transition: opacity 0.4s; }
+.atlas-stage.is-live .atlas-fallback { opacity: 0; }
+.atlas-canvas { position: absolute; inset: 0; display: block; }
+.atlas-label { position: absolute; z-index: 3; pointer-events: none; background: var(--surface); color: var(--ink); border: 1px solid var(--line); padding: 4px 8px; font-size: 12.5px; white-space: nowrap; box-shadow: var(--shadow-pop); }
+.atlas-caption { display: flex; align-items: center; gap: 8px; justify-content: flex-end; padding: 10px clamp(16px, 4vw, 56px) 0 0; font-size: 12.5px; color: var(--muted); }
+.atlas-key { display: inline-flex; align-items: center; gap: 6px; margin-left: 8px; white-space: nowrap; }
+.atlas-swatch { width: 12px; height: 10px; border: 1.5px solid var(--atlas-rental); background: var(--atlas-rental-fill); }
+
+.site-foot { padding: 18px clamp(16px, 4vw, 56px) 22px; font-size: 13px; color: var(--muted); }
+
+/* entering the workspace: a short crossfade; the atlas settles into the map's place */
+::view-transition-old(root), ::view-transition-new(root) { animation-duration: 0.45s; }
+::view-transition-group(atlas) { animation-duration: 0.55s; animation-timing-function: cubic-bezier(0.2, 0.7, 0.2, 1); }
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-group(*), ::view-transition-old(*), ::view-transition-new(*) { animation: none !important; }
+  .atlas-fallback { transition: none; }
+}
+
+/* tablet --------------------------------------------------------------------------------------- */
+@media (max-width: 1080px) {
+  .hero { grid-template-columns: 1fr; grid-template-rows: auto minmax(0, 1fr); }
+  .hero-copy { padding: 4vh clamp(16px, 4vw, 56px) 8px; max-width: 760px; }
+  .atlas-stage { min-height: 0; height: 52vh; }
+}
+
+/* mobile: simplified composition; the drawing sits under the copy at a fixed height ---------------- */
+@media (max-width: 640px) {
+  .site-header { padding: 14px 16px; }
+  .site-menu-btn { display: block; font: inherit; font-size: 14px; font-weight: 600; padding: 6px 14px; border: 1px solid var(--ink); border-radius: var(--radius); background: transparent; color: var(--ink); }
+  .site-nav { display: none; position: absolute; left: 0; right: 0; top: 100%; flex-direction: column; gap: 0; background: var(--surface); border-bottom: 1px solid var(--line); padding: 4px 16px 12px; }
+  .site-nav.open { display: flex; }
+  .site-nav a { padding: 12px 0; border-bottom: 1px solid var(--line); }
+  .hero-copy { padding: 16px 16px 8px; }
+  .hero-eyebrow { margin-bottom: 12px; font-size: 12px; }
+  .hero-sub { margin-top: 14px; }
+  .hero-actions { margin-top: 22px; }
+  .hero-actions .btn { flex: 1 1 auto; justify-content: center; }
+  .atlas-stage { height: 44vh; min-height: 260px; }
+  .atlas-caption { justify-content: flex-start; flex-wrap: wrap; padding: 8px 16px 0; }
+  .atlas-key { margin-left: 0; }
+}

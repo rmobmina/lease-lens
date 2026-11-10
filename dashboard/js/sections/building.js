@@ -1,145 +1,161 @@
-// Building report: everything the five questions say about ONE building a renter is considering.
+// Place panel: the compact, dismissible card beside the map for what is selected.
+//   Building → address, latest score in the chosen scoring system, evaluation date, characteristics, and
+//              three actions: Inspect building (X-Ray), Compare nearby, View history.
+//   Ward     → its share in the citywide lowest 10%, against the city, and its lowest-scoring buildings
+//              (also the keyboard route to individual buildings).
+// It replaces the old full-page Building Explorer; the numbers and rules are the same.
 
-import { scoreBand, itemProblemRates, decadeMedians } from '../model.js';
-import { tip, pct, fmt, esc, titleCase, signed, formatDate, svgIn, cssVar } from '../ui.js';
-
-const SHOW_PROBLEMS = 5;
-
-// "Scores higher than 72% of …" for most buildings; flipped for low scorers so it never reads "higher than 0%".
-function rankText(r, rs, who, also = false) {
-  const lower = rs.filter((d) => d.score < r.score).length / rs.length;
-  const higher = rs.filter((d) => d.score > r.score).length / rs.length;
-  const lead = also ? 'It' : 'This building';
-  return lower >= 0.5
-    ? `${lead} scores higher than <b>${pct(lower)}</b> of ${who}.`
-    : `${lead} scores lower than <b>${pct(higher)}</b> of ${who}.`;
-}
+import { scoreBand } from '../model.js';
+import { buildingEvaluations, timelinePoints } from '../xray-model.js';
+import { nearby } from '../atlas/logic.js';
+import { renderTimeline } from './xray-timeline.js';
+import { pct, fmt, esc, titleCase, formatDate } from '../ui.js';
 
 const BAND = {
-  low10: { label: 'Lowest 10% in Toronto', cls: 'band-low10' },
-  low25: { label: 'Lowest 25% in Toronto', cls: 'band-low25' },
-  other: { label: 'Above the lowest 25%', cls: 'band-ok' },
+  low10: { label: 'Lowest 10% in Toronto', cls: 'band-low10', mark: '▼ ' },
+  low25: { label: 'Lowest 25% in Toronto', cls: 'band-low25', mark: '▼ ' },
+  other: { label: 'Above the lowest 25%', cls: 'band-ok', mark: '' },
 };
 
-export function renderBuilding(ctx, M) {
+// "Scores higher than 72% of …" for most buildings; flipped for low scorers so it never reads "higher than 0%".
+function rankText(r, rs, who) {
+  const lower = rs.filter((d) => d.score < r.score).length / rs.length;
+  const higher = rs.filter((d) => d.score > r.score).length / rs.length;
+  return lower >= 0.5 ? `Scores higher than <b>${pct(lower)}</b> of ${who}.` : `Scores lower than <b>${pct(higher)}</b> of ${who}.`;
+}
+const distance = (m) => (m < 1000 ? `${Math.round(m / 10) * 10} m` : `${(m / 1000).toFixed(1)} km`);
+
+// opts: { tab: 'summary'|'nearby'|'history', onClose, onTab, onInspect(rsn, uid?), onSelect(rsn), onWard(ward), onPeriod(era), onLens(id) }
+export function renderPlace(box, ctx, M, opts) {
+  const { pm, selected, ward } = ctx;
+  if (selected) return renderBuildingCard(box, ctx, M, opts);
+  if (ward) return renderWardCard(box, ctx, M, opts);
+  box.hidden = true;
+  box.innerHTML = '';
+}
+
+// ---- building -----------------------------------------------------------------------------------------
+function renderBuildingCard(box, ctx, M, opts) {
   const { pm, selected } = ctx;
-  const empty = document.getElementById('b-empty'), report = document.getElementById('b-report');
-  const r = selected && pm.latestByRsn.get(selected);
+  const r = pm.latestByRsn.get(selected);
+  const otherEra = pm.era === 'cur' ? 'pre' : 'cur';
+  const other = !r && M.byPeriod[otherEra].latestByRsn.get(selected);
+  const any = r ?? other ?? M.data.byRsn.get(selected)?.at(-1);
+  box.hidden = false;
+  if (!any) { box.innerHTML = ''; box.hidden = true; return; }
+
+  const head = `<header class="place-head">
+      <div><p class="place-kicker">Ward ${+any.ward} · ${esc(any.wardName)}</p>
+      <h2 id="place-title" tabindex="-1">${esc(titleCase(any.address))}</h2></div>
+      <button type="button" class="icon-button place-close" data-act="close" aria-label="Close building details" title="Close (Esc)">×</button>
+    </header>`;
+
   if (!r) {
-    report.hidden = true; empty.hidden = false;
-    const other = selected && M.byPeriod[pm.era === 'cur' ? 'pre' : 'cur'].latestByRsn.get(selected);
-    document.getElementById('b-empty-note').innerHTML = other
-      ? `${esc(titleCase(other.address))} has no evaluation in the ${pm.P.long}. Switch the scoring system in the sidebar to see it.`
-      : '';
-    renderSuggestions(ctx);
+    box.innerHTML = `${head}
+      <p class="place-note">No evaluation of this building in the ${esc(pm.P.long)}.${other ? ` Its latest evaluation (${formatDate(other.date)}) used the ${esc(M.byPeriod[otherEra].P.long)}.` : ''}</p>
+      <div class="place-actions">
+        ${other ? `<button type="button" class="btn btn-primary" data-act="period" data-era="${otherEra}">Show the ${esc(M.byPeriod[otherEra].P.label)} system</button>` : ''}
+        <button type="button" class="btn" data-act="inspect">Inspect building</button>
+      </div>`;
+    wire(box, opts, selected);
     return;
   }
-  empty.hidden = true; report.hidden = false;
 
-  // header
-  document.getElementById('b-title').textContent = titleCase(r.address);
-  document.getElementById('b-meta').innerHTML = [
-    `Ward ${+r.ward} · ${esc(r.wardName)}`,
-    r.yearBuilt ? `Built ${r.yearBuilt}` : 'Year built not recorded',
-    `${r.storeys ?? '–'} storeys · ${r.units ?? '–'} units`,
-    r.propertyType ? titleCase(r.propertyType) : '',
-  ].filter(Boolean).map((s) => `<span>${s}</span>`).join('');
-
-  // 1. score + rank
   const band = scoreBand(r.score, pm);
-  const wardRs = pm.latest.filter((d) => d.ward === r.ward);
-  document.getElementById('b-score').innerHTML = `
-    <p class="card-label">Latest score</p>
-    <p class="score-big">${r.score}<small>/100</small></p>
-    <p class="band ${BAND[band].cls}">${band === 'other' ? '' : '<span aria-hidden="true">▼ </span>'}${BAND[band].label}</p>
-    <p class="card-text">Evaluated ${formatDate(r.date)}. ${rankText(r, pm.latest, 'Toronto buildings')} ${rankText(r, wardRs, `the ${fmt.n(wardRs.length)} in ${esc(r.wardName)}`, true)}</p>
-    <p class="card-links"><a href="#/q1" data-keep>See it on the map →</a></p>`;
-
-  // 2. history
-  const evs = pm.recs.filter((d) => d.rsn === r.rsn).sort((a, b) => a.time - b.time);
-  const hist = document.getElementById('b-history');
-  const prev = evs.length > 1 ? evs.at(-2) : null;
-  hist.querySelector('.card-text').innerHTML = prev
-    ? `<b>${signed(r.score - prev.score)} points</b> since the previous evaluation (${formatDate(prev.date)}). ${evs.length} evaluations in the ${pm.P.long}.`
-    : `Only one evaluation so far in the ${pm.P.long}, so there's no change to show yet.`;
-  drawHistory(hist.querySelector('.mini-chart'), evs);
-
-  // 3. problems in the latest evaluation
-  const city = new Map(itemProblemRates(pm.latest, pm).map((d) => [d.col, d]));
   const rated = pm.cats.filter((c) => r.ratings[c] != null);
-  const poor = rated.filter((c) => r.ratings[c] <= pm.P.poorMax)
-    .sort((a, b) => r.ratings[a] - r.ratings[b] || city.get(a).share - city.get(b).share);
-  const typical = d3.median(pm.latest, (d) => pm.cats.filter((c) => d.ratings[c] != null && d.ratings[c] <= pm.P.poorMax).length);
-  const scaleMax = pm.era === 'cur' ? 3 : 5;
-  document.getElementById('b-problems').innerHTML = `
-    <p class="card-label">Problems found in the latest inspection</p>
-    <p class="card-headline">${poor.length ? `${poor.length} of ${rated.length} items rated poorly` : `None of ${rated.length} items rated poorly`}</p>
-    <p class="card-text">A typical Toronto building has ${typical} item${typical === 1 ? '' : 's'} rated poorly. “Poorly” means ${pm.P.poorText}.</p>
-    ${poor.length ? `<ul class="problem-list">${poor.map((c, i) => `<li ${i >= SHOW_PROBLEMS ? 'hidden' : ''}><span class="pl-name">${esc(city.get(c).label)}</span>
-      <span class="pl-rating">rated ${r.ratings[c]} of ${scaleMax}</span>
-      <span class="pl-city">poor in ${pct(city.get(c).share)} of buildings</span></li>`).join('')}</ul>` : ''}
-    ${poor.length > SHOW_PROBLEMS ? `<button type="button" class="btn btn-quiet" id="b-more">Show all ${poor.length} problems</button>` : ''}
-    <p class="card-links"><a href="#/xray/${r.rsn}">Open its Building X-Ray →</a><br>${pm.era === 'cur' ? `<a href="#/fingerprint/${r.rsn}">See its inspection fingerprint →</a><br>` : ''}<a href="#/q3" data-keep>How common are these problems? →</a></p>`;
+  const poor = rated.filter((c) => r.ratings[c] <= pm.P.poorMax).length;
+  const tab = opts.tab ?? 'summary';
+  const facts = [
+    ['Built', r.yearBuilt ?? 'not recorded'],
+    ['Storeys', r.storeys ?? '–'],
+    ['Units', r.units ?? '–'],
+    ['Rated poorly', `${poor} of ${rated.length} items`],
+  ];
+  box.innerHTML = `${head}
+    <div class="place-score">
+      <p class="score-line"><span class="score-num">${r.score}</span><span class="score-of">/100</span>
+        <span class="band ${BAND[band].cls}">${BAND[band].mark ? `<span aria-hidden="true">${BAND[band].mark}</span>` : ''}${BAND[band].label}</span></p>
+      <p class="place-date">Evaluated ${formatDate(r.date)} · ${esc(pm.P.label)} system
+        <button type="button" class="info-btn" data-info="score" aria-label="What does this score mean?">i</button></p>
+    </div>
+    <dl class="place-facts">${facts.map(([k, v]) => `<div><dt>${k}</dt><dd>${v}</dd></div>`).join('')}</dl>
+    <p class="place-rank">${rankText(r, pm.latest, 'Toronto buildings')}</p>
+    <div class="place-actions" role="group" aria-label="Building actions">
+      <button type="button" class="btn btn-primary" data-act="inspect">Inspect building</button>
+      <button type="button" class="btn" data-act="tab" data-tab="nearby" aria-pressed="${tab === 'nearby'}" aria-controls="place-more">Compare nearby</button>
+      <button type="button" class="btn" data-act="tab" data-tab="history" aria-pressed="${tab === 'history'}" aria-controls="place-more">View history</button>
+    </div>
+    <div class="place-more" id="place-more" aria-live="polite"></div>`;
 
-  document.getElementById('b-more')?.addEventListener('click', (e) => {
-    document.querySelectorAll('#b-problems li[hidden]').forEach((li) => (li.hidden = false));
-    e.currentTarget.remove();
-  });
-
-  // 4. context: age + nearby
-  const decade = r.yearBuilt ? Math.floor(r.yearBuilt / 10) * 10 : null;
-  const dm = decade != null && decadeMedians(pm.latest.filter((d) => d.yearBuilt != null), 10).find((d) => d.decade === decade);
-  const near = r.lat == null ? [] : pm.latest.filter((d) => d.rsn !== r.rsn && d.lat != null)
-    .map((d) => ({ d, km: haversine(r, d) })).sort((a, b) => a.km - b.km).slice(0, 5);
-  document.getElementById('b-context').innerHTML = `
-    <p class="card-label">Compared with similar buildings</p>
-    ${dm ? `<p class="card-text">Buildings from the <b>${decade}s</b> typically score <b>${dm.median}</b> (${fmt.n(dm.n)} buildings). This one is ${r.score === dm.median ? 'right at' : `<b>${Math.abs(r.score - dm.median)} points ${r.score > dm.median ? 'above' : 'below'}</b>`} that.</p>`
-      : '<p class="card-text">Not enough buildings from the same decade to compare.</p>'}
-    ${near.length ? `<p class="card-sub">Nearest buildings</p><ul class="near-list">${near.map(({ d, km }) => `
-      <li><button type="button" data-rsn="${d.rsn}"><span class="nl-name">${esc(titleCase(d.address))}</span>
-      <span class="nl-km">${km < 1 ? `${Math.round(km * 1000)} m` : `${km.toFixed(1)} km`}</span>
-      <span class="nl-score ${scoreBand(d.score, pm)}">${d.score}</span></button></li>`).join('')}</ul>` : ''}
-    <p class="card-links"><a href="#/q2" data-keep>Does age matter? →</a></p>`;
-  document.querySelectorAll('#b-context [data-rsn]').forEach((b) => b.addEventListener('click', () => ctx.select(b.dataset.rsn, { open: true })));
+  const more = box.querySelector('#place-more');
+  if (tab === 'nearby') renderNearby(more, r, ctx, M);
+  if (tab === 'history') renderHistory(more, r, ctx, M, opts);
+  more.hidden = tab === 'summary';
+  wire(box, opts, selected);
 }
 
-function drawHistory(box, evs) {
-  box.innerHTML = '';
-  const { svg, width, height } = svgIn(box, 170, `Score history: ${evs.map((e) => `${e.score} on ${e.date}`).join(', ')}`);
-  const m = { top: 22, right: 24, bottom: 26, left: 34 };
-  const t = d3.extent(evs, (e) => e.time);
-  if (t[0] === t[1]) { t[0] -= 864e5 * 180; t[1] += 864e5 * 180; }
-  const x = d3.scaleTime().domain(t).range([m.left + 16, width - m.right - 16]);
-  const y = d3.scaleLinear().domain([Math.min(50, Math.floor((d3.min(evs, (e) => e.score) - 5) / 10) * 10), 100]).range([height - m.bottom, m.top]);
-  svg.append('g').attr('class', 'grid').attr('transform', `translate(${m.left},0)`).call(d3.axisLeft(y).ticks(3).tickSize(-(width - m.left - m.right)).tickFormat(''));
-  svg.append('g').attr('class', 'axis').attr('transform', `translate(${m.left},0)`).call(d3.axisLeft(y).ticks(3).tickSizeOuter(0));
-  svg.append('g').attr('class', 'axis').attr('transform', `translate(0,${height - m.bottom})`)
-    .call(d3.axisBottom(x).tickValues(evs.map((e) => new Date(e.time))).tickFormat(d3.timeFormat("%b '%y")).tickSizeOuter(0));
-  const accent = cssVar('--accent');
-  svg.append('path').datum(evs).attr('fill', 'none').attr('stroke', accent).attr('stroke-width', 2)
-    .attr('d', d3.line().x((e) => x(e.time)).y((e) => y(e.score)));
-  const dots = svg.append('g').selectAll('circle').data(evs).join('circle')
-    .attr('cx', (e) => x(e.time)).attr('cy', (e) => y(e.score)).attr('r', 5)
-    .attr('fill', accent).attr('stroke', cssVar('--surface')).attr('stroke-width', 2);
-  dots.on('mouseenter', (ev, e) => tip.show(`<div class="tt-title">${e.score} / 100</div><div class="tt-sub">Evaluated ${formatDate(e.date)}</div>`, ev))
-    .on('mousemove', (ev) => tip.move(ev)).on('mouseleave', () => tip.hide());
-  // few points, so each one is labelled directly
-  svg.append('g').selectAll('text').data(evs).join('text').attr('class', 'annot')
-    .attr('x', (e) => x(e.time)).attr('y', (e) => y(e.score) - 10).attr('text-anchor', 'middle').text((e) => e.score);
-}
-
-function renderSuggestions(ctx) {
+function renderNearby(el, r, ctx, M) {
   const { pm } = ctx;
-  const lowest = d3.least(pm.latest, (r) => r.score);
-  const box = document.getElementById('b-suggest');
-  box.innerHTML = `<button type="button" class="chip" data-act="random">A random building</button>
-    <button type="button" class="chip" data-act="low">The lowest-scoring building</button>`;
-  box.querySelector('[data-act=random]').addEventListener('click', () => ctx.select(pm.latest[Math.floor(Math.random() * pm.latest.length)].rsn, { open: true }));
-  box.querySelector('[data-act=low]').addEventListener('click', () => ctx.select(lowest.rsn, { open: true }));
+  const near = nearby(r, pm.latest, 5, 1500);
+  const scores = near.map((x) => x.r.score);
+  const typical = scores.length ? d3.median(scores) : null;
+  el.innerHTML = `<h3 class="place-h3">Nearest evaluated buildings</h3>
+    ${near.length ? `<p class="place-sub">Within 1.5 km, same scoring system. Their median score is <b>${typical}</b>; this building scored <b>${r.score}</b>.</p>
+    <ul class="near-list">${near.map(({ r: d, d: m }) => `
+      <li><button type="button" data-rsn="${d.rsn}"><span class="nl-name">${esc(titleCase(d.address))}</span>
+      <span class="nl-km">${distance(m)}</span><span class="nl-score ${scoreBand(d.score, pm)}">${d.score}</span></button></li>`).join('')}</ul>`
+      : '<p class="place-sub">No other evaluated building within 1.5 km.</p>'}
+    ${pm.era === 'cur' ? `<p class="place-link"><a href="#/compare/${r.rsn}" data-depth>Same score, elsewhere: compare item by item →</a></p>` : ''}`;
 }
 
-function haversine(a, b) {
-  const R = 6371, k = Math.PI / 180;
-  const h = Math.sin(((b.lat - a.lat) * k) / 2) ** 2 + Math.cos(a.lat * k) * Math.cos(b.lat * k) * Math.sin(((b.lon - a.lon) * k) / 2) ** 2;
-  return 2 * R * Math.asin(Math.sqrt(h));
+function renderHistory(el, r, ctx, M, opts) {
+  const { pm } = ctx;
+  const all = buildingEvaluations(M.data.byRsn.get(r.rsn) ?? []);
+  el.innerHTML = '<h3 class="place-h3">Score history</h3><div class="place-tl chart"></div>';
+  renderTimeline(el.querySelector('.place-tl'), {
+    points: timelinePoints(all), shown: r, era: pm.era, P: pm.P, systemChange: M.byPeriod.cur.dates[0],
+    onPick: (uid) => opts.onInspect(r.rsn, uid),
+    where: 'inMap',
+  });
+}
+
+// ---- ward ------------------------------------------------------------------------------------------------
+function renderWardCard(box, ctx, M, opts) {
+  const { pm, ward, ch } = ctx;
+  const row = ch?.byWard.get(ward);
+  box.hidden = false;
+  const name = M.wardName.get(ward) ?? `Ward ${+ward}`;
+  const head = `<header class="place-head">
+      <div><p class="place-kicker">Ward ${+ward}</p><h2 id="place-title" tabindex="-1">${esc(name)}</h2></div>
+      <button type="button" class="icon-button place-close" data-act="close" aria-label="Close ward details" title="Back to all of Toronto (Esc)">×</button>
+    </header>`;
+  if (!row) { box.innerHTML = `${head}<p class="place-note">No evaluated buildings in this ward in the ${esc(pm.P.long)}.</p>`; wire(box, opts); return; }
+  const inWard = pm.latest.filter((r) => r.ward === ward);
+  const lowest = [...inWard].sort((a, b) => a.score - b.score || a.address.localeCompare(b.address)).slice(0, 5);
+  box.innerHTML = `${head}
+    <p class="place-stat"><span class="stat-num ${row.share > ch.city * 1.15 ? 'is-high' : ''}">${pct(row.share)}</span>
+      of its ${fmt.n(row.n)} evaluated buildings score in Toronto’s lowest 10%
+      <button type="button" class="info-btn" data-info="lowest-10" aria-label="What “lowest 10%” means">i</button></p>
+    <p class="place-sub">Citywide: ${pct(ch.city)}. Median score here: <b>${row.median}</b>. Rank ${row.rank} of ${ch.rows.length} wards by this share.</p>
+    ${row.small ? `<p class="place-note">Only ${row.n} evaluated buildings, so a few buildings move this share a lot.</p>` : ''}
+    <h3 class="place-h3">Lowest-scoring buildings here</h3>
+    <ol class="near-list low-list">${lowest.map((d) => `
+      <li><button type="button" data-rsn="${d.rsn}"><span class="nl-name">${esc(titleCase(d.address))}</span>
+      <span class="nl-km">${formatDate(d.date)}</span><span class="nl-score ${scoreBand(d.score, pm)}">${d.score}</span></button></li>`).join('')}</ol>
+    <p class="place-sub">Analyse this ward:
+      <button type="button" class="link-btn" data-act="lens" data-lens="age">age and score</button> ·
+      <button type="button" class="link-btn" data-act="lens" data-lens="problems">common problems</button></p>`;
+  wire(box, opts);
+}
+
+function wire(box, opts, rsn) {
+  box.querySelectorAll('[data-act]').forEach((b) => b.addEventListener('click', () => {
+    const a = b.dataset.act;
+    if (a === 'close') opts.onClose();
+    if (a === 'inspect') opts.onInspect(rsn);
+    if (a === 'tab') opts.onTab(b.getAttribute('aria-pressed') === 'true' ? 'summary' : b.dataset.tab);
+    if (a === 'period') opts.onPeriod(b.dataset.era);
+    if (a === 'lens') opts.onLens(b.dataset.lens);
+  }));
+  box.querySelectorAll('[data-rsn]').forEach((b) => b.addEventListener('click', () => opts.onSelect(b.dataset.rsn)));
 }
