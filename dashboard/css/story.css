@@ -1,0 +1,134 @@
+/* "Beyond the Score": a full-screen, zero-scroll guided story.
+   One shell at every chapter: the shared header, then a stage that fills the rest of the viewport.
+   The visual (map, X-Ray, comparison or a full-stage chart) owns the stage; a compact caption floats
+   in one fixed safe area (bottom-left; a bottom sheet on phones) and every visual keeps clear of it.
+   The caption's size is measured into --cap-w / --cap-h (story/controller.js), so nothing is guessed.
+   Only optional detail views (an analysis layer, a category's item list) may scroll, inside themselves. */
+
+body.is-story { --gut: var(--space-5); --safe-left: calc(var(--cap-w, 380px) + var(--gut) * 2); --safe-bottom: var(--gut); }
+body.is-story .atlas-main { grid-template-columns: minmax(0, 1fr); position: relative; }
+
+/* ---- the caption ------------------------------------------------------------------------------- */
+.story-panel { position: absolute; z-index: 1100; left: var(--gut); bottom: var(--gut); width: min(380px, calc(100% - var(--gut) * 2));
+  display: grid; gap: var(--space-3); padding: var(--space-5); background: var(--surface); border: var(--border); border-radius: var(--radius-md); box-shadow: var(--shadow-float); }
+.story-panel[hidden] { display: none; }
+.sc-top { display: flex; align-items: center; gap: var(--space-3); font-size: var(--text-sm); }
+.sc-count { font-family: var(--font-display); font-weight: var(--weight-bold); color: var(--accent); font-variant-numeric: tabular-nums; letter-spacing: var(--tracking-label); }
+.sc-name { display: flex; align-items: center; gap: var(--space-2); color: var(--muted); }
+.sc-exit { margin-left: auto; font: inherit; font-size: var(--text-sm); color: var(--ink-2); background: none; border: 0; padding: var(--space-1) 0; cursor: pointer; }
+.sc-exit:hover { color: var(--ink); }
+.sc-exit span { font-size: var(--text-lg); line-height: 1; margin-left: var(--space-1); }
+.sc-title { font-family: var(--font-display); font-size: clamp(24px, 2vw, 30px); font-weight: var(--weight-bold); line-height: 1.1; letter-spacing: var(--tracking-display); outline: none; text-wrap: balance; }
+.sc-text { font-size: var(--text-md); line-height: var(--leading-body); color: var(--ink-2); }
+.sc-foot { display: flex; align-items: flex-end; justify-content: space-between; gap: var(--space-3); margin-top: var(--space-1); }
+.sc-act { display: grid; justify-items: start; gap: var(--space-1); min-width: 0; }
+.sc-action, .sc-detail { font: inherit; font-size: var(--text-base); font-weight: var(--weight-semibold); color: var(--accent); background: none; border: 0; padding: var(--space-1) 0; cursor: pointer; text-align: left; }
+.sc-action:hover, .sc-detail:hover { text-decoration: underline; text-underline-offset: 3px; }
+.sc-detail { font-weight: var(--weight-medium); color: var(--ink-2); }
+.sc-detail[aria-expanded="true"] { color: var(--accent); }
+.sc-nav { display: flex; gap: var(--space-2); flex: none; }
+.sc-nav .btn { height: 40px; }
+.sc-back { width: 40px; padding: 0; justify-content: center; }
+.sc-back:disabled { opacity: 0.35; cursor: default; }
+
+/* ---- what the story hides: tools, the place card, the depth bar (the caption is the navigation) ---- */
+body.is-story .title-card, body.is-story .tools, body.is-story .pop-panel, body.is-story #place, body.is-story .depth-bar { display: none !important; }
+/* the legend leaves the caption's corner: bottom-right, beside the zoom buttons */
+body.is-story .rail-left { left: auto; right: 64px; width: auto; top: auto; bottom: var(--gut); }
+body.is-story .legend-card { margin: 0; }
+body.is-story.story-detail .rail-left { display: none; }
+
+/* ---- the stage: every non-map chapter fills it exactly, clear of the caption ------------------------ */
+body.is-story .depth { overflow: hidden; }
+body.is-story .depth-body { position: absolute; inset: 0; }
+body.is-story .depth-body > .view { position: absolute; inset: 0; padding: var(--gut) var(--gut) var(--safe-bottom) var(--safe-left); overflow: hidden; }
+
+/* full-stage charts */
+body.is-story .story-view { display: flex; align-items: center; justify-content: center; background: var(--surface); }
+body.is-story .story-visual { width: 100%; max-width: 1040px; height: 100%; max-height: 640px; display: flex; flex-direction: column; justify-content: center; }
+.story-visual-title { font-size: var(--text-base); font-weight: var(--weight-semibold); color: var(--ink-2); margin-bottom: var(--space-3); }
+.story-visual svg { display: block; max-width: 100%; height: auto; overflow: visible; }
+svg .story-band { fill: var(--accent-soft); }
+.story-cats .cat-label { font: var(--weight-medium) var(--text-base) var(--font-ui); fill: var(--ink-2); }
+.story-cats .cat-track { fill: var(--grid); }
+.story-cats .cat-bar { fill: var(--chart-neutral); }
+.story-cats .cat-val { font: var(--weight-semibold) var(--text-base) var(--font-ui); fill: var(--ink-2); font-variant-numeric: tabular-nums; }
+.story-cats .is-top .cat-bar { fill: var(--accent); }
+.story-cats .is-top .cat-label, .story-cats .is-top .cat-val { fill: var(--ink); font-weight: var(--weight-bold); }
+.story-tl { width: 100%; }
+.story-tl .xr-tl-summary { display: none; } /* the caption already says it */
+.story-steps { list-style: none; padding: 0; margin: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-6); }
+.story-steps li { display: grid; align-content: start; gap: var(--space-2); }
+.story-step-n { font-family: var(--font-display); font-size: 44px; font-weight: var(--weight-bold); color: var(--accent); line-height: 1; letter-spacing: var(--tracking-display); }
+.story-steps h3 { font-family: var(--font-display); font-size: var(--text-xl); font-weight: var(--weight-bold); letter-spacing: var(--tracking-heading); }
+.story-steps p { color: var(--ink-2); }
+.story-steps a { font-weight: var(--weight-semibold); }
+
+/* the X-Ray: the model takes the stage; categories beside it; the item list scrolls only inside itself */
+body.is-story .xr-view { display: flex; }
+body.is-story .xr-wrap { max-width: none; width: 100%; height: 100%; display: flex; flex-direction: column; }
+body.is-story .xr-grid { flex: 1; min-height: 0; align-items: stretch; grid-template-columns: minmax(0, 1fr) minmax(260px, 300px); }
+body.is-story .xr-stage-card { display: flex; flex-direction: column; min-height: 0; }
+body.is-story .xr-stage { flex: 1; min-height: 0; height: auto; }
+body.is-story .xr-finding, body.is-story .xr-legend, body.is-story #xr-prov-detail { display: none; }
+body.is-story .xr-caveat { font-size: var(--text-xs); }
+body.is-story .xr-side { min-height: 0; overflow-y: auto; }
+/* the inspection summary repeats the caption; the item list appears once a category is in focus */
+body.is-story:not(.story-zone) .xr-panel { display: none; }
+body.is-story .xr-section, body.is-story .xr-method, body.is-story .xr-head { display: none; }
+
+/* the comparison: the two inspection profiles, side by side, nothing else */
+body.is-story .fp-view { display: flex; align-items: center; }
+body.is-story .fp-wrap { width: 100%; max-width: 1120px; margin: 0 auto; }
+body.is-story .fp-pair { grid-template-columns: repeat(2, minmax(0, 1fr)); } /* side by side at every size */
+body.is-story .fp-verdict, body.is-story .fp-lows, body.is-story .fp-notes, body.is-story .fp-controls, body.is-story .fp-table,
+body.is-story .fp-city, body.is-story .fp-method-block, body.is-story .fp-intro { display: none; }
+
+/* ---- the one detail view: an analysis layer, above the stage, scrolling inside itself ---------------- */
+body.story-detail .rail-right { z-index: 1050; top: var(--gut); bottom: var(--gut); }
+body.story-detail .lens { max-height: 100%; }
+
+/* ---- shorter laptop screens: tighter rhythm, same reading size --------------------------------------- */
+@media (max-height: 780px) and (min-width: 761px) {
+  body.is-story { --gut: var(--space-4); }
+  .story-panel { padding: var(--space-4); gap: var(--space-2); }
+  .sc-title { font-size: 24px; }
+  body.is-story .xr-foot { margin-top: var(--space-1); }
+}
+
+/* ---- tablets: a narrower caption ----------------------------------------------------------------------- */
+@media (min-width: 761px) and (max-width: 1100px) {
+  .story-panel { width: min(320px, calc(100% - var(--gut) * 2)); }
+  .sc-text { font-size: 15px; }
+  body.is-story .xr-grid { grid-template-columns: minmax(0, 1fr); }
+  body.is-story .xr-side { display: none; }
+  .story-steps { grid-template-columns: 1fr; gap: var(--space-4); }
+}
+
+/* ---- phones: the stage on top, the caption as a bottom sheet ------------------------------------------- */
+@media (max-width: 760px) {
+  body.is-story { --gut: var(--space-3); --safe-left: var(--gut); --safe-bottom: calc(var(--cap-h, 240px) + var(--gut)); }
+  .story-panel { left: 0; right: 0; bottom: 0; width: auto; border-radius: var(--radius-md) var(--radius-md) 0 0; border-bottom: 0;
+    padding: var(--space-4) var(--space-4) calc(var(--space-3) + env(safe-area-inset-bottom)); gap: var(--space-2); }
+  .sc-name { display: none; }
+  .sc-title { font-size: 21px; }
+  .sc-text { font-size: 15px; line-height: 1.45; }
+  body.is-story .rail-left { display: none; }
+  body.is-story .leaflet-bottom { bottom: var(--cap-h, 240px); }
+  body.is-story .xr-grid { grid-template-columns: minmax(0, 1fr); }
+  body.is-story .xr-side, body.is-story .xr-foot, body.is-story .xr-toolbar-2 { display: none; }
+  /* the comparison: two summaries side by side; the item grids are too fine for a phone stage */
+  body.is-story .fp-pair { gap: 0 var(--space-4); }
+  body.is-story .fp-building + .fp-building { padding-left: var(--space-4); }
+  body.is-story .fp-chart, body.is-story .fp-legend { display: none; }
+  .story-steps { grid-template-columns: 1fr; gap: var(--space-3); }
+  .story-step-n { font-size: 28px; }
+}
+@media (max-width: 760px) and (max-height: 720px) {
+  .story-steps p { display: none; } /* short phones: each check is its title and its link */
+  body.story-detail .rail-right { left: 0; right: 0; top: auto; bottom: 0; height: 70%; z-index: 1150; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .story-panel * { transition: none !important; }
+}

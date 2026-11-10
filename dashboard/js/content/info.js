@@ -49,12 +49,12 @@ export const INFO = {
   },
   'map-wards': {
     title: 'Reading the ward map',
-    body: '<p>Each ward is shaded by the share of its evaluated buildings whose latest score is in Toronto’s lowest 10%. Red wards are above the citywide share, blue wards below it, grey about the same.</p><p>A dashed outline marks wards with fewer than 30 evaluated buildings, where a few buildings move the share a lot. Ward boundaries are the City’s 25-ward model.</p>',
+    body: '<p>Each ward is shaded by the share of its evaluated buildings whose latest score is in Toronto’s lowest 10%. Red wards are above the citywide share, blue wards below it, grey about the same.</p><p>A dashed outline marks wards with fewer than 30 evaluated buildings, where a few buildings move the share a lot. Ward boundaries are the City’s 25-ward model.</p><p>“Lowest 10%” is a citywide cut-off on each building’s latest score in the scoring system chosen under Layers. The two systems are never mixed.</p>',
     more: { href: '#/about', label: 'About the data' },
   },
   'map-areas': {
     title: 'Reading the groups',
-    body: '<p>Between the city and street scales, nearby buildings are grouped on a fixed grid (about 1.2 km, then 600 m). The number and the circle’s size show how many buildings a group holds; the red part of its ring shows the share of them in the lowest 10%, the blue part the rest.</p><p>Select a group, or keep zooming, to separate it into buildings.</p>',
+    body: '<p>Between the city and street scales, nearby buildings are grouped so that groups never crowd each other on screen. Each group splits into smaller ones as you zoom in, and they merge back as you zoom out. The number and the circle’s size show how many buildings a group holds; the red part of its ring shows the share of them in the lowest 10%, the blue part the rest.</p><p>Select a group, or keep zooming, to separate it into buildings.</p>',
   },
   'map-buildings': {
     title: 'Reading the building marks',
@@ -76,12 +76,12 @@ export const INFO = {
   },
   atlas: {
     title: 'How this drawing is made',
-    body: '<p>Building footprints and heights come from the City of Toronto’s 3D Massing data; streets and the shoreline from the Toronto Centreline. Blue outlines are RentSafeTO-evaluated buildings whose footprint matched reliably.</p><p>It is simplified, not traced from map imagery: small buildings, lanes and trails are left out and outlines are smoothed to about 1.6 m.</p>',
+    body: '<p>Building footprints and heights come from the City of Toronto’s 3D Massing data; streets and the shoreline from the Toronto Centreline. Blue outlines are RentSafeTO-evaluated buildings whose footprint matched reliably.</p><p>It is simplified, not traced from map imagery: small buildings, lanes and trails are left out and outlines are smoothed to about 1.6 m.</p><p>LeaseLens is an independent student-built project. It is not an official City of Toronto service.</p>',
     more: { href: '#/about', label: 'What is real and what is drawn' },
   },
   story: {
     title: 'About this story',
     body: '<p>Every example in the story is a real building, chosen by a rule you can reproduce: the most and least flagged buildings at the median score. Numbers are computed from the current data when the page loads. You can leave at any time; the map comes back as you left it.</p>',
-    more: { href: '#/approach', label: 'Our approach' },
+    more: { href: '#/about', label: 'How LeaseLens works' },
   },
 };

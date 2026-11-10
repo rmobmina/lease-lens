@@ -137,14 +137,13 @@ export async function mountHeroAtlas(host, { reducedMotion = false, onPick, onRe
     const T = transform();
     sortOrder();
     g.setTransform(dpr, 0, 0, dpr, 0, 0);
-    g.fillStyle = C.bg;
-    g.fillRect(0, 0, W, H);
+    g.clearRect(0, 0, W, H); // the page's blueprint ground (tokens.css --hero-ground) shows through
     const pt = (x, y, z = 0) => [T.ox + P.sx(x, y) * T.s, T.oy + P.sy(x, y, z) * T.s];
 
     // 1. the ground: streets by class, then the shoreline
     const roadsIn = ease(t / 700);
     g.lineCap = 'round'; g.lineJoin = 'round';
-    for (const [cls, width, alpha] of [[0, 0.6, 0.55], [1, 0.8, 0.7], [2, 1.1, 0.85], [3, 1.4, 0.9]]) {
+    for (const [cls, width, alpha] of [[0, 0.5, 0.3], [1, 0.7, 0.45], [2, 1, 0.65], [3, 1.3, 0.8]]) { // minor streets recede
       g.beginPath();
       for (const r of D.roads) {
         if (r.c !== cls) continue;
@@ -172,7 +171,8 @@ export async function mountHeroAtlas(host, { reducedMotion = false, onPick, onRe
 
     // 2. buildings rise, nearest to the origin first; hidden lines removed by painting far to near
     const lx = -P.fx, ly = -P.fy; // toward the camera
-    g.lineWidth = 0.55;
+    // Line hierarchy: towers carry the drawing, low-rise fabric stays light, and the far side of the
+    // city fades a little (atmospheric depth). Fills stay opaque so hidden lines stay hidden.
     for (let n = 0; n < D.nb; n++) {
       const i = order[n];
       const dist = Math.hypot(D.cx[i], D.cy[i]);
@@ -194,35 +194,16 @@ export async function mountHeroAtlas(host, { reducedMotion = false, onPick, onRe
       roofPath(P, T, i, z1);
       g.fillStyle = lit ? C.rentalFillHover : rental ? C.rentalFill : C.fill;
       g.fill();
+      const tall = Math.min(1, Math.max(0, (D.top[i] - 12) / 110)); // 0 = low-rise, 1 = tower
+      const near = 0.62 + 0.38 * (n / D.nb);                          // order runs far → near
+      g.globalAlpha = rental ? 1 : (0.32 + 0.68 * tall) * near;
       g.strokeStyle = rental ? C.rental : C.line;
-      g.lineWidth = rental ? (lit ? 1.4 : 0.9) : 0.55;
+      g.lineWidth = rental ? (lit ? 1.4 : 0.9) : 0.4 + 0.45 * tall;
       g.stroke();
-    }
-
-    // 3. labels: real street names on their own centrelines, and the lake
-    const labelsIn = intro ? ease((t - 1300) / 500) : 1;
-    if (labelsIn > 0) {
-      g.globalAlpha = labelsIn;
-      g.font = `500 11px ${C.font}`;
-      g.fillStyle = C.labelInk;
-      g.textBaseline = 'middle';
-      const placed = [];
-      for (const l of D.labels) {
-        const [x, y] = pt(l.at[0], l.at[1]);
-        if (x < 40 || x > W - 40 || y < 20 || y > H - 20) continue;
-        if (placed.some(([px, py]) => Math.abs(px - x) < 90 && Math.abs(py - y) < 26)) continue;
-        placed.push([x, y]);
-        const [x2, y2] = pt(l.at[0] + l.dir[0], l.at[1] + l.dir[1]);
-        let ang = Math.atan2(y2 - y, x2 - x);
-        if (ang > Math.PI / 2) ang -= Math.PI; else if (ang < -Math.PI / 2) ang += Math.PI;
-        g.save(); g.translate(x, y); g.rotate(ang);
-        const w = g.measureText(l.name).width;
-        g.fillStyle = C.bg; g.globalAlpha = 0.85 * labelsIn; g.fillRect(-w / 2 - 4, -8, w + 8, 16);
-        g.fillStyle = C.labelInk; g.globalAlpha = labelsIn; g.textAlign = 'center'; g.fillText(l.name, 0, 0);
-        g.restore();
-      }
       g.globalAlpha = 1;
     }
+
+    // No text labels: the drawing is read as geometry. (Street names stay in the data file, unused.)
     return t < intro?.ms;
   }
 

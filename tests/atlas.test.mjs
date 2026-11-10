@@ -123,19 +123,41 @@ test('levels: zoom thresholds use hysteresis, so jitter at a boundary never flip
 test('clusters: every mapped building is counted exactly once, with its band', () => {
   const pts = pm.latest.map((r) => ({ rsn: r.rsn, lat: r.lat, lon: r.lon, band: r.score <= pm.t10 ? 'low10' : r.score <= pm.t25 ? 'low25' : 'other' }));
   const mapped = pts.filter((p) => p.lat != null);
-  for (const cell of [A.cellForZoom(12), A.cellForZoom(13)]) {
-    const cl = A.clusterBuildings(pts, cell);
+  for (const z of [12, 12.5, 13, 13.5]) {
+    const cl = A.clusterScreen(pts, z);
     assert.equal(d3.sum(cl, (c) => c.n), mapped.length);
     assert.equal(d3.sum(cl, (c) => c.low10), mapped.filter((p) => p.band === 'low10').length);
     assert.equal(new Set(cl.flatMap((c) => c.rsns)).size, mapped.length);
     for (const c of cl) {
       const e = 1e-9; // the mean of identical coordinates can differ from them in the last bit
-      assert.ok(c.lat >= c.minLat - e && c.lat <= c.maxLat + e && c.lon >= c.minLon - e && c.lon <= c.maxLon + e, 'a cluster sits among its own buildings');
-      assert.ok(A.distanceM({ lat: c.minLat, lon: c.minLon }, { lat: c.maxLat, lon: c.maxLon }) <= cell * Math.SQRT2 + 1, 'members share one cell');
+      assert.ok(c.lat >= c.minLat - e && c.lat <= c.maxLat + e && c.lon >= c.minLon - e && c.lon <= c.maxLon + e, 'a group sits among its own buildings');
     }
   }
-  // the city view is not thousands of marks: far fewer clusters than buildings at zoom 12
-  assert.ok(A.clusterBuildings(pts, A.cellForZoom(12)).length < mapped.length / 4);
+});
+
+test('clusters: no two discs overlap on screen, and the view stays uncluttered', () => {
+  const pts = pm.latest.map((r) => ({ rsn: r.rsn, lat: r.lat, lon: r.lon, band: 'other' }));
+  for (const z of [12, 12.5, 13, 13.5]) {
+    const cl = A.clusterScreen(pts, z);
+    const xy = cl.map((c) => [...A.mercator(c.lat, c.lon, z), A.clusterDiameter(c.n) / 2]);
+    for (let i = 0; i < xy.length; i++) for (let j = i + 1; j < xy.length; j++) {
+      const d = Math.hypot(xy[i][0] - xy[j][0], xy[i][1] - xy[j][1]);
+      assert.ok(d >= xy[i][2] + xy[j][2], `groups ${i} and ${j} overlap at zoom ${z}`);
+    }
+  }
+  // far fewer groups than the old fixed 1.2 km grid gave at zoom 12 (about 330)
+  assert.ok(A.clusterScreen(pts, 12).length < 200);
+});
+
+test('clusters: grid cells nest, so a group at z+1 lies inside one group at z', () => {
+  const r = pm.latest.filter((x) => x.lat != null).slice(0, 400);
+  for (const p of r) {
+    for (const zi of [12, 13]) {
+      const [ , cx, cy] = A.cellKey(p.lat, p.lon, zi + 1).split(':').map(Number);
+      const [ , px, py] = A.cellKey(p.lat, p.lon, zi).split(':').map(Number);
+      assert.deepEqual([Math.floor(cx / 2), Math.floor(cy / 2)], [px, py]);
+    }
+  }
 });
 
 test('nearby: closest buildings first, never the building itself, within the radius', () => {

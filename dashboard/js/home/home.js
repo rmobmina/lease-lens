@@ -10,19 +10,11 @@ const colors = () => ({
   bg: cssVar('--atlas-bg'), road: cssVar('--atlas-road'), shore: cssVar('--atlas-shore'),
   line: cssVar('--atlas-line'), fill: cssVar('--atlas-fill'),
   rental: cssVar('--atlas-rental'), rentalFill: cssVar('--atlas-rental-fill'), rentalFillHover: cssVar('--atlas-rental-hover'),
-  labelInk: cssVar('--atlas-label'), font: cssVar('--font-ui') || 'system-ui',
 });
 
 export function initHome({ onPick } = {}) {
   onPickCb = onPick;
-  const btn = document.getElementById('site-menu-btn');
-  const nav = document.getElementById('site-nav');
-  btn.addEventListener('click', () => {
-    const open = btn.getAttribute('aria-expanded') !== 'true';
-    btn.setAttribute('aria-expanded', String(open));
-    nav.classList.toggle('open', open);
-  });
-  nav.addEventListener('click', (e) => { if (e.target.closest('a')) { btn.setAttribute('aria-expanded', 'false'); nav.classList.remove('open'); } });
+  // The header (and its mobile menu) is shared with the map: main.js wires it.
   document.addEventListener('themechange', () => atlas?.restyle());
 }
 

@@ -1,7 +1,8 @@
 // Explore atlas: the Leaflet map with semantic zoom.
 //
 //   city      (zoom < 12)  ward choropleth: share of each ward's buildings in the citywide lowest 10%
-//   area      (12 – 14)    clusters on a fixed geographic grid; size = buildings, red arc = share in the lowest 10%
+//   area      (12 – 14)    screen-space groups that nest between zoom levels and split/merge as you zoom;
+//                          size = buildings, red arc = share in the lowest 10%
 //   building  (≥ 14)       one mark per building (canvas), coloured and sized by citywide band
 //
 // Why Leaflet and not a WebGL map: the data are ~3,600 points and 25 polygons. Leaflet's canvas renderer
@@ -12,7 +13,8 @@
 // Level changes use separate zoom-in / zoom-out thresholds (logic.js levelFor) and cross-fade panes;
 // the ward fill also fades continuously with zoom, so nothing flickers at a boundary.
 
-import { levelFor, wardFillOpacity, clusterBuildings, cellForZoom, ZOOM } from './logic.js';
+import { levelFor, wardFillOpacity, clusterScreen, clusterDiameter, ZOOM } from './logic.js';
+import { animate, cancel as cancelMotion, cameraDuration, DUR } from '../motion.js';
 import { scoreBand } from '../model.js';
 import { tip, esc, titleCase, cssVar, buildingTip, pct } from '../ui.js';
 
@@ -26,7 +28,8 @@ let wardsGeo = null, wardLayer = null, wardBounds = null, wardLabel = null, hove
 let clusterLayer = null, bldLayer = null, selLayer = null, renderer = null;
 const markers = new Map();           // rsn -> circleMarker
 let markerKey = '';                  // period|show the markers were built for
-const clusterCache = new Map();      // period|show|cell -> clusters
+const clusterCache = new Map();      // period|show|zoom -> clusters
+let drawn = null;                    // last drawn groups: { zoom, items: [{ c, at, el, cur }] }
 let D = null;                        // last data: { pm, ward, selected, show, ch, footprint }
 let geoReady = null;
 
@@ -38,6 +41,7 @@ export function initMap(el, handlers) {
     preferCanvas: false, zoomSnap: 0.5, zoomDelta: 1, wheelPxPerZoomLevel: 90,
     minZoom: 9.5, maxZoom: ZOOM.max, maxBounds: BOUNDS, maxBoundsViscosity: 0.8,
     zoomControl: false, attributionControl: true, keyboard: true,
+    trackResize: false, // resizes are handled below, only while the map is on screen
     zoomAnimation: !reduced(), fadeAnimation: !reduced(), markerZoomAnimation: !reduced(),
   }).setView(TORONTO, 11);
   L.control.zoom({ position: 'bottomright' }).addTo(map);
@@ -56,9 +60,16 @@ export function initMap(el, handlers) {
   clusterLayer = L.layerGroup().addTo(map);
   selLayer = L.layerGroup().addTo(map);
 
+  // Leaflet's own window-resize handling runs while the map is hidden (homepage, deeper levels), where its
+  // size is zero and keeping the view inside BOUNDS yields NaN. Follow the box itself and skip zero sizes.
+  if ('ResizeObserver' in window) {
+    new ResizeObserver(([e]) => { if (e.contentRect.width > 0 && e.contentRect.height > 0) map.invalidateSize({ pan: false }); }).observe(el);
+  }
+  // New user intent wins: any pointer, wheel or touch input stops a programmatic flight where it is.
+  for (const ev of ['mousedown', 'touchstart', 'wheel']) el.addEventListener(ev, () => map.stop(), { passive: true, capture: true });
   map.on('zoomend', onZoom);
   map.on('moveend', () => {
-    if (level === 'area') drawClusters();
+    if (level === 'area') drawClusters({ incremental: true });
     H.onView?.(getView());
   });
   map.on('zoom', () => wardLayer?.setStyle(wardStyle)); // continuous ward fade while zooming
@@ -71,7 +82,15 @@ export function initMap(el, handlers) {
 
 export const wardsLoaded = () => geoReady ?? Promise.resolve();
 export const getLevel = () => level;
-export const invalidate = () => map?.invalidateSize({ pan: false });
+export const invalidate = () => { if (map && map.getContainer().clientWidth > 0) map.invalidateSize({ pan: false }); };
+// Where a place is on screen (client coordinates), for motion that starts at the thing on the map.
+export function clientPointOf(lat, lon) {
+  if (!map || lat == null) return null;
+  const r = map.getContainer().getBoundingClientRect();
+  const p = map.latLngToContainerPoint([lat, lon]);
+  if (p.x < 0 || p.y < 0 || p.x > r.width || p.y > r.height) return null;
+  return { x: r.left + p.x, y: r.top + p.y };
+}
 export function getView() {
   if (!map) return null;
   const c = map.getCenter();
@@ -91,7 +110,7 @@ export function update(d) {
     wardLayer.setStyle(wardStyle);
     if (!prev || prev.ward !== d.ward || prev.ch !== d.ch) labelWard();
   }
-  if (level === 'area') drawClusters();
+  if (level === 'area') drawClusters({ incremental: true }); // full redraw only if era, filter or ward changed
   drawSelection();
 }
 
@@ -114,7 +133,7 @@ function applyLevel(next, first = false) {
   map.getPane('buildings').style.opacity = next === 'building' ? 1 : 0;
   map.getPane('clusters').style.pointerEvents = next === 'area' ? '' : 'none';
   map.getPane('buildings').style.pointerEvents = next === 'building' ? '' : 'none';
-  if (next === 'area') drawClusters(); else clusterLayer.clearLayers();
+  if (next === 'area') drawClusters(); else { cancelMotion('clusters'); clusterLayer.clearLayers(); drawn = null; }
   if (next === 'building') styleMarkers();
   labelWard();
   if (!first) H.onLevel?.(next);
@@ -240,38 +259,136 @@ export function buildingsInView() {
 }
 
 // ---- clusters (DOM markers, culled to the view) ---------------------------------------------------------------
-function drawClusters() {
-  clusterLayer.clearLayers();
-  if (!D || level !== 'area') return;
-  const cell = cellForZoom(map.getZoom());
-  const key = `${D.pm.era}|${D.show}|${cell}`;
+// Groups nest between zoom levels (logic.js clusterScreen), so the animation can be spatially honest:
+//   zoom in   each new group grows out of the spot where the group containing it was
+//   zoom out  the old groups slide into the group that now contains them and fade
+//   pan       no animation
+// Only short on-screen moves are animated (never a trajectory across the city). The animation is one
+// cancellable loop (motion.js); if the user zooms again mid-way, the next draw starts from where the
+// groups visibly are, not from where they were heading.
+const MAX_TRAVEL = 320; // px
+
+function clustersFor(zoom) {
+  const z = Math.round(zoom * 2) / 2;
+  const key = `${D.pm.era}|${D.show}|${z}`;
   let cl = clusterCache.get(key);
   if (!cl) {
     const pts = D.pm.latest.map((r) => ({ rsn: r.rsn, lat: r.lat, lon: r.lon, band: scoreBand(r.score, D.pm), ward: r.ward }))
       .filter((p) => shownBand(p.band, D.show));
-    cl = clusterBuildings(pts, cell);
+    cl = clusterScreen(pts, z);
     const wardOf = new Map(D.pm.latest.map((r) => [r.rsn, r.ward]));
     for (const c of cl) c.wards = new Set(c.rsns.map((x) => wardOf.get(x)));
     clusterCache.set(key, cl);
   }
+  return cl;
+}
+
+// Where each building's group visibly is right now (including any offset of a running animation).
+function visiblePositions() {
+  const pos = new Map();
+  if (!drawn) return pos;
+  for (const it of drawn.items) {
+    if (it.ghost) continue;
+    const p = map.latLngToLayerPoint(it.at).add(L.point(it.cur.x, it.cur.y));
+    const ll = map.layerPointToLatLng(p);
+    for (const r of it.c.rsns) pos.set(r, ll);
+  }
+  return pos;
+}
+
+function clusterMarker(c, { ghost = false } = {}) {
+  const d = clusterDiameter(c.n);
+  const share = c.low10 / c.n; // the red arc: share of the group in the lowest 10%
+  const out = D.ward && !c.wards?.has(D.ward);
+  const small = c.n < 3; // tiny groups read as a dot; the count is in the label and on hover
+  const icon = L.divIcon({
+    className: `cl${out ? ' is-out' : ''}${ghost ? ' is-ghost' : ''}${small ? ' is-small' : ''}`,
+    iconSize: [d, d],
+    html: `<span class="cl-disc" style="--d:${d}px;--p:${share.toFixed(3)}">${small ? '' : `<b>${c.n}</b>`}</span>`,
+  });
+  if (ghost) return L.marker([c.lat, c.lon], { icon, pane: 'clusters', interactive: false, keyboard: false });
+  const label = `${c.n} building${c.n === 1 ? '' : 's'}${c.low10 ? `, ${c.low10} in the lowest 10%` : ''}. Select to zoom in.`;
+  const m = L.marker([c.lat, c.lon], { icon, pane: 'clusters', keyboard: true, title: label, alt: label, riseOnHover: true });
+  m.on('click', () => zoomIntoCluster(c));
+  m.on('add', () => { const el = m.getElement(); el?.setAttribute('aria-label', label); el?.setAttribute('role', 'button'); });
+  return m;
+}
+
+function drawClusters({ incremental = false } = {}) {
+  // A pan at the same zoom only adds the groups that came into view; it never interrupts a split.
+  if (incremental && drawn && level === 'area' && D) {
+    const z = map.getZoom();
+    if (Math.abs(drawn.zoom - z) < 0.01 && drawn.data === `${D.pm.era}|${D.show}|${D.ward}` && drawn.items.length < 400) {
+      const have = new Set(drawn.items.map((it) => it.c));
+      const view = map.getBounds().pad(0.15);
+      for (const c of clustersFor(z)) {
+        if (have.has(c) || !view.contains([c.lat, c.lon])) continue;
+        const m = clusterMarker(c).addTo(clusterLayer);
+        drawn.items.push({ c, at: L.latLng(c.lat, c.lon), el: m.getElement()?.firstElementChild, cur: { x: 0, y: 0 } });
+      }
+      return;
+    }
+  }
+  const prev = drawn;
+  const before = visiblePositions();
+  cancelMotion('clusters');
+  clusterLayer.clearLayers();
+  drawn = null;
+  if (!D || level !== 'area') return;
+  const z = map.getZoom();
+  const cl = clustersFor(z);
   const view = map.getBounds().pad(0.15);
-  const anim = !reduced();
+  const dir = prev && prev.level === 'area' ? Math.sign(Math.round((z - prev.zoom) * 2)) : 0; // +1 in, −1 out, 0 pan
+  const items = [];
+  const offset = (from, to) => {
+    if (!from) return null;
+    const v = map.latLngToLayerPoint(from).subtract(map.latLngToLayerPoint(to));
+    return v.distanceTo(L.point(0, 0)) > MAX_TRAVEL ? null : v;
+  };
   for (const c of cl) {
     if (!view.contains([c.lat, c.lon])) continue;
-    const d = Math.round(Math.min(58, 18 + 5 * Math.sqrt(c.n)));
-    const share = c.low10 / c.n; // the red arc: share of the group in the lowest 10%
-    const out = D.ward && !c.wards.has(D.ward);
-    const label = `${c.n} building${c.n === 1 ? '' : 's'}${c.low10 ? `, ${c.low10} in the lowest 10%` : ''}. Select to zoom in.`;
-    const icon = L.divIcon({
-      className: `cl${out ? ' is-out' : ''}${anim ? ' is-anim' : ''}`,
-      iconSize: [d, d],
-      html: `<span class="cl-disc" style="--d:${d}px;--p:${share.toFixed(3)}"><b>${c.n}</b></span>`,
-    });
-    const m = L.marker([c.lat, c.lon], { icon, pane: 'clusters', keyboard: true, title: label, alt: label, riseOnHover: true });
-    m.on('click', () => zoomIntoCluster(c));
-    m.on('add', () => { const el = m.getElement(); el?.setAttribute('aria-label', label); el?.setAttribute('role', 'button'); });
-    m.addTo(clusterLayer);
+    const m = clusterMarker(c).addTo(clusterLayer);
+    const at = L.latLng(c.lat, c.lon);
+    // zoom in: start where the parent group was; zoom out / first draw: appear in place
+    const from = dir > 0 ? offset(before.get(c.rsns[0]), at) : null;
+    items.push({ c, at, el: m.getElement()?.firstElementChild, from, fade: dir !== 0 || !prev, cur: { x: from?.x ?? 0, y: from?.y ?? 0 } });
   }
+  if (dir < 0 && prev) {
+    // zoom out: each old group slides into the new group that contains its buildings, and fades
+    const parentOf = new Map();
+    for (const it of items) for (const r of it.c.rsns) parentOf.set(r, it.at);
+    for (const old of prev.items) {
+      if (old.ghost) continue;
+      const to = parentOf.get(old.c.rsns[0]);
+      const was = before.get(old.c.rsns[0]);
+      if (!to || !was || to.equals(was)) continue;
+      const from = offset(was, to);
+      if (!from) continue;
+      const g = clusterMarker(old.c, { ghost: true }).addTo(clusterLayer);
+      items.push({ c: old.c, at: to, el: g.getElement()?.firstElementChild, from, ghost: true, marker: g, cur: { x: from.x, y: from.y } });
+    }
+  }
+  drawn = { zoom: z, level, items, data: `${D.pm.era}|${D.show}|${D.ward}` };
+  const moving = items.filter((it) => it.el && (it.from || it.fade));
+  if (!moving.length) return;
+  const paint = (e) => {
+    for (const it of moving) {
+      const k = 1 - e;
+      it.cur.x = it.from ? it.from.x * k : 0; it.cur.y = it.from ? it.from.y * k : 0;
+      const o = it.ghost ? k : it.fade ? Math.min(1, 0.15 + e * 1.4) : 1;
+      it.el.style.transform = `translate(-50%, -50%) translate(${it.cur.x.toFixed(1)}px, ${it.cur.y.toFixed(1)}px) scale(${it.ghost ? 1 - 0.3 * e : it.from ? 0.7 + 0.3 * e : 1})`;
+      it.el.style.opacity = o;
+    }
+  };
+  paint(0);
+  animate('clusters', {
+    duration: DUR.split,
+    step: paint,
+    done: () => {
+      for (const it of moving) { if (it.ghost) it.marker.remove(); else { it.el.style.transform = ''; it.el.style.opacity = ''; it.cur.x = it.cur.y = 0; } }
+      if (drawn) drawn.items = drawn.items.filter((it) => !it.ghost);
+    },
+  });
 }
 
 function zoomIntoCluster(c) {
@@ -308,13 +425,17 @@ function insets() {
   const i = H.insets?.() ?? { left: 0, right: 0, top: 0, bottom: 0 };
   return { paddingTopLeft: [i.left + 24, i.top + 24], paddingBottomRight: [i.right + 24, i.bottom + 24], ...i };
 }
-const motion = (o = {}) => (reduced() ? { animate: false } : { animate: true, duration: 0.7, ...o });
+const motion = (o = {}) => (reduced() ? { animate: false } : { animate: true, duration: 0.6, ...o });
 
+// Camera flights: Leaflet's flyTo. A new flight (or any drag, wheel or pinch) replaces the current one
+// from wherever the camera is, so the user can always change their mind mid-flight.
 function flyTo(latlng, zoom) {
   const i = insets();
   const off = L.point((i.left - i.right) / 2, (i.top - i.bottom) / 2);
   const target = map.unproject(map.project(latlng, zoom).subtract(off), zoom);
-  if (reduced()) map.setView(target, zoom, { animate: false }); else map.flyTo(target, zoom, { duration: 0.8 });
+  if (reduced()) { map.stop(); map.setView(target, zoom, { animate: false }); return; }
+  const px = map.latLngToContainerPoint(target).distanceTo(map.latLngToContainerPoint(map.getCenter()));
+  map.flyTo(target, zoom, { duration: cameraDuration(px + Math.abs(zoom - map.getZoom()) * 260) });
 }
 
 export function showCity() {
@@ -324,12 +445,14 @@ export function showCity() {
   map.flyToBounds(b, { paddingTopLeft: i.paddingTopLeft, paddingBottomRight: i.paddingBottomRight, maxZoom: 11.5, ...motion() });
 }
 
-export function showWard(ward) {
+export function showWard(ward, { city = false } = {}) {
   const b = wardBoundsOf(ward);
   if (!b) return;
   const i = insets();
-  // Land just inside the cluster level so the ward's buildings start to separate.
-  const z = Math.max(ZOOM.areaIn, Math.min(map.getBoundsZoom(b, false, L.point(i.left + i.right + 48, i.top + i.bottom + 48)), 13.5));
+  const fit = map.getBoundsZoom(b, false, L.point(i.left + i.right + 48, i.top + i.bottom + 48));
+  // Normally land just inside the cluster level so the ward's buildings start to separate; with
+  // city: true, stay on the ward map and centre the ward among its neighbours (the guided story).
+  const z = city ? Math.min(fit, ZOOM.areaOut - 0.5) : Math.max(ZOOM.areaIn, Math.min(fit, 13.5));
   flyTo(b.getCenter(), z);
 }
 

@@ -4,7 +4,7 @@
 //   levelFor()        which level of detail a zoom shows (city wards → areas → buildings), with
 //                     separate zoom-in and zoom-out thresholds so the map never flickers at a boundary
 //   wardChoropleth()  the ward fill: share of each ward's buildings in the citywide lowest 10%
-//   clusterBuildings  geographic aggregation for the intermediate level
+//   clusterScreen     screen-space, nesting aggregation for the intermediate level
 //   nearby()          the closest evaluated buildings to one building
 //   encode/decode     the Explore address (#/explore?at=…&ward=…&b=…&lens=…)
 //   footprintLatLngs  a building's 3D Massing footprint, placed back on the map
@@ -85,28 +85,77 @@ export function distanceM(a, b) {
 }
 
 // ---- intermediate level: clusters ------------------------------------------------------------------------
-// Buildings are grouped on a fixed geographic grid (not a screen grid), so a cluster does not change
-// as the map pans. Each cluster sits at the mean position of its own buildings, so it lands on real
-// buildings rather than on a grid corner. Cell size halves from zoom 12 to zoom 13.
-export const cellForZoom = (z) => (z < 13 ? 1200 : 600);
+// Screen-space aggregation with a stable hierarchy.
+//  1. Buildings are binned on a grid of CELL_PX screen pixels laid on the Web Mercator world at the
+//     whole zoom level below the current one. Because the world doubles in size with each zoom level,
+//     the cells nest exactly: every group at zoom z+1 sits inside one group at zoom z. That is what lets
+//     groups split into their own children when zooming in and merge back into their parent when
+//     zooming out, without jumping across the map.
+//  2. Each group sits at the mean position of its own buildings (so it lands on real buildings).
+//  3. A decluttering pass merges any two groups whose discs would still overlap on screen, largest first,
+//     so the view never shows a pile of overlapping numbers.
+export const CELL_PX = 88;
+export const clusterDiameter = (n) => Math.round(Math.min(56, 20 + 4.2 * Math.sqrt(n)));
 
-export function clusterBuildings(pts, cellM, lat0 = 43.7) {
-  const k = metresPerDeg(lat0);
+const TILE = 256;
+export function mercator(lat, lon, z) {
+  const s = TILE * 2 ** z;
+  const sin = Math.sin((lat * Math.PI) / 180);
+  return [((lon + 180) / 360) * s, (0.5 - Math.log((1 + sin) / (1 - sin)) / (4 * Math.PI)) * s];
+}
+// The grid key of a point at a whole zoom level (children at z+1 have keys whose halves are this key).
+export const cellKey = (lat, lon, zi, cellPx = CELL_PX) => {
+  const [x, y] = mercator(lat, lon, zi);
+  return `${zi}:${Math.floor(x / cellPx)}:${Math.floor(y / cellPx)}`;
+};
+
+export function clusterScreen(pts, zoom, { cellPx = CELL_PX, gap = 6 } = {}) {
+  const zi = Math.floor(zoom);
   const cells = new Map();
   for (const p of pts) {
     if (p.lat == null || p.lon == null) continue;
-    const key = `${Math.floor((p.lon * k.x) / cellM)}:${Math.floor((p.lat * k.y) / cellM)}`;
+    const key = cellKey(p.lat, p.lon, zi, cellPx);
     let c = cells.get(key);
     if (!c) { c = { key, n: 0, low10: 0, low25: 0, lat: 0, lon: 0, rsns: [], minLat: 90, maxLat: -90, minLon: 180, maxLon: -180 }; cells.set(key, c); }
-    c.n++;
-    if (p.band === 'low10') c.low10++;
-    if (p.band === 'low25') c.low25++;
-    c.lat += p.lat; c.lon += p.lon;
-    c.rsns.push(p.rsn);
-    c.minLat = Math.min(c.minLat, p.lat); c.maxLat = Math.max(c.maxLat, p.lat);
-    c.minLon = Math.min(c.minLon, p.lon); c.maxLon = Math.max(c.maxLon, p.lon);
+    add(c, p);
   }
-  return [...cells.values()].map((c) => ({ ...c, lat: c.lat / c.n, lon: c.lon / c.n }));
+  let out = [...cells.values()].map(done);
+  // declutter: merge discs that would overlap at this zoom (two passes settle the shifted centres)
+  for (let pass = 0; pass < 2; pass++) {
+    out.sort((a, b) => b.n - a.n || (a.key < b.key ? -1 : 1));
+    const kept = [];
+    for (const c of out) {
+      const [x, y] = mercator(c.lat, c.lon, zoom);
+      const hit = kept.find((k) => Math.hypot(k.x - x, k.y - y) < (clusterDiameter(k.c.n) + clusterDiameter(c.n)) / 2 + gap);
+      if (!hit) { kept.push({ c, x, y }); continue; }
+      hit.c = merge(hit.c, c);
+      [hit.x, hit.y] = mercator(hit.c.lat, hit.c.lon, zoom);
+    }
+    const before = out.length;
+    out = kept.map((k) => k.c);
+    if (out.length === before) break;
+  }
+  return out;
+}
+function add(c, p) {
+  c.n++;
+  if (p.band === 'low10') c.low10++;
+  if (p.band === 'low25') c.low25++;
+  c.lat += p.lat; c.lon += p.lon;
+  c.rsns.push(p.rsn);
+  c.minLat = Math.min(c.minLat, p.lat); c.maxLat = Math.max(c.maxLat, p.lat);
+  c.minLon = Math.min(c.minLon, p.lon); c.maxLon = Math.max(c.maxLon, p.lon);
+}
+const done = (c) => ({ ...c, lat: c.lat / c.n, lon: c.lon / c.n });
+function merge(a, b) {
+  const n = a.n + b.n;
+  return {
+    key: a.key, n, low10: a.low10 + b.low10, low25: a.low25 + b.low25,
+    lat: (a.lat * a.n + b.lat * b.n) / n, lon: (a.lon * a.n + b.lon * b.n) / n,
+    rsns: a.rsns.concat(b.rsns),
+    minLat: Math.min(a.minLat, b.minLat), maxLat: Math.max(a.maxLat, b.maxLat),
+    minLon: Math.min(a.minLon, b.minLon), maxLon: Math.max(a.maxLon, b.maxLon),
+  };
 }
 
 // ---- building level ---------------------------------------------------------------------------------------
@@ -176,6 +225,7 @@ const LEGACY_TABS = { where: 'wards', age: 'age', problems: 'problems', reinspec
 export function legacyRoute(route, arg) {
   if (/^q[1-5]$/.test(route)) return `#/explore?lens=${['wards', 'age', 'problems', 'changes', 'movers'][+route[1] - 1]}`;
   if (route === 'home') return '#/';
+  if (route === 'approach') return '#/about'; // merged into About
   if (route === 'fingerprint') return `#/compare${arg ? `/${arg}` : ''}`;
   if (route === 'building') return arg ? `#/explore?b=${arg}` : '#/explore';
   if (route === 'trends') return `#/explore?lens=${arg === 'movers' ? 'movers' : 'changes'}`;

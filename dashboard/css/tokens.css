@@ -83,26 +83,66 @@
   --atlas-rental-hover: #B4C3E4;
   --atlas-label: var(--civic-blue);
 
-  /* ---- type: one display face, one interface face ---------------------------- */
-  --font-display: "Source Serif 4", "Source Serif Pro", Georgia, "Times New Roman", serif;
-  --font-ui: "Public Sans", system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  /* ---- type: one display face, one interface face ---------------------------------------
+     Display: Space Grotesk, a geometric grotesque for headlines and large numbers (architectural, not literary).
+     Interface: Inter, for everything read at small sizes. Both sans-serif; no serif anywhere. */
+  --font-display: "Space Grotesk", "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-ui: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   --font: var(--font-ui);
+  /* type scale: interface sizes, then display sizes */
+  --text-xs: 12px;    /* captions, chart ticks */
+  --text-sm: 13px;    /* secondary labels, legends, metadata */
+  --text-base: 14px;  /* interface text in panels */
+  --text-md: 16px;    /* body copy */
+  --text-lg: 18px;    /* lead paragraphs */
+  --text-xl: 22px;    /* panel headings */
+  --text-2xl: 32px;   /* page headings */
+  --text-hero: clamp(44px, 5.3vw, 84px);
+  --weight-regular: 400; --weight-medium: 500; --weight-semibold: 600; --weight-bold: 700;
+  --leading-tight: 1.05; --leading-snug: 1.25; --leading-body: 1.55;
+  /* tracking: only large display text is tightened (optical kerning); small text keeps the default */
+  --tracking-display: -0.035em; --tracking-heading: -0.015em; --tracking-label: 0.01em;
 
-  /* ---- shape: square-ish, flat ------------------------------------------------ */
-  --radius: 4px;
-  --radius-sm: 3px;
+  /* ---- spacing scale (every margin, gap and padding uses one of these) ------------------- */
+  --space-1: 4px; --space-2: 8px; --space-3: 12px; --space-4: 16px;
+  --space-5: 24px; --space-6: 32px; --space-7: 48px; --space-8: 64px;
+  --header-h: 60px;   /* one header height on every route */
+
+  /* ---- borders: one width, two colours, two radii ----------------------------------------
+     A border means grouping, focus or interaction. Structure uses --border-color; controls
+     (buttons, inputs, toggles) use --border-control. --border-width-strong is only for state
+     indicators (current page, selected item, focus). */
+  --border-width: 1px;
+  --border-width-strong: 2px;
+  --border-color: var(--line);
+  --border-control: var(--axis);
+  --border: var(--border-width) solid var(--border-color);
+  --radius-sm: 4px;   /* controls, chips, swatches */
+  --radius-md: 6px;   /* panels and floating surfaces */
+  --radius: var(--radius-sm);
+
+  /* ---- surfaces ------------------------------------------------------------------------------- */
   --shadow: none;
   --shadow-pop: 0 6px 24px rgba(23, 23, 23, 0.12);
-  --shadow-float: 0 1px 2px rgba(23, 23, 23, 0.08), 0 4px 14px rgba(23, 23, 23, 0.08); /* cards over the map */
+  --shadow-float: 0 1px 2px rgba(23, 23, 23, 0.06), 0 6px 20px rgba(23, 23, 23, 0.07); /* panels over the map */
   --insight: 330px;
+
+  /* ---- motion (see js/motion.js) ---------------------------------------------------------------- */
+  --dur-micro: 160ms; --dur-panel: 260ms;
+  --ease-out: cubic-bezier(0.2, 0.7, 0.2, 1);
+
+  /* ---- homepage ground: a quiet blueprint tone ------------------------------------------------ */
+  --hero-ground: radial-gradient(120% 90% at 78% 40%, #F4F7FD 0%, #FFFFFF 62%);
+  --hero-grid: rgba(41, 69, 143, 0.05);
 }
 
 /* Dark: the same roles on a night-blue ground (the atlas becomes white line on deep blue). */
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     color-scheme: dark;
-    --bg: #0F131B; --surface: #151A24; --surface-2: #1B212D; --ink: #EEF0F3; --ink-2: #C5CAD3; --muted: #9AA2AE;
-    --line: #2C3340; --grid: #232A36; --axis: #3D4553;
+    --hero-ground: radial-gradient(120% 90% at 78% 40%, #16264A 0%, #0B1424 65%); --hero-grid: rgba(157, 178, 234, 0.06);
+    --bg: #0B1220; --surface: #121A2A; --surface-2: #172034; --ink: #EEF0F3; --ink-2: #C5CAD3; --muted: #9AA2AE;
+    --line: rgba(255, 255, 255, 0.12); --grid: #1F2940; --axis: rgba(255, 255, 255, 0.24);
     --accent: #9DB2EA; --accent-ink: #0F131B; --accent-soft: #1E2944; --focus: #9DB2EA; --warn: #FF7A7A;
     --low-10: #FF6B6B; --low-25: #A04A4A; --dot: #6B727D; --up: #9DB2EA; --down: #FF6B6B; --flat: #565D68; --chart-neutral: #4A5363;
     --fp-3: #2E3440; --fp-2: #7A3A36; --fp-1: #E0574F; --fp-0: #FF9C92; --fp-on-low: #0F131B;
@@ -117,16 +157,17 @@
     --xr-room: #A9A59D; --xr-room-end: #8E8A82; --xr-room-floor: #7E786E; --xr-trim: #4E4B46; --xr-stair: #8A867E; --xr-metal: #8A939E;
     --xr-runner: #6A645A; --xr-unit-door: #7E6B55; --xr-light: #FFF6DE; --xr-panel: #7B828B; --xr-duct: #8C9097; --xr-pipe: #6F7B89;
     --xr-bin: #3D434A; --xr-bin-alt: #4C5B6E; --xr-car-body: #7A8089; --xr-tire: #1B1E22; --xr-board: #C9C6BF; --xr-cut-line: #E4E7EB; --xr-leader: #9AA1AA;
-    --atlas-bg: #0E1626; --atlas-road: rgba(220, 230, 250, 0.32); --atlas-shore: #DCE6FA; --atlas-line: rgba(200, 214, 245, 0.45);
-    --atlas-fill: #0E1626; --atlas-rental: #FFFFFF; --atlas-rental-fill: #2B3F70; --atlas-rental-hover: #3E5796; --atlas-label: #E8EEFA;
+    --atlas-bg: #0B1424; --atlas-road: rgba(220, 230, 250, 0.32); --atlas-shore: #DCE6FA; --atlas-line: rgba(200, 214, 245, 0.45);
+    --atlas-fill: #0B1424; --atlas-rental: #FFFFFF; --atlas-rental-fill: #2B3F70; --atlas-rental-hover: #3E5796; --atlas-label: #E8EEFA;
     --ch-0: #4F6DB3; --ch-1: #2C3D63; --ch-2: #3B414C; --ch-3: #8A3F3A; --ch-4: #E0544C; --ch-none: #232833; --ward-line: #A3ABB8;
     --shadow-pop: 0 8px 28px rgba(0, 0, 0, 0.5); --shadow-float: 0 1px 2px rgba(0, 0, 0, 0.4), 0 6px 18px rgba(0, 0, 0, 0.35);
   }
 }
 :root[data-theme="dark"] {
   color-scheme: dark;
-  --bg: #0F131B; --surface: #151A24; --surface-2: #1B212D; --ink: #EEF0F3; --ink-2: #C5CAD3; --muted: #9AA2AE;
-  --line: #2C3340; --grid: #232A36; --axis: #3D4553;
+  --hero-ground: radial-gradient(120% 90% at 78% 40%, #16264A 0%, #0B1424 65%); --hero-grid: rgba(157, 178, 234, 0.06);
+  --bg: #0B1220; --surface: #121A2A; --surface-2: #172034; --ink: #EEF0F3; --ink-2: #C5CAD3; --muted: #9AA2AE;
+  --line: rgba(255, 255, 255, 0.12); --grid: #1F2940; --axis: rgba(255, 255, 255, 0.24);
   --accent: #9DB2EA; --accent-ink: #0F131B; --accent-soft: #1E2944; --focus: #9DB2EA; --warn: #FF7A7A;
   --low-10: #FF6B6B; --low-25: #A04A4A; --dot: #6B727D; --up: #9DB2EA; --down: #FF6B6B; --flat: #565D68; --chart-neutral: #4A5363;
   --fp-3: #2E3440; --fp-2: #7A3A36; --fp-1: #E0574F; --fp-0: #FF9C92; --fp-on-low: #0F131B;
@@ -141,8 +182,8 @@
   --xr-room: #A9A59D; --xr-room-end: #8E8A82; --xr-room-floor: #7E786E; --xr-trim: #4E4B46; --xr-stair: #8A867E; --xr-metal: #8A939E;
   --xr-runner: #6A645A; --xr-unit-door: #7E6B55; --xr-light: #FFF6DE; --xr-panel: #7B828B; --xr-duct: #8C9097; --xr-pipe: #6F7B89;
   --xr-bin: #3D434A; --xr-bin-alt: #4C5B6E; --xr-car-body: #7A8089; --xr-tire: #1B1E22; --xr-board: #C9C6BF; --xr-cut-line: #E4E7EB; --xr-leader: #9AA1AA;
-  --atlas-bg: #0E1626; --atlas-road: rgba(220, 230, 250, 0.32); --atlas-shore: #DCE6FA; --atlas-line: rgba(200, 214, 245, 0.45);
-  --atlas-fill: #0E1626; --atlas-rental: #FFFFFF; --atlas-rental-fill: #2B3F70; --atlas-rental-hover: #3E5796; --atlas-label: #E8EEFA;
+  --atlas-bg: #0B1424; --atlas-road: rgba(220, 230, 250, 0.32); --atlas-shore: #DCE6FA; --atlas-line: rgba(200, 214, 245, 0.45);
+  --atlas-fill: #0B1424; --atlas-rental: #FFFFFF; --atlas-rental-fill: #2B3F70; --atlas-rental-hover: #3E5796; --atlas-label: #E8EEFA;
   --ch-0: #4F6DB3; --ch-1: #2C3D63; --ch-2: #3B414C; --ch-3: #8A3F3A; --ch-4: #E0544C; --ch-none: #232833; --ward-line: #A3ABB8;
   --shadow-pop: 0 8px 28px rgba(0, 0, 0, 0.5); --shadow-float: 0 1px 2px rgba(0, 0, 0, 0.4), 0 6px 18px rgba(0, 0, 0, 0.35);
 }

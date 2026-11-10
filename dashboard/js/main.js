@@ -7,7 +7,7 @@
 //
 // Addresses (every level is a link, and Back/Forward work):
 //   #/explore?at=<lat>,<lon>,<zoom>&ward=<code>&b=<RSN>&lens=<id>&sys=pre&show=low10   the map
-//   #/xray/<RSN>   #/compare/<RSN>   #/story/<chapter>   #/about   #/approach   #/help
+//   #/xray/<RSN>   #/compare/<RSN>   #/story/<chapter>   #/about   #/help   (#/approach → #/about)
 // Old addresses (#/q1…q5, #/building/<RSN>, #/explore/<tab>, #/trends/<tab>, #/fingerprint) redirect.
 //
 // History: panning and zooming replace the current entry; selecting a ward or a building, opening an
@@ -29,6 +29,7 @@ import { createStory } from './story/controller.js';
 import { drawVisual } from './story/visuals.js';
 import { scoreDistribution } from './story/selectors.js';
 import { initHome, showHome } from './home/home.js';
+import { animate, DUR } from './motion.js';
 import * as Atlas from './atlas/map.js';
 import { initSearch } from './atlas/search.js';
 import { wardChoropleth, choroplethSummary, encodeExplore, decodeExplore, legacyRoute, footprintLatLngs, SMALL_WARD } from './atlas/logic.js';
@@ -49,7 +50,7 @@ const LENSES = [
 ];
 const lensById = new Map(LENSES.map((l) => [l.id, l]));
 
-const PAGES = { about: 'About the data', approach: 'Our approach', help: 'Help' };
+const PAGES = { about: 'About', help: 'Help' };
 
 const state = {
   layer: 'home',
@@ -122,6 +123,7 @@ function onRoute() {
     story?.leave();
     closeDepth();
     setLayer('home');
+    document.querySelectorAll('.atlas-nav [aria-current]').forEach((a) => a.removeAttribute('aria-current'));
     document.title = 'LeaseLens · Toronto rental building data';
     lastHash = location.hash || '#/'; lastRoute = '';
     return;
@@ -211,7 +213,7 @@ function setLayer(layer) {
   $('app').hidden = layer !== 'work';
   window.scrollTo(0, 0);
   closeMenus();
-  if (layer === 'work') { ensureMap(); requestAnimationFrame(Atlas.invalidate); }
+  if (layer === 'work') { ensureMap(); requestAnimationFrame(() => { Atlas.invalidate(); if (themeStale) { themeStale = false; Atlas.restyle(); } }); }
 }
 
 function markNav() {
@@ -240,11 +242,12 @@ function ensureMap() {
 function mapInsets() {
   const box = $('stage').getBoundingClientRect();
   const r = (el) => (el && !el.hidden && el.offsetParent ? el.getBoundingClientRect() : null);
+  const cap = story?.active() ? r($('story-panel')) : null; // the story caption is an obstruction too
   if (narrow()) {
-    const sheet = [r($('place')), r($('lens'))].filter(Boolean).map((b) => box.bottom - b.top);
+    const sheet = [r($('place')), r($('lens')), cap].filter(Boolean).map((b) => box.bottom - b.top);
     return { left: 0, right: 0, top: (r($('title-card'))?.bottom ?? box.top) - box.top, bottom: Math.max(0, ...sheet) };
   }
-  const left = [r($('title-card')), r($('place'))].filter(Boolean).reduce((w, b) => Math.max(w, b.right - box.left), 0);
+  const left = [r($('title-card')), r($('place')), cap].filter(Boolean).reduce((w, b) => Math.max(w, b.right - box.left), 0);
   const lens = r($('lens'));
   return { left, right: lens ? box.right - lens.left : 0, top: 0, bottom: 0 };
 }
@@ -283,10 +286,53 @@ function renderChrome() {
   if (!M) return;
   keepFocus(renderChromeNow);
 }
+// The place panel opens out of the selected building (or ward) on the map and closes back into it.
+// One 'panel' animation at a time (motion.js): opening something else mid-way simply takes over.
+let placeId = '', placeOpener = null;
+let presentSeq = 0; // story chapters: only the newest one may finish its moves
+function placeOrigin() {
+  const r = state.selected && (M.byPeriod[state.period].latestByRsn.get(state.selected) ?? M.anyByRsn?.get(state.selected));
+  if (r?.lat != null) return Atlas.clientPointOf(r.lat, r.lon);
+  const b = state.ward && Atlas.wardBoundsOf(state.ward);
+  if (b) { const c = b.getCenter(); return Atlas.clientPointOf(c.lat, c.lng); }
+  return null;
+}
+function originStyle(el, pt) {
+  const r = el.getBoundingClientRect();
+  el.style.transformOrigin = pt ? `${Math.round(pt.x - r.left)}px ${Math.round(pt.y - r.top)}px` : '0 50%';
+}
+function placeIn(el) {
+  originStyle(el, placeOrigin());
+  animate('panel', {
+    duration: DUR.panel,
+    step: (e) => { el.style.opacity = String(e); el.style.transform = `scale(${0.94 + 0.06 * e})`; },
+    done: () => { el.style.opacity = ''; el.style.transform = ''; el.style.transformOrigin = ''; },
+  });
+}
+function placeOut(el, html, rect, pt) {
+  // the content is already gone: shrink a copy back toward where it came from
+  const ghost = document.createElement('aside');
+  ghost.className = 'card place place-ghost';
+  ghost.setAttribute('aria-hidden', 'true');
+  ghost.inert = true;
+  ghost.innerHTML = html;
+  Object.assign(ghost.style, { position: 'fixed', left: `${rect.left}px`, top: `${rect.top}px`, width: `${rect.width}px`, height: `${rect.height}px`, margin: 0, zIndex: 850, pointerEvents: 'none' });
+  document.body.append(ghost);
+  originStyle(ghost, pt);
+  animate('panel', {
+    duration: DUR.micro + 40,
+    step: (e) => { ghost.style.opacity = String(1 - e); ghost.style.transform = `scale(${1 - 0.06 * e})`; },
+    done: () => ghost.remove(),
+  });
+}
+
 function renderChromeNow() {
   const ctx = context();
   renderCrumbs($('crumbs'));
   renderTitle();
+  const place = $('place');
+  const wasOpen = !place.hidden, before = wasOpen ? { html: place.innerHTML, rect: place.getBoundingClientRect(), pt: placeOrigin.last } : null;
+  const focusWasInPlace = place.contains(document.activeElement);
   renderPlace($('place'), ctx, M, {
     tab: state.placeTab,
     onClose: () => (state.selected ? select(null) : setWard('')),
@@ -303,14 +349,31 @@ function renderChromeNow() {
   renderSummary();
   document.body.classList.toggle('has-place', !$('place').hidden);
   $('title-card').classList.toggle('is-compact', !$('place').hidden);
+  const id = place.hidden ? '' : state.selected ? `b${state.selected}` : `w${state.ward}`;
+  if (id !== placeId && state.depth === 'map') { // deeper levels set the panel aside; that is not a close
+    if (id) {
+      if (!placeId) placeOpener = document.activeElement !== document.body && !place.contains(document.activeElement) ? document.activeElement : null;
+      placeIn(place);
+      placeOrigin.last = placeOrigin();
+    } else if (before && !reducedMotion()) {
+      placeOut(place, before.html, before.rect, before.pt ?? null);
+    }
+    // closing returns focus to whatever opened it (the search box, a list) or to the map
+    if (!id && focusWasInPlace) (placeOpener?.isConnected && !placeOpener.closest('[hidden]') ? placeOpener : $('map')).focus({ preventScroll: true });
+    placeId = id;
+  } else if (id) placeOrigin.last = placeOrigin();
   document.body.classList.toggle('has-lens', !$('lens').hidden);
+  // In the story, a chapter's detail view opens above whatever the chapter shows (map, chart or X-Ray).
+  const detail = !!story?.active() && !$('lens').hidden;
+  document.body.classList.toggle('story-detail', detail);
+  if (state.depth !== 'map') $('rail-right').inert = !detail;
 }
 
 function renderTitle() {
   const sub = {
-    city: 'Zoom in to discover how inspection results vary across the city.',
-    area: 'Nearby buildings are grouped. Keep zooming to separate them.',
-    building: 'Each mark is one building. Select one to see its score.',
+    city: 'Zoom in to see how inspection results vary.',
+    area: 'Keep zooming to separate the groups.',
+    building: 'Select a building to see its score.',
   }[Atlas.getLevel()];
   $('atlas-sub').textContent = sub;
 }
@@ -340,32 +403,32 @@ function toMap(fn) {
 }
 
 function renderLegend() {
+  // Minimal by design: a title, the key, and one quiet line. How to read it, the scoring-system note and
+  // the small-ward rule sit behind the ⓘ; a text description is one click away.
   const el = $('legend');
   const pm = M.byPeriod[state.period];
   const level = Atlas.getLevel();
   const ch = choropleth();
-  const sys = `<p class="legend-sys">${esc(pm.P.label)} scoring system <button type="button" class="info-btn" data-info="scoring-system" aria-label="About the two scoring systems">i</button></p>`;
+  const head = (title, info, label) => `<div class="legend-head"><p class="legend-title">${title}</p>
+    <button type="button" class="info-btn" data-info="${info}" aria-label="${label}">i</button></div>`;
   let body = '';
   if (level === 'city') {
     const rl = (r) => (r.cls === 0 ? `under ${pct(r.to)}` : r.to == null ? `${pct(r.from)} or more` : `${pct(r.from)}–${pct(r.to)}`);
-    body = `<div class="legend-head"><p class="legend-title">Share of a ward’s buildings in the lowest 10%</p>
-        <button type="button" class="info-btn" data-info="map-wards" aria-label="How to read the ward map">i</button></div>
-      <ol class="ch-scale">${[...ch.ranges].reverse().map((r) => `<li><span class="ch-sw" style="background:var(--ch-${r.cls})"></span><span>${rl(r)}</span></li>`).join('')}</ol>
-      <p class="legend-note">Citywide: <b>${pct(ch.city)}</b> of buildings score ${pm.t10} or below.</p>
-      <p class="legend-note"><span class="dash-key" aria-hidden="true"></span> Dashed outline: fewer than ${SMALL_WARD} evaluated buildings.</p>`;
+    const cityCls = ch.classOf(ch.city);
+    body = `${head('Buildings in the lowest 10%', 'map-wards', 'How to read the ward map')}
+      <ol class="ch-scale">${[...ch.ranges].reverse().map((r) => `<li><span class="ch-sw" style="background:var(--ch-${r.cls})"></span><span>${rl(r)}</span>${r.cls === cityCls ? `<span class="ch-city">Toronto ${pct(ch.city)}</span>` : ''}</li>`).join('')}</ol>`;
   } else if (level === 'area') {
-    body = `<div class="legend-head"><p class="legend-title">Groups of nearby buildings</p>
-        <button type="button" class="info-btn" data-info="map-areas" aria-label="How to read the groups">i</button></div>
-      <div class="cl-key"><span class="cl-disc" style="--d:36px;--p:0.25" aria-hidden="true"><b>12</b></span>
-        <p>Number: buildings in the group<br><span class="red-ink">Red arc</span>: share in the lowest 10% (score ${pm.t10} or below)</p></div>`;
+    body = `${head('Groups of buildings', 'map-areas', 'How to read the groups')}
+      <p class="cl-key"><span class="cl-disc" style="--d:28px;--p:0.25" aria-hidden="true"><b>12</b></span>
+        <span>Buildings in the group. <span class="red-ink">Red</span>: share in the lowest 10%.</span></p>`;
   } else {
     const key = (v, label, r) => `<li><span class="dot-key" style="--k:var(${v});--r:${r}px"></span>${label}</li>`;
-    body = `<div class="legend-head"><p class="legend-title">Latest score, by building</p>
-        <button type="button" class="info-btn" data-info="map-buildings" aria-label="How to read the building marks">i</button></div>
-      <ul class="dot-keys">${key('--low-10', `Lowest 10%: ${pm.t10} or below`, 11)}${key('--low-25', `Next 15%: ${pm.t10 + 1}–${pm.t25}`, 9)}${state.mapShow === 'all' ? key('--dot', `Above ${pm.t25}`, 7) : ''}</ul>`;
+    body = `${head('Latest score', 'map-buildings', 'How to read the building marks')}
+      <ul class="dot-keys">${key('--low-10', `${pm.t10} or below <small>lowest 10%</small>`, 11)}${key('--low-25', `${pm.t10 + 1}–${pm.t25}`, 9)}${state.mapShow === 'all' ? key('--dot', `Above ${pm.t25}`, 7) : ''}</ul>`;
   }
-  el.innerHTML = `${body}${sys}<button type="button" class="link-btn legend-describe" id="describe-btn" aria-expanded="false" aria-controls="describe-text">Describe this map</button>
-    <p class="legend-text" id="describe-text" hidden>${esc(choroplethSummary(ch, (v) => pct(v)))}</p>`;
+  el.innerHTML = `${body}<p class="legend-foot"><span>${esc(pm.P.label)} system</span>
+    <button type="button" class="link-btn" id="describe-btn" aria-expanded="false" aria-controls="describe-text">Describe</button></p>
+    <p class="legend-text" id="describe-text" hidden>${esc(level === 'city' ? choroplethSummary(ch, (v) => pct(v)) : $('map-summary').textContent)}</p>`;
   $('describe-btn').addEventListener('click', (e) => {
     const t = $('describe-text'); t.hidden = !t.hidden; e.currentTarget.setAttribute('aria-expanded', String(!t.hidden));
   });
@@ -463,6 +526,7 @@ function openDepth(kind, page = null, after) {
   document.body.dataset.depth = kind;
   $('depth').hidden = false;
   for (const id of ['map-wrap', 'rail-left', 'rail-right']) $(id).inert = true;
+  if (document.body.classList.contains('story-detail')) $('rail-right').inert = false;
   const view = kind === 'page' ? page : kind;
   $('depth-body').querySelectorAll('.view').forEach((v) => (v.hidden = v.dataset.view !== view));
   tip.hide();
@@ -607,7 +671,10 @@ function wireControls() {
   radios('change-start', (v) => { state.changes.start = v; renderLens(context()); });
   radios('movers-n', (v) => { state.movers.n = +v; renderLens(context()); });
   $('problem-more').addEventListener('click', () => { state.problems.showAll = !state.problems.showAll; renderLens(context()); });
-  $('lens-close').addEventListener('click', () => { setLens(null); $('lens-btn').focus(); });
+  $('lens-close').addEventListener('click', () => {
+    setLens(null);
+    (story?.active() ? document.querySelector('#story-panel [data-act=detail]') : $('lens-btn'))?.focus();
+  });
 
   $('ward').innerHTML += M.wards.map((w) => `<option value="${w.ward}">${+w.ward} · ${esc(w.name)}</option>`).join('');
   $('ward').addEventListener('change', (e) => toMap(() => setWard(e.target.value)));
@@ -632,6 +699,8 @@ function closeMenus(except) {
   $('menu-button').setAttribute('aria-expanded', 'false');
   document.querySelectorAll('details.menu[open]').forEach((d) => (d.open = false));
 }
+
+let themeStale = false; // theme changed while the map was hidden
 
 function wireShell() {
   for (const [b, p] of MENUS) {
@@ -671,20 +740,31 @@ function wireShell() {
     else if (state.ward) { setWard('', { fly: false }); e.preventDefault(); }
   });
 
-  // theme toggle (remembered per browser; the page still works if storage is blocked)
+  // Theme toggle: one visible button in the homepage header and one in the atlas bar, kept in sync.
+  // Its label names the mode it switches TO. Remembered per browser; works if storage is blocked.
+  const toggles = [...document.querySelectorAll('[data-theme-toggle]')];
+  const isDark = () => (document.documentElement.dataset.theme ? document.documentElement.dataset.theme === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches);
   const applyTheme = (t) => {
     if (t) document.documentElement.dataset.theme = t; else delete document.documentElement.dataset.theme;
-    const dark = t ? t === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches;
-    $('theme-toggle').querySelector('span').textContent = dark ? 'Light mode' : 'Dark mode';
+    const dark = isDark();
+    for (const b of toggles) {
+      b.dataset.mode = dark ? 'dark' : 'light';
+      b.setAttribute('aria-label', dark ? 'Switch to light mode' : 'Switch to dark mode');
+      b.title = dark ? 'Switch to light mode' : 'Switch to dark mode';
+      b.querySelector('.tt-label').textContent = dark ? 'Light' : 'Dark';
+    }
     document.dispatchEvent(new CustomEvent('themechange'));
   };
   let saved = null;
   try { saved = localStorage.getItem('lease-lens-theme'); } catch { /* storage unavailable */ }
   applyTheme(saved);
-  const restyle = () => { Atlas.restyle(); render(); };
-  $('theme-toggle').addEventListener('click', () => {
-    const dark = document.documentElement.dataset.theme ? document.documentElement.dataset.theme === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches;
-    const next = dark ? 'light' : 'dark';
+  // The map can only be redrawn while it is on screen; a toggle on the homepage waits until it is.
+  const restyle = () => {
+    if (document.body.dataset.layer !== 'work') { themeStale = true; return; }
+    themeStale = false; Atlas.restyle(); render();
+  };
+  for (const b of toggles) b.addEventListener('click', () => {
+    const next = isDark() ? 'light' : 'dark';
     try { localStorage.setItem('lease-lens-theme', next); } catch { /* ignore */ }
     applyTheme(next);
     restyle();
@@ -695,7 +775,8 @@ function wireShell() {
   // map share a transition name, so the drawing settles into the map's box (a shared box, not a camera
   // move: the two use different projections).
   document.addEventListener('click', (e) => {
-    const a = e.target.closest('#home a[href^="#/"]');
+    // From the homepage (its links or the shared header), the map opens with the drawing settling into it.
+    const a = e.target.closest('#home a[href^="#/"]') ?? (state.layer === 'home' ? e.target.closest('.site-bar a[href^="#/"]:not(.wordmark)') : null);
     if (!a || e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey) return;
     e.preventDefault();
     enterWorkspace(a.getAttribute('href'));
@@ -736,18 +817,43 @@ const app = {
   syncControls,
   setWard: (w) => setWard(w),
   // One chapter: which level it happens at, how the map is framed and what runs after it is drawn.
-  present({ depth, mapTo, after }) {
+  // Each call supersedes the previous one: work still pending from an earlier chapter (a flight that
+  // was to end in the X-Ray, a chart waiting to draw) is dropped, so fast Next/Back never stacks up.
+  //   via: travel through the map first (fly to the building), then go down into its level from there.
+  present({ depth, mapTo, via, after }) {
+    const seq = ++presentSeq;
+    const live = () => seq === presentSeq && story?.active();
+    const done = after && (() => { if (live()) after(); });
+    const frame = (to) => Atlas.wardsLoaded().then(() => {
+      if (!live() || !to) return;
+      if (to.kind === 'city') Atlas.showCity();
+      if (to.kind === 'ward') Atlas.showWard(to.ward, { city: !!to.city });
+      if (to.kind === 'building') { const r = recOf(to.rsn); if (r) Atlas.showBuilding(r); }
+    });
     if (depth === 'map') {
       closeDepth();
       renderMapLevel();
-      Atlas.wardsLoaded().then(() => {
-        if (mapTo?.kind === 'city') Atlas.showCity();
-        if (mapTo?.kind === 'ward') Atlas.showWard(mapTo.ward);
-        if (mapTo?.kind === 'building') { const r = recOf(mapTo.rsn); if (r) Atlas.showBuilding(r); }
-      });
-      if (after) setTimeout(after, reducedMotion() ? 80 : 900);
-    } else openDepth(depth, null, after);
+      frame(mapTo);
+      if (done) setTimeout(done, reducedMotion() ? 80 : 900);
+      return;
+    }
+    if (via && state.depth !== depth && !reducedMotion()) {
+      closeDepth();
+      renderMapLevel();
+      frame(via);
+      setTimeout(() => {
+        if (!live()) return;
+        const run = () => openDepth(depth, null, done);
+        if (!document.startViewTransition) run();
+        else { document.documentElement.classList.add('vt-depth'); document.startViewTransition(run).finished.finally(() => document.documentElement.classList.remove('vt-depth')); }
+      }, 1150);
+      return;
+    }
+    openDepth(depth, null, done);
   },
+  // The one detail view a chapter offers (an analysis layer), opened only on request.
+  openDetail(id) { setLens(id); if (id) requestAnimationFrame(() => $('lens-title')?.focus({ preventScroll: true })); },
+  inspect: (rsn, uid) => { state.xray.evalUid = uid ?? null; navigate(`#/xray/${rsn}`); },
 };
 
 (async function main() {

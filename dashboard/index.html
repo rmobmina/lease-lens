@@ -8,13 +8,14 @@
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%2329458F'/%3E%3Cpath d='M9 24V12l7-4 7 4v12' fill='none' stroke='white' stroke-width='2'/%3E%3Cpath d='M13 24v-6h6v6' fill='none' stroke='white' stroke-width='2'/%3E%3C/svg%3E" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;500;600;700&family=Source+Serif+4:opsz,wght@8..60,500;8..60,600&display=swap" />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" />
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
   <link rel="stylesheet" href="css/tokens.css" />
   <link rel="stylesheet" href="css/dashboard.css" />
   <link rel="stylesheet" href="css/home.css" />
   <link rel="stylesheet" href="css/workspace.css" />
   <link rel="stylesheet" href="css/atlas.css" />
+  <link rel="stylesheet" href="css/story.css" />
   <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
   <!-- Three.js for the Building X-Ray. Nothing is downloaded until the X-Ray view opens (dynamic import). -->
@@ -27,47 +28,58 @@
 </head>
 <body data-layer="home">
 
+  <a class="skip-link skip-home" href="#home-main">Skip to content</a>
+  <a class="skip-link skip-work" href="#search">Skip to address search</a>
+  <a class="skip-link skip-work" href="#place">Skip to selection details</a>
+
+  <!-- One header on every route: the same wordmark, navigation, theme toggle and height. -->
+  <header class="site-bar" id="site-bar">
+    <a class="wordmark" href="#/" aria-label="LeaseLens home">Lease<span>Lens</span></a>
+    <div class="search" role="search">
+      <label class="visually-hidden" for="search">Search an address</label>
+      <input id="search" type="text" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="search-list"
+        placeholder="Search an address" autocomplete="off" spellcheck="false" />
+      <ul id="search-list" class="search-list" role="listbox" aria-label="Matching buildings" hidden></ul>
+    </div>
+    <nav class="atlas-nav" id="atlas-nav" aria-label="Main">
+      <a href="#/explore" data-route="explore" id="nav-explore">Explore</a>
+      <a href="#/story" data-route="story">Guided story</a>
+      <a href="#/about" data-route="about">About</a>
+    </nav>
+    <button type="button" class="theme-toggle" data-theme-toggle aria-label="Switch to dark mode">
+      <svg class="tt-moon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z"/></svg>
+      <svg class="tt-sun" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4.2"/><path d="M12 2.5v2.2M12 19.3v2.2M2.5 12h2.2M19.3 12h2.2M5.3 5.3l1.6 1.6M17.1 17.1l1.6 1.6M5.3 18.7l1.6-1.6M17.1 6.9l1.6-1.6"/></svg>
+      <span class="tt-label">Dark</span>
+    </button>
+    <button type="button" class="menu-button" id="menu-button" aria-expanded="false" aria-controls="atlas-nav">Menu</button>
+  </header>
+
   <!-- ===================================================================== -->
   <!-- Layer A: public homepage                                               -->
   <!-- ===================================================================== -->
   <div class="home" id="home">
-    <a class="skip-link" href="#home-main">Skip to content</a>
-    <header class="site-header">
-      <a class="wordmark" href="#/" aria-label="LeaseLens home">Lease<span>Lens</span></a>
-      <button type="button" class="site-menu-btn" id="site-menu-btn" aria-expanded="false" aria-controls="site-nav">Menu</button>
-      <nav class="site-nav" id="site-nav" aria-label="Main">
-        <a href="#/explore" data-enter>Explore</a>
-        <a href="#/story">Guided story</a>
-        <a href="#/approach">Our approach</a>
-        <a href="#/about">About the data</a>
-      </nav>
-    </header>
 
     <main class="hero" id="home-main" tabindex="-1">
       <div class="hero-copy">
-        <p class="hero-eyebrow">Toronto rental building data</p>
-        <h1 class="hero-title">Your next home is more than a score.</h1>
-        <p class="hero-sub">Look beyond RentSafeTO ratings to explore building conditions, inspection history, and patterns across Toronto.</p>
+        <h1 class="hero-title"><span>Your next home</span> <span>is more than</span> <span>a score.</span></h1>
+        <p class="hero-sub">Explore what Toronto’s rental building inspections reveal.</p>
         <div class="hero-actions">
           <a class="btn btn-primary btn-lg" href="#/explore" data-enter>Let’s explore</a>
           <a class="btn btn-lg" href="#/story">Follow the story</a>
         </div>
-        <a class="hero-link" href="#/about">About the data</a>
       </div>
 
       <figure class="hero-atlas" aria-labelledby="atlas-caption">
         <div class="atlas-stage" id="atlas-stage">
           <img class="atlas-fallback" src="data/hero/toronto-hero.svg" alt="" width="1600" height="1000" decoding="async" />
         </div>
-        <figcaption class="atlas-caption" id="atlas-caption">
-          <span>Downtown Toronto, drawn from City of Toronto building and street data. <span class="atlas-key"><span class="atlas-swatch" aria-hidden="true"></span>RentSafeTO-evaluated buildings</span></span>
-          <button type="button" class="info-btn" data-info="atlas" aria-label="How this drawing is made">i</button>
-        </figcaption>
+        <figcaption class="visually-hidden" id="atlas-caption">A drawing of downtown Toronto from City of Toronto building and street data. Evaluated rental buildings are highlighted.</figcaption>
       </figure>
     </main>
 
     <footer class="site-foot">
-      <p>LeaseLens is an independent student-built project using public City of Toronto data. It is not an official City of Toronto service.</p>
+      <p>Contains information licensed under the <a href="https://open.toronto.ca/open-data-license/" target="_blank" rel="noopener">Open Government Licence – Toronto</a>. <a href="#/about">Sources</a></p>
+      <button type="button" class="info-btn" data-info="atlas" aria-label="How the homepage drawing is made">i</button>
     </footer>
   </div>
 
@@ -76,24 +88,7 @@
   <!-- Toronto → ward → building → inspection (X-Ray).                        -->
   <!-- ===================================================================== -->
   <div class="app" id="app" hidden>
-    <a class="skip-link" href="#search">Skip to address search</a>
-    <a class="skip-link" href="#place">Skip to selection details</a>
 
-    <header class="atlas-bar">
-      <a class="wordmark" href="#/" aria-label="LeaseLens home">Lease<span>Lens</span></a>
-      <div class="search" role="search">
-        <label class="visually-hidden" for="search">Search an address</label>
-        <input id="search" type="text" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="search-list"
-          placeholder="Search an address" autocomplete="off" spellcheck="false" />
-        <ul id="search-list" class="search-list" role="listbox" aria-label="Matching buildings" hidden></ul>
-      </div>
-      <nav class="atlas-nav" id="atlas-nav" aria-label="Main">
-        <a href="#/explore" data-route="explore" id="nav-explore">Explore</a>
-        <a href="#/story" data-route="story">Guided story</a>
-        <a href="#/about" data-route="about">About</a>
-      </nav>
-      <button type="button" class="menu-button" id="menu-button" aria-expanded="false" aria-controls="atlas-nav">Menu</button>
-    </header>
 
     <div class="atlas-main">
       <!-- Guided story: docks beside the map while it runs -->
@@ -153,9 +148,8 @@
               <span class="field-label">Ward</span>
               <select id="ward"><option value="">All of Toronto</option></select>
             </label>
-            <div class="layers-foot">
+            <div class="layers-foot layers-foot-single">
               <button type="button" class="link-btn" data-info="limits" aria-label="What this data can’t tell you">Data limitations</button>
-              <button type="button" class="theme-toggle" id="theme-toggle" aria-label="Switch colour theme"><span>Dark mode</span></button>
             </div>
           </div>
 
@@ -380,55 +374,60 @@
             <div class="story-visual" id="story-visual"></div>
           </section>
 
-          <!-- Our approach ---------------------------------------------------------------------------- -->
-          <section class="view page-view" data-view="approach" aria-labelledby="approach-title" hidden>
-            <article class="page">
-              <h1 id="approach-title">Our approach</h1>
-              <p class="lede">A RentSafeTO score summarizes a whole inspection in one number. We keep the number, and show what sits underneath it.</p>
-              <ol class="steps">
-                <li><b>Compare the area.</b> Start with the city map and zoom into a ward to see where lower scores cluster. <a href="#/explore">Explore the map</a></li>
-                <li><b>Check individual inspection results.</b> Select a building and inspect it: its items, category by category. <a href="#/explore">Find a building</a></li>
-                <li><b>Review the building’s inspection history.</b> A score describes inspection day; see whether it has been rising or falling. <a href="#/explore?lens=changes">Re-inspection changes</a></li>
-              </ol>
-              <h2>What we will not do</h2>
-              <ul class="plain">
-                <li>Invent scores, dates, ratings or comparisons. Every number on the site is computed from the City’s published records.</li>
-                <li>Mix the two scoring systems. The City changed its method in 2023, so scores are only compared within one system.</li>
-                <li>Treat a missing or N/A rating as a pass. Missing results stay missing.</li>
-                <li>Present the X-Ray’s interior as a real floor plan, or suggest a problem is in a particular apartment.</li>
-              </ul>
-              <p><a class="btn btn-primary" href="#/story">Follow the story</a></p>
-            </article>
-          </section>
-
-          <!-- About the data -------------------------------------------------------------------------- -->
+          <!-- About: what LeaseLens is, how it works, and the sources. Methods sit behind disclosures. -->
           <section class="view page-view" data-view="about" aria-labelledby="about-title" hidden>
             <article class="page">
-              <h1 id="about-title">About the data</h1>
+              <h1 id="about-title">About LeaseLens</h1>
+              <p class="lede">A RentSafeTO score sums up a whole inspection in one number. LeaseLens keeps the number and shows what sits underneath it: where it is, what was inspected, and how it has changed.</p>
               <p class="notice">LeaseLens is an independent student-built project using public City of Toronto data. It is not an official City of Toronto service.</p>
-              <h2>Source</h2>
+
+              <h2>How to use it</h2>
+              <ol class="steps">
+                <li><b>Compare areas.</b> Start with the city map and zoom into a ward to see where lower scores cluster. <a href="#/explore">Explore the map</a></li>
+                <li><b>Check one building.</b> Select it and inspect its results, category by category.</li>
+                <li><b>Look at its history.</b> A score describes inspection day. See whether it has been rising or falling. <a href="#/explore?lens=changes">Re-inspection changes</a></li>
+              </ol>
+
+              <h2>Reading the scores</h2>
+              <p>Scores describe common areas on the inspection day, not individual units, rents or landlords. Patterns here are associations; they don’t show what causes a low score.</p>
+              <p>The City changed its scoring system in 2023. The two systems use different items and scales, so they are never compared with each other here.</p>
+
+              <h2>Sources</h2>
               <p id="data-note"></p>
-              <h2>Reading these views</h2>
-              <p>Scores describe the condition of common areas on the inspection day, not individual units, rents or landlord practices. Patterns here are associations; they don’t show what causes a low score.</p>
-              <p>The City changed its scoring system in 2023. Scores from the two systems use different rating scales and items, so they’re never compared with each other here.</p>
-              <p>Since 2023, inspectors rate up to 50 items from 0 to 3, where 3 is the top mark. N/A means an item doesn’t apply. Neither N/A nor a blank is ever counted as a pass or as a problem.</p>
-              <h2>What is real and what is drawn</h2>
-              <table class="truth-table">
-                <thead><tr><th scope="col">On the page</th><th scope="col">What it is</th></tr></thead>
-                <tbody>
-                  <tr><th scope="row">Scores, dates, item ratings</th><td>Actual records from the City’s Apartment Building Evaluations files.</td></tr>
-                  <tr><th scope="row">Building shape and height (“massing” badge)</th><td>Actual footprint and height from the City’s 3D Massing data, used only when the address matched one footprint reliably.</td></tr>
-                  <tr><th scope="row">Building shape (“approximate” badge)</th><td>Estimated from the registered number of storeys. Not the real shape.</td></tr>
-                  <tr><th scope="row">X-Ray interiors, entrances, parking and site details</th><td>Conceptual. They show where a category belongs, not a real floor plan.</td></tr>
-                  <tr><th scope="row">Homepage drawing of downtown</th><td>Actual City footprints, heights, streets and shoreline, simplified: small buildings and minor streets are left out.</td></tr>
-                </tbody>
-              </table>
-              <h2>Colours</h2>
-              <p>The interface uses a blue, white and red palette inspired by the Toronto flag. The City specifies the flag’s blue as Pantone 287 and its red as Pantone 186; the screen colours used here are approximations, and charts never rely on red and blue alone.</p>
-              <h2>For analysts</h2>
-              <p>The <a href="../explorer/">data explorer</a> shows every record, every filter and full data notes.</p>
-              <h2>Map sources</h2>
-              <p>Ward boundaries: City of Toronto <a href="https://open.toronto.ca/dataset/city-wards/" target="_blank" rel="noopener">City Wards</a> (25-ward model), simplified to about 12 m. Base map: © OpenStreetMap contributors. Building marks sit at the address point given in each RentSafeTO record.</p>
+              <p>Base map © OpenStreetMap contributors. Ward boundaries simplified to about 12 m. Building marks sit at the address point in each RentSafeTO record.</p>
+
+              <h2>Methods and limits</h2>
+              <details class="method">
+                <summary>How ratings are counted</summary>
+                <p>Since 2023, inspectors rate up to 50 items from 0 to 3, where 3 is the top mark. N/A means an item doesn’t apply. Neither N/A nor a blank is ever counted as a pass or as a problem. “Lowest 10%” and “lowest 25%” are citywide cut-offs on each building’s latest score in the chosen system, with ties included.</p>
+              </details>
+              <details class="method">
+                <summary>What is real and what is drawn</summary>
+                <table class="truth-table">
+                  <thead><tr><th scope="col">On the page</th><th scope="col">What it is</th></tr></thead>
+                  <tbody>
+                    <tr><th scope="row">Scores, dates, item ratings</th><td>Actual records from the City’s Apartment Building Evaluations files.</td></tr>
+                    <tr><th scope="row">Building shape and height (“massing” badge)</th><td>Actual footprint and height from the City’s 3D Massing data, used only when the address matched one footprint reliably.</td></tr>
+                    <tr><th scope="row">Building shape (“approximate” badge)</th><td>Estimated from the registered number of storeys. Not the real shape.</td></tr>
+                    <tr><th scope="row">X-Ray interiors, entrances, parking and site details</th><td>Conceptual. They show where a category belongs, not a real floor plan.</td></tr>
+                    <tr><th scope="row">Homepage drawing of downtown</th><td>Actual City footprints, heights, streets and shoreline, simplified: small buildings and minor streets are left out.</td></tr>
+                  </tbody>
+                </table>
+              </details>
+              <details class="method">
+                <summary>What we will not do</summary>
+                <ul class="plain">
+                  <li>Invent scores, dates, ratings or comparisons. Every number is computed from the City’s published records.</li>
+                  <li>Mix the two scoring systems.</li>
+                  <li>Treat a missing or N/A rating as a pass. Missing results stay missing.</li>
+                  <li>Present the X-Ray’s interior as a real floor plan, or suggest a problem is in a particular apartment.</li>
+                </ul>
+              </details>
+              <details class="method">
+                <summary>Colours</summary>
+                <p>Blue, white and red, inspired by the Toronto flag (Pantone 287 and 186; the screen colours are approximations). Red marks low scores and declines only, and charts never rely on red and blue alone.</p>
+              </details>
+              <p class="page-foot">Analysts: the <a href="../explorer/">data explorer</a> shows every record, every filter and full data notes.</p>
             </article>
           </section>
 

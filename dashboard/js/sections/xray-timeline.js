@@ -15,7 +15,7 @@ const WORDS = {
   inMap: { shown: 'The latest evaluation, shown on the map.', pick: 'Click to inspect this evaluation in the X-Ray.', aShown: ' Shown on the map.', aPick: ' Press Enter to inspect it in the X-Ray.', group: 'Enter to inspect one in the X-Ray' },
 };
 
-export function renderTimeline(box, { points, shown, era, P, systemChange, onPick, where = 'inXray' }) {
+export function renderTimeline(box, { points, shown, era, P, systemChange, onPick, where = 'inXray', height: fixedH = 230 }) {
   const W = WORDS[where];
   box.innerHTML = '';
   const summary = document.createElement('p');
@@ -37,7 +37,7 @@ export function renderTimeline(box, { points, shown, era, P, systemChange, onPic
   }
 
   const width = Math.max(300, box.clientWidth);
-  const height = 230;
+  const height = fixedH; // the guided story gives it the stage height
   const m = { top: 30, right: 28, bottom: 34, left: 40 };
   const times = points.map((p) => p.rec.time);
   let [t0, t1] = [Math.min(...times), Math.max(...times)];
