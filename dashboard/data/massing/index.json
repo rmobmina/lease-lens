@@ -1,0 +1,15 @@
+{
+ "source": "City of Toronto Open Data, 3D Massing (2025), Open Government Licence \u2013 Toronto",
+ "url": "https://open.toronto.ca/dataset/3d-massing/",
+ "shards": 64,
+ "buildings": 3657,
+ "counts": {
+  "massing": 3483,
+  "massing:high": 3042,
+  "massing:medium": 441,
+  "approximate": 170,
+  "approximate:": 170,
+  "unavailable": 4,
+  "unavailable:": 4
+ }
+}

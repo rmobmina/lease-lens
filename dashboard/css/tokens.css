@@ -1,0 +1,189 @@
+/* LeaseLens design tokens: the ONLY place colours, type and shape are defined.
+   JavaScript reads them with cssVar() (ui.js); the X-Ray reads its --xr-* materials the same way.
+
+   Toronto flag reference. The City specifies the flag's blue as Pantone 287 and its maple leaf as
+   Pantone 186 (toronto.ca, "City of Toronto symbols"). It publishes no screen values, so the hex values
+   below are approximations:
+     --civic-blue  #29458F   flag-inspired blue (approximate)
+     --civic-red   #FF0000   flag-inspired red (approximate); used for marks and fills only
+     --civic-red-ink #C8102E a darker red near Pantone 186 C, for red text and thin lines (5.6:1 on white)
+   Rules: blue = interaction, navigation, selection; red = low scores, declines and warnings only;
+   greys = context. Charts never rely on red vs blue alone (position, size, glyphs or labels also differ). */
+
+:root {
+  color-scheme: light;
+
+  /* ---- palette ------------------------------------------------------------ */
+  --civic-blue: #29458F;
+  --civic-blue-deep: #1D3370;
+  --civic-white: #FFFFFF;
+  --civic-red: #FF0000;
+  --civic-red-ink: #C8102E;
+  --text-primary: #171717;
+  --text-secondary: #666666;
+  --border-subtle: #DADADA;
+  --surface-muted: #F5F5F5;
+
+  /* ---- semantic (used by every component) --------------------------------- */
+  --bg: var(--civic-white);
+  --surface: var(--civic-white);
+  --surface-2: var(--surface-muted);
+  --ink: var(--text-primary);
+  --ink-2: #3D3D3D;
+  --muted: var(--text-secondary);
+  --line: var(--border-subtle);
+  --grid: #ECECEC;
+  --axis: #BDBDBD;
+
+  --accent: var(--civic-blue);           /* interaction + selection */
+  --accent-ink: var(--civic-white);
+  --accent-soft: #E9EDF6;
+  --focus: var(--civic-blue);
+  --warn: var(--civic-red-ink);
+
+  /* ---- charts (one semantic palette) --------------------------------------- */
+  --low-10: var(--civic-red-ink);       /* lowest 10% of scores: darkest, largest dots */
+  --low-25: #F2A3A3;                    /* 10th–25th percentile: light red, medium dots */
+  --dot: #9AA0A8;                       /* every other building: grey, small dots */
+  --up: var(--civic-blue);              /* score improved (also right of zero, ▲) */
+  --down: var(--civic-red-ink);         /* score declined (also left of zero, ▼) */
+  --flat: #BDBDBD;
+  --chart-neutral: #B9C0CC;
+
+  /* Explore map: ward choropleth, relative to the citywide share of low scorers.
+     Blue = fewer than the city, grey = about the same, red = more (red only where it is a concern). */
+  --ch-0: #7E97CE; --ch-1: #C2CFE9; --ch-2: #E3E3E3; --ch-3: #F2A79E; --ch-4: #D63C36; --ch-none: #F2F2F2;
+  --ward-line: #4E5562;
+
+  /* item ratings 3 → 0: one red ramp, light → dark, so order reads without hue */
+  --fp-3: #E4E4E4; --fp-2: #F4B8B1; --fp-1: #D9473F; --fp-0: #8E1B22; --fp-on-low: #FFFFFF;
+
+  /* Building X-Ray: category status (neutral / light red / red / grey + hatch) and model materials */
+  --xr-ok: #D9D9D9; --xr-some: #F09A92; --xr-high: var(--civic-red-ink); --xr-none: #B3B7BD;
+  --xr-sky: #EEF1F6; --xr-ground: #D9DCE2; --xr-outline: #3F4652; --xr-ov-ok: #9FB0D6;
+  --xr-facade: #F1F0EC; --xr-glass: #4F5D78; --xr-band: #DAD7D0; --xr-roof: #A9A8A4; --xr-roof-edge: #C7C5C0; --xr-parapet: #E3E1DC; --xr-penthouse: #DCDAD5;
+  --xr-floor: #D2C6B2; --xr-slab-edge: #5E5C57; --xr-concrete: #BDBBB6; --xr-partition: #FAF9F6; --xr-poche: #4A4A4A; --xr-wall-inside: #D8D3CA;
+  --xr-equipment: #9BA2AB; --xr-equipment-dark: #5D646D; --xr-cab: #6B727B; --xr-car: #8B929A; --xr-car-glass: #4A5560; --xr-paint: #FBFAF7;
+  --xr-context: #D2D5DB; --xr-context-faded: #DCDFE4; --xr-context-edge: #A1A7B2; --xr-context-edge-faded: #C4C8CF; --xr-plinth: #CDCBC5;
+  --xr-base: #C9C6BF; --xr-frame: #7D848C; --xr-door: #6F767E; --xr-guide: #6B7280;
+  --xr-pad: #E9EAE6; --xr-paving: #F2F1EC; --xr-asphalt: #A3A6A9; --xr-trunk: #8A7F72; --xr-foliage: #AEB5A6;
+  /* cutaway rooms (illustrative) */
+  --xr-room: #E6DDCF; --xr-room-end: #D2C7B5; --xr-room-floor: #D3CABC; --xr-trim: #7A746B; --xr-stair: #BDB7AD; --xr-metal: #6F7884;
+  --xr-runner: #ABA192; --xr-unit-door: #9C7E5E; --xr-light: #FFFDF6; --xr-panel: #CBD0D6; --xr-duct: #D6D9DD; --xr-pipe: #8E9AA8;
+  --xr-bin: #5B636D; --xr-bin-alt: #71839A; --xr-car-body: #AEB4BC; --xr-tire: #2E3238; --xr-board: #FBFAF7; --xr-cut-line: #2B2F36; --xr-leader: #6B7280;
+
+  /* Homepage atlas: blue line on white */
+  --atlas-bg: var(--civic-white);
+  --atlas-road: rgba(41, 69, 143, 0.42);
+  --atlas-shore: var(--civic-blue);
+  --atlas-line: rgba(41, 69, 143, 0.5);
+  --atlas-fill: var(--civic-white);
+  --atlas-rental: var(--civic-blue);
+  --atlas-rental-fill: #DCE3F2;
+  --atlas-rental-hover: #B4C3E4;
+  --atlas-label: var(--civic-blue);
+
+  /* ---- type: one display face, one interface face ---------------------------------------
+     Display: Space Grotesk, a geometric grotesque for headlines and large numbers (architectural, not literary).
+     Interface: Inter, for everything read at small sizes. Both sans-serif; no serif anywhere. */
+  --font-display: "Space Grotesk", "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-ui: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font: var(--font-ui);
+  /* type scale: interface sizes, then display sizes */
+  --text-xs: 12px;    /* captions, chart ticks */
+  --text-sm: 13px;    /* secondary labels, legends, metadata */
+  --text-base: 14px;  /* interface text in panels */
+  --text-md: 16px;    /* body copy */
+  --text-lg: 18px;    /* lead paragraphs */
+  --text-xl: 22px;    /* panel headings */
+  --text-2xl: 32px;   /* page headings */
+  --text-hero: clamp(44px, 5.3vw, 84px);
+  --weight-regular: 400; --weight-medium: 500; --weight-semibold: 600; --weight-bold: 700;
+  --leading-tight: 1.05; --leading-snug: 1.25; --leading-body: 1.55;
+  /* tracking: only large display text is tightened (optical kerning); small text keeps the default */
+  --tracking-display: -0.035em; --tracking-heading: -0.015em; --tracking-label: 0.01em;
+
+  /* ---- spacing scale (every margin, gap and padding uses one of these) ------------------- */
+  --space-1: 4px; --space-2: 8px; --space-3: 12px; --space-4: 16px;
+  --space-5: 24px; --space-6: 32px; --space-7: 48px; --space-8: 64px;
+  --header-h: 60px;   /* one header height on every route */
+
+  /* ---- borders: one width, two colours, two radii ----------------------------------------
+     A border means grouping, focus or interaction. Structure uses --border-color; controls
+     (buttons, inputs, toggles) use --border-control. --border-width-strong is only for state
+     indicators (current page, selected item, focus). */
+  --border-width: 1px;
+  --border-width-strong: 2px;
+  --border-color: var(--line);
+  --border-control: var(--axis);
+  --border: var(--border-width) solid var(--border-color);
+  --radius-sm: 4px;   /* controls, chips, swatches */
+  --radius-md: 6px;   /* panels and floating surfaces */
+  --radius: var(--radius-sm);
+
+  /* ---- surfaces ------------------------------------------------------------------------------- */
+  --shadow: none;
+  --shadow-pop: 0 6px 24px rgba(23, 23, 23, 0.12);
+  --shadow-float: 0 1px 2px rgba(23, 23, 23, 0.06), 0 6px 20px rgba(23, 23, 23, 0.07); /* panels over the map */
+  --insight: 330px;
+
+  /* ---- motion (see js/motion.js) ---------------------------------------------------------------- */
+  --dur-micro: 160ms; --dur-panel: 260ms;
+  --ease-out: cubic-bezier(0.2, 0.7, 0.2, 1);
+
+  /* ---- homepage ground: a quiet blueprint tone ------------------------------------------------ */
+  --hero-ground: radial-gradient(120% 90% at 78% 40%, #F4F7FD 0%, #FFFFFF 62%);
+  --hero-grid: rgba(41, 69, 143, 0.05);
+}
+
+/* Dark: the same roles on a night-blue ground (the atlas becomes white line on deep blue). */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --hero-ground: radial-gradient(120% 90% at 78% 40%, #16264A 0%, #0B1424 65%); --hero-grid: rgba(157, 178, 234, 0.06);
+    --bg: #0B1220; --surface: #121A2A; --surface-2: #172034; --ink: #EEF0F3; --ink-2: #C5CAD3; --muted: #9AA2AE;
+    --line: rgba(255, 255, 255, 0.12); --grid: #1F2940; --axis: rgba(255, 255, 255, 0.24);
+    --accent: #9DB2EA; --accent-ink: #0F131B; --accent-soft: #1E2944; --focus: #9DB2EA; --warn: #FF7A7A;
+    --low-10: #FF6B6B; --low-25: #A04A4A; --dot: #6B727D; --up: #9DB2EA; --down: #FF6B6B; --flat: #565D68; --chart-neutral: #4A5363;
+    --fp-3: #2E3440; --fp-2: #7A3A36; --fp-1: #E0574F; --fp-0: #FF9C92; --fp-on-low: #0F131B;
+    --xr-ok: #4B505A; --xr-some: #B8605A; --xr-high: #FF6B6B; --xr-none: #5D626B;
+    --xr-sky: #121722; --xr-ground: #1E2430; --xr-outline: #C9CED5; --xr-ov-ok: #6E80AE;
+    --xr-facade: #B9B6AF; --xr-glass: #2B3446; --xr-band: #9A978F; --xr-roof: #5F5D59; --xr-roof-edge: #77746E; --xr-parapet: #A7A49D; --xr-penthouse: #A19E97;
+    --xr-floor: #8C8273; --xr-slab-edge: #4A4843; --xr-concrete: #77746E; --xr-partition: #C2BDB3; --xr-poche: #1F1E1B; --xr-wall-inside: #6F6A61;
+    --xr-equipment: #7C838B; --xr-equipment-dark: #3D434A; --xr-cab: #4F565E; --xr-car: #646B73; --xr-car-glass: #2A323A; --xr-paint: #C8C5BE;
+    --xr-context: #343A46; --xr-context-faded: #2F3540; --xr-context-edge: #535B69; --xr-context-edge-faded: #414856; --xr-plinth: #6B675F;
+    --xr-base: #858179; --xr-frame: #50565D; --xr-door: #3F454C; --xr-guide: #9AA1AA;
+    --xr-pad: #252A33; --xr-paving: #343841; --xr-asphalt: #2B2F36; --xr-trunk: #5A5249; --xr-foliage: #4F5A4A;
+    --xr-room: #A9A59D; --xr-room-end: #8E8A82; --xr-room-floor: #7E786E; --xr-trim: #4E4B46; --xr-stair: #8A867E; --xr-metal: #8A939E;
+    --xr-runner: #6A645A; --xr-unit-door: #7E6B55; --xr-light: #FFF6DE; --xr-panel: #7B828B; --xr-duct: #8C9097; --xr-pipe: #6F7B89;
+    --xr-bin: #3D434A; --xr-bin-alt: #4C5B6E; --xr-car-body: #7A8089; --xr-tire: #1B1E22; --xr-board: #C9C6BF; --xr-cut-line: #E4E7EB; --xr-leader: #9AA1AA;
+    --atlas-bg: #0B1424; --atlas-road: rgba(220, 230, 250, 0.32); --atlas-shore: #DCE6FA; --atlas-line: rgba(200, 214, 245, 0.45);
+    --atlas-fill: #0B1424; --atlas-rental: #FFFFFF; --atlas-rental-fill: #2B3F70; --atlas-rental-hover: #3E5796; --atlas-label: #E8EEFA;
+    --ch-0: #4F6DB3; --ch-1: #2C3D63; --ch-2: #3B414C; --ch-3: #8A3F3A; --ch-4: #E0544C; --ch-none: #232833; --ward-line: #A3ABB8;
+    --shadow-pop: 0 8px 28px rgba(0, 0, 0, 0.5); --shadow-float: 0 1px 2px rgba(0, 0, 0, 0.4), 0 6px 18px rgba(0, 0, 0, 0.35);
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --hero-ground: radial-gradient(120% 90% at 78% 40%, #16264A 0%, #0B1424 65%); --hero-grid: rgba(157, 178, 234, 0.06);
+  --bg: #0B1220; --surface: #121A2A; --surface-2: #172034; --ink: #EEF0F3; --ink-2: #C5CAD3; --muted: #9AA2AE;
+  --line: rgba(255, 255, 255, 0.12); --grid: #1F2940; --axis: rgba(255, 255, 255, 0.24);
+  --accent: #9DB2EA; --accent-ink: #0F131B; --accent-soft: #1E2944; --focus: #9DB2EA; --warn: #FF7A7A;
+  --low-10: #FF6B6B; --low-25: #A04A4A; --dot: #6B727D; --up: #9DB2EA; --down: #FF6B6B; --flat: #565D68; --chart-neutral: #4A5363;
+  --fp-3: #2E3440; --fp-2: #7A3A36; --fp-1: #E0574F; --fp-0: #FF9C92; --fp-on-low: #0F131B;
+  --xr-ok: #4B505A; --xr-some: #B8605A; --xr-high: #FF6B6B; --xr-none: #5D626B;
+  --xr-sky: #121722; --xr-ground: #1E2430; --xr-outline: #C9CED5; --xr-ov-ok: #6E80AE;
+  --xr-facade: #B9B6AF; --xr-glass: #2B3446; --xr-band: #9A978F; --xr-roof: #5F5D59; --xr-roof-edge: #77746E; --xr-parapet: #A7A49D; --xr-penthouse: #A19E97;
+  --xr-floor: #8C8273; --xr-slab-edge: #4A4843; --xr-concrete: #77746E; --xr-partition: #C2BDB3; --xr-poche: #1F1E1B; --xr-wall-inside: #6F6A61;
+  --xr-equipment: #7C838B; --xr-equipment-dark: #3D434A; --xr-cab: #4F565E; --xr-car: #646B73; --xr-car-glass: #2A323A; --xr-paint: #C8C5BE;
+  --xr-context: #343A46; --xr-context-faded: #2F3540; --xr-context-edge: #535B69; --xr-context-edge-faded: #414856; --xr-plinth: #6B675F;
+  --xr-base: #858179; --xr-frame: #50565D; --xr-door: #3F454C; --xr-guide: #9AA1AA;
+  --xr-pad: #252A33; --xr-paving: #343841; --xr-asphalt: #2B2F36; --xr-trunk: #5A5249; --xr-foliage: #4F5A4A;
+  --xr-room: #A9A59D; --xr-room-end: #8E8A82; --xr-room-floor: #7E786E; --xr-trim: #4E4B46; --xr-stair: #8A867E; --xr-metal: #8A939E;
+  --xr-runner: #6A645A; --xr-unit-door: #7E6B55; --xr-light: #FFF6DE; --xr-panel: #7B828B; --xr-duct: #8C9097; --xr-pipe: #6F7B89;
+  --xr-bin: #3D434A; --xr-bin-alt: #4C5B6E; --xr-car-body: #7A8089; --xr-tire: #1B1E22; --xr-board: #C9C6BF; --xr-cut-line: #E4E7EB; --xr-leader: #9AA1AA;
+  --atlas-bg: #0B1424; --atlas-road: rgba(220, 230, 250, 0.32); --atlas-shore: #DCE6FA; --atlas-line: rgba(200, 214, 245, 0.45);
+  --atlas-fill: #0B1424; --atlas-rental: #FFFFFF; --atlas-rental-fill: #2B3F70; --atlas-rental-hover: #3E5796; --atlas-label: #E8EEFA;
+  --ch-0: #4F6DB3; --ch-1: #2C3D63; --ch-2: #3B414C; --ch-3: #8A3F3A; --ch-4: #E0544C; --ch-none: #232833; --ward-line: #A3ABB8;
+  --shadow-pop: 0 8px 28px rgba(0, 0, 0, 0.5); --shadow-float: 0 1px 2px rgba(0, 0, 0, 0.4), 0 6px 18px rgba(0, 0, 0, 0.35);
+}

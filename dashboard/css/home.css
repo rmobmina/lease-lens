@@ -1,0 +1,69 @@
+/* Layer A: the public homepage. An architectural statement on the left, the Toronto drawing on the right,
+   on a quiet blueprint ground (a faint construction grid that fades toward the edges).
+   The header is shared with every route (atlas.css, .site-bar). The drawing's box has a fixed size before
+   anything loads, so nothing shifts when it arrives. */
+
+body[data-layer="home"] { background: var(--atlas-bg); }
+
+.home { position: relative; isolation: isolate; min-height: calc(100vh - var(--header-h)); min-height: calc(100svh - var(--header-h));
+  display: grid; grid-template-rows: minmax(0, 1fr) auto; background: var(--hero-ground); color: var(--ink); }
+/* construction grid: 48 px modules, strongest behind the city, gone at the edges */
+.home::before { content: ""; position: absolute; inset: 0; z-index: -1; pointer-events: none;
+  background-image: linear-gradient(var(--hero-grid) 1px, transparent 1px), linear-gradient(90deg, var(--hero-grid) 1px, transparent 1px);
+  background-size: 48px 48px; background-position: -1px -1px;
+  -webkit-mask-image: radial-gradient(ellipse 70% 75% at 68% 48%, #000 25%, transparent 78%);
+          mask-image: radial-gradient(ellipse 70% 75% at 68% 48%, #000 25%, transparent 78%); }
+
+/* hero ---------------------------------------------------------------------------------------- */
+.hero { position: relative; display: grid; grid-template-columns: minmax(440px, 5fr) minmax(0, 7fr); column-gap: var(--space-6); min-height: 0; outline: none; }
+.hero-copy { align-self: center; padding: 0 0 var(--space-8) var(--space-7); max-width: 640px; position: relative; z-index: 2; }
+.hero-title { font-family: var(--font-display); font-weight: var(--weight-bold); font-size: var(--text-hero); line-height: 0.98;
+  letter-spacing: var(--tracking-display); font-kerning: normal; font-optical-sizing: auto; color: var(--ink); }
+/* deliberate line breaks: one phrase per line */
+.hero-title span { display: block; white-space: nowrap; }
+@media (max-width: 400px) { .hero-title span { white-space: normal; } }
+.hero-title span:last-child { color: var(--accent); }
+.hero-sub { font-size: var(--text-lg); line-height: var(--leading-body); color: var(--ink-2); margin-top: var(--space-5); max-width: 26em; }
+.hero-actions { display: flex; flex-wrap: wrap; gap: var(--space-3); margin-top: var(--space-6); }
+.btn-lg { height: 48px; padding: 0 var(--space-5); font-size: var(--text-md); display: inline-flex; align-items: center; text-decoration: none; }
+.hero-actions .btn:not(.btn-primary) { background: transparent; border-color: var(--ink); color: var(--ink); }
+.hero-actions .btn:not(.btn-primary):hover { background: color-mix(in srgb, var(--ink) 6%, transparent); }
+
+.hero-atlas { margin: 0; position: relative; min-height: 0; display: grid; }
+.atlas-stage { position: relative; overflow: hidden; min-height: 420px; view-transition-name: atlas; }
+.atlas-fallback { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; object-position: center; transition: opacity 0.4s; }
+.atlas-stage.is-live .atlas-fallback { opacity: 0; }
+.atlas-canvas { position: absolute; inset: 0; display: block; }
+.atlas-label { position: absolute; z-index: 3; pointer-events: none; background: var(--surface); color: var(--ink); border: var(--border); border-radius: var(--radius-sm);
+  padding: var(--space-1) var(--space-2); font-size: var(--text-sm); white-space: nowrap; box-shadow: var(--shadow-pop); }
+
+/* the one line of credit the licence requires */
+.site-foot { display: flex; align-items: center; gap: var(--space-2); padding: var(--space-4) var(--space-7); font-size: var(--text-xs); color: var(--muted); }
+.site-foot a { color: inherit; }
+.site-foot a:hover { color: var(--ink); }
+
+/* entering the map: a short crossfade; the drawing settles into the map's place */
+::view-transition-old(root), ::view-transition-new(root) { animation-duration: 0.45s; }
+::view-transition-group(atlas) { animation-duration: 0.55s; animation-timing-function: var(--ease-out); }
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-group(*), ::view-transition-old(*), ::view-transition-new(*) { animation: none !important; }
+  .atlas-fallback { transition: none; }
+}
+
+/* tablet --------------------------------------------------------------------------------------- */
+@media (max-width: 1080px) {
+  .hero { grid-template-columns: 1fr; grid-template-rows: auto minmax(0, 1fr); }
+  .hero-copy { padding: var(--space-7) var(--space-6) 0; max-width: 760px; }
+  .atlas-stage { min-height: 0; height: 52vh; }
+  .site-foot { padding: var(--space-4) var(--space-6); }
+}
+
+/* mobile: the drawing sits under the copy at a fixed height ------------------------------------- */
+@media (max-width: 640px) {
+  .hero-copy { padding: var(--space-6) var(--space-4) 0; }
+  .hero-sub { margin-top: var(--space-4); font-size: var(--text-md); }
+  .hero-actions { margin-top: var(--space-5); }
+  .hero-actions .btn { flex: 1 1 auto; justify-content: center; }
+  .atlas-stage { height: 42vh; min-height: 260px; }
+  .site-foot { padding: var(--space-3) var(--space-4) var(--space-4); align-items: flex-start; }
+}

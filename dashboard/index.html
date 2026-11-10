@@ -3,304 +3,218 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Lease Lens</title>
-  <meta name="description" content="Explore apartment building conditions across Toronto before signing a lease, using RentSafeTO evaluation data." />
-  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%231c5cab'/%3E%3Ccircle cx='14' cy='14' r='7' fill='none' stroke='white' stroke-width='3'/%3E%3Cpath d='M19 19l6 6' stroke='white' stroke-width='3' stroke-linecap='round'/%3E%3C/svg%3E" />
+  <title>LeaseLens</title>
+  <meta name="description" content="Look beyond RentSafeTO ratings to explore building conditions, inspection history, and patterns across Toronto. An independent student project using City of Toronto Open Data." />
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%2329458F'/%3E%3Cpath d='M9 24V12l7-4 7 4v12' fill='none' stroke='white' stroke-width='2'/%3E%3Cpath d='M13 24v-6h6v6' fill='none' stroke='white' stroke-width='2'/%3E%3C/svg%3E" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" />
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
+  <link rel="stylesheet" href="css/tokens.css" />
   <link rel="stylesheet" href="css/dashboard.css" />
+  <link rel="stylesheet" href="css/home.css" />
+  <link rel="stylesheet" href="css/workspace.css" />
+  <link rel="stylesheet" href="css/atlas.css" />
+  <link rel="stylesheet" href="css/story.css" />
   <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+  <!-- Three.js for the Building X-Ray. Nothing is downloaded until the X-Ray view opens (dynamic import). -->
+  <script type="importmap">
+    { "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.min.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+    } }
+  </script>
 </head>
-<body>
-  <a class="skip-link" href="#stage">Skip to content</a>
+<body data-layer="home">
 
-  <div class="app">
-    <!-- Sidebar: brand, navigation, page-wide filters -------------------- -->
-    <aside class="sidebar" id="sidebar" aria-label="Navigation and filters">
-      <div class="sidebar-top">
-        <a class="brand" href="#/">
-          <span class="brand-mark" aria-hidden="true"></span>
-          <span><span class="brand-name">Lease Lens</span><span class="brand-tag">Toronto apartment buildings</span></span>
-        </a>
-        <button type="button" class="menu-button" id="menu-button" aria-expanded="false" aria-controls="nav-panel">Menu</button>
-      </div>
+  <a class="skip-link skip-home" href="#home-main">Skip to content</a>
+  <a class="skip-link skip-work" href="#search">Skip to address search</a>
+  <a class="skip-link skip-work" href="#place">Skip to selection details</a>
 
-      <div class="nav-panel" id="nav-panel">
-        <nav class="nav" aria-label="Sections">
-          <a href="#/" data-route="home" class="nav-item"><span class="nav-icon" aria-hidden="true">⌂</span><span class="nav-text"><b>Overview</b></span></a>
-          <a href="#/building" data-route="building" class="nav-item"><span class="nav-icon" aria-hidden="true">⌕</span><span class="nav-text"><b>Check a building</b><small>Its score, problems and history</small></span></a>
+  <!-- One header on every route: the same wordmark, navigation, theme toggle and height. -->
+  <header class="site-bar" id="site-bar">
+    <a class="wordmark" href="#/" aria-label="LeaseLens home">Lease<span>Lens</span></a>
+    <div class="search" role="search">
+      <label class="visually-hidden" for="search">Search an address</label>
+      <input id="search" type="text" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="search-list"
+        placeholder="Search an address" autocomplete="off" spellcheck="false" />
+      <ul id="search-list" class="search-list" role="listbox" aria-label="Matching buildings" hidden></ul>
+    </div>
+    <nav class="atlas-nav" id="atlas-nav" aria-label="Main">
+      <a href="#/explore" data-route="explore" id="nav-explore">Explore</a>
+      <a href="#/story" data-route="story">Guided story</a>
+      <a href="#/about" data-route="about">About</a>
+    </nav>
+    <button type="button" class="theme-toggle" data-theme-toggle aria-label="Switch to dark mode">
+      <svg class="tt-moon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z"/></svg>
+      <svg class="tt-sun" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4.2"/><path d="M12 2.5v2.2M12 19.3v2.2M2.5 12h2.2M19.3 12h2.2M5.3 5.3l1.6 1.6M17.1 17.1l1.6 1.6M5.3 18.7l1.6-1.6M17.1 6.9l1.6-1.6"/></svg>
+      <span class="tt-label">Dark</span>
+    </button>
+    <button type="button" class="menu-button" id="menu-button" aria-expanded="false" aria-controls="atlas-nav">Menu</button>
+  </header>
 
-          <a href="#/fingerprint" data-route="fingerprint" class="nav-item"><span class="nav-icon" aria-hidden="true">▦</span><span class="nav-text"><b>What a score hides</b><small>Two buildings, same score, item by item</small></span></a>
-          <a href="../story/temporal.html" class="nav-item"><span class="nav-icon" aria-hidden="true">↕</span><span class="nav-text"><b>Is that score still current?</b><small>How scores changed between inspections</small></span></a>
+  <!-- ===================================================================== -->
+  <!-- Layer A: public homepage                                               -->
+  <!-- ===================================================================== -->
+  <div class="home" id="home">
 
-          <p class="nav-label">Explore the city</p>
-          <a href="#/q1" data-route="q1" class="nav-item"><span class="nav-num">1</span><span class="nav-text"><b>Where</b><small>Low-scoring buildings on a map</small></span></a>
-          <a href="#/q2" data-route="q2" class="nav-item"><span class="nav-num">2</span><span class="nav-text"><b>Building age</b><small>Do older buildings score lower?</small></span></a>
-          <a href="#/q3" data-route="q3" class="nav-item"><span class="nav-num">3</span><span class="nav-text"><b>Common problems</b><small>What inspectors flag most</small></span></a>
-          <a href="#/q4" data-route="q4" class="nav-item"><span class="nav-num">4</span><span class="nav-text"><b>Re-inspections</b><small>Do scores improve?</small></span></a>
-          <a href="#/q5" data-route="q5" class="nav-item"><span class="nav-num">5</span><span class="nav-text"><b>Biggest changes</b><small>Largest rises and drops</small></span></a>
-        </nav>
-
-        <div class="filters" role="group" aria-label="Filters for every view">
-          <p class="nav-label">Filters</p>
-          <fieldset class="seg seg-full" id="period">
-            <legend>Scoring system</legend>
-            <label><input type="radio" name="period" value="cur" checked /><span>2023 – now</span></label>
-            <label><input type="radio" name="period" value="pre" /><span>2017 – 2023</span></label>
-          </fieldset>
-          <label class="field">
-            <span class="field-label">Ward</span>
-            <select id="ward"><option value="">All of Toronto</option></select>
-          </label>
-          <p class="filter-note" id="period-note"></p>
-        </div>
-
-        <div class="sidebar-foot">
-          <button type="button" class="theme-toggle" id="theme-toggle" aria-label="Switch colour theme">◐ <span>Dark mode</span></button>
-          <a href="#/about" data-route="about">About the data</a>
+    <main class="hero" id="home-main" tabindex="-1">
+      <div class="hero-copy">
+        <h1 class="hero-title"><span>Your next home</span> <span>is more than</span> <span>a score.</span></h1>
+        <p class="hero-sub">Explore what Toronto’s rental building inspections reveal.</p>
+        <div class="hero-actions">
+          <a class="btn btn-primary btn-lg" href="#/explore" data-enter>Let’s explore</a>
+          <a class="btn btn-lg" href="#/story">Follow the story</a>
         </div>
       </div>
-    </aside>
 
-    <!-- Main stage: one view at a time ----------------------------------- -->
-    <main class="stage" id="stage" tabindex="-1">
-      <header class="topbar">
-        <div class="search" role="search">
-          <span class="search-icon" aria-hidden="true">⌕</span>
-          <label class="visually-hidden" for="search">Find a building by address</label>
-          <input id="search" type="search" list="building-list" placeholder="Find a building by address…" autocomplete="off" />
-          <datalist id="building-list"></datalist>
+      <figure class="hero-atlas" aria-labelledby="atlas-caption">
+        <div class="atlas-stage" id="atlas-stage">
+          <img class="atlas-fallback" src="data/hero/toronto-hero.svg" alt="" width="1600" height="1000" decoding="async" />
         </div>
-        <div id="ward-chip" class="selection filter-chip" hidden></div>
-        <div id="selection" class="selection" hidden></div>
-      </header>
+        <figcaption class="visually-hidden" id="atlas-caption">A drawing of downtown Toronto from City of Toronto building and street data. Evaluated rental buildings are highlighted.</figcaption>
+      </figure>
+    </main>
 
-      <p id="status" class="status" role="status">Loading RentSafeTO evaluations…</p>
+    <footer class="site-foot">
+      <p>Contains information licensed under the <a href="https://open.toronto.ca/open-data-license/" target="_blank" rel="noopener">Open Government Licence – Toronto</a>. <a href="#/about">Sources</a></p>
+      <button type="button" class="info-btn" data-info="atlas" aria-label="How the homepage drawing is made">i</button>
+    </footer>
+  </div>
 
-      <!-- Overview ------------------------------------------------------ -->
-      <section class="view" data-view="home" aria-labelledby="home-title" hidden>
-        <div class="home-hero">
-          <p class="eyebrow">RentSafeTO apartment building evaluations</p>
-          <h1 id="home-title">Know the building before you sign the lease.</h1>
-          <p class="lede">Toronto inspects the common areas of rental apartment buildings with 3+ storeys and 10+ units and gives each one a score out of 100.
-            Look up a building you're considering, or explore how buildings compare across the city.</p>
-          <div class="hero-search">
-            <label class="visually-hidden" for="hero-search">Find a building by address</label>
-            <input id="hero-search" type="search" list="building-list" placeholder="Start typing a street address…" autocomplete="off" />
-            <button type="button" class="btn btn-primary" id="hero-go">Check building</button>
-          </div>
+  <!-- ===================================================================== -->
+  <!-- Layer B: the atlas. One map, explored by zooming in:                   -->
+  <!-- Toronto → ward → building → inspection (X-Ray).                        -->
+  <!-- ===================================================================== -->
+  <div class="app" id="app" hidden>
+
+
+    <div class="atlas-main">
+      <!-- Guided story: docks beside the map while it runs -->
+      <aside class="story-panel" id="story-panel" aria-label="Beyond the Score: guided story" hidden></aside>
+
+      <main class="atlas-canvas" id="stage" tabindex="-1">
+        <div class="map-wrap" id="map-wrap">
+          <div id="map" aria-label="Map of Toronto's evaluated rental buildings. Zoom in for more detail; use the address search, the ward list or the buildings-in-view list for keyboard access." aria-describedby="map-summary"></div>
+          <p class="visually-hidden" id="map-summary" aria-live="polite"></p>
         </div>
-        <div id="metrics" class="metrics" aria-label="Summary"></div>
-        <a class="home-story" href="#/fingerprint">
-          <span class="home-story-text">
-            <span class="eyebrow">Inspection fingerprint</span>
-            <span class="home-story-title">What does a 92 actually hide?</span>
-            <span class="home-story-sub">Most buildings score in a narrow band, so the number alone can hide what went wrong. See two buildings with the same score, item by item.</span>
-          </span>
-          <span class="qc-go">Compare them <span aria-hidden="true">→</span></span>
-        </a>
-        <h2 class="section-label">Five questions about Toronto's buildings</h2>
-        <div id="question-cards" class="question-cards"></div>
-      </section>
 
-      <!-- Building report ------------------------------------------------ -->
-      <section class="view" data-view="building" aria-labelledby="b-title" hidden>
-        <div id="b-empty" class="b-empty">
-          <p class="eyebrow">Building report</p>
-          <h1>Check a building</h1>
-          <p class="lede">Search for an address in the box above to see its latest score, the problems inspectors found, how it has changed, and how it compares with nearby buildings.</p>
-          <p class="b-empty-note" id="b-empty-note"></p>
-          <p class="section-label">Or try</p>
-          <div id="b-suggest" class="chips"></div>
-        </div>
-        <div id="b-report" hidden>
-          <header class="view-head">
-            <p class="eyebrow">Building report</p>
-            <h1 id="b-title"></h1>
-            <p class="meta" id="b-meta"></p>
-          </header>
-          <div class="report-grid">
-            <article class="card" id="b-score"></article>
-            <article class="card" id="b-history"><p class="card-label">Score history</p><div class="mini-chart"></div><p class="card-text"></p><p class="card-links"><a href="#/q4" data-keep>Do scores usually improve? →</a></p></article>
-            <article class="card" id="b-problems"></article>
-            <article class="card" id="b-context"></article>
-          </div>
-        </div>
-      </section>
-
-      <!-- Inspection fingerprint (novel view) ------------------------------ -->
-      <section class="view fp-view" data-view="fingerprint" aria-labelledby="fp-title" hidden>
-        <div class="fp-wrap">
-          <header class="fp-intro">
-            <p class="eyebrow">Inspection fingerprint</p>
-            <h1 id="fp-title">What does a 92 actually hide?</h1>
-            <p class="lede">A RentSafeTO score folds dozens of inspection items into one number. <span id="fp-spread"></span>, so the score alone says little about what went wrong.
-              Lay the items out side by side and two buildings with the same score can look nothing alike.</p>
-            <p class="fp-ask">Don't just ask what a building scored. Ask what it scored low on.</p>
-          </header>
-
-          <div id="fp-unavailable" class="fp-unavailable" hidden>
-            <p>The fingerprint uses the item ratings from the City's current scoring system (2023 – now). The 2017 – 2023 system rated different items on a different scale.</p>
-            <button type="button" class="btn btn-primary" id="fp-goto-cur">Switch to 2023 – now</button>
-          </div>
-
-          <div id="fp-main">
-            <div class="fp-controls" role="group" aria-label="Choose buildings to compare">
-              <label class="field fp-field-score"><span class="field-label">Overall score</span><select id="fp-score"></select></label>
-              <label class="field"><span class="field-label">Building A</span><input id="fp-a" type="search" list="building-list" autocomplete="off" /></label>
-              <label class="field"><span class="field-label">Building B</span><input id="fp-b" type="search" list="building-list" autocomplete="off" /></label>
-              <div class="fp-actions">
-                <button type="button" class="btn" id="fp-next"></button>
-                <button type="button" class="btn btn-quiet" id="fp-reset" hidden>Back to example pairs</button>
-              </div>
-            </div>
-
-            <p class="fp-verdict" id="fp-verdict" aria-live="polite"></p>
-            <div id="fp-legend" class="legend fp-legend" aria-label="Legend"></div>
-
-            <div class="fp-pair">
-              <article class="fp-building" id="fp-a-card"><div class="fp-head"></div><div class="fp-chart chart"></div><div class="fp-lows"></div><div class="fp-notes"></div></article>
-              <article class="fp-building" id="fp-b-card"><div class="fp-head"></div><div class="fp-chart chart"></div><div class="fp-lows"></div><div class="fp-notes"></div></article>
-            </div>
-            <p class="visually-hidden" id="fp-live" aria-live="polite"></p>
-
-            <details class="fp-table">
-              <summary>Show every item as a table</summary>
-              <div class="fp-table-scroll"><table><thead id="fp-table-head"></thead><tbody id="fp-table-body"></tbody></table></div>
+        <!-- Left rail: where you are, what is selected, how to read the map -->
+        <div class="rail rail-left" id="rail-left">
+          <section class="card title-card" id="title-card" aria-labelledby="atlas-h1">
+            <nav aria-label="You are here"><ol class="crumbs" id="crumbs"></ol></nav>
+            <h1 id="atlas-h1" tabindex="-1">Explore Toronto’s rental buildings</h1>
+            <p class="atlas-sub" id="atlas-sub">Zoom in to discover how inspection results vary across the city.</p>
+            <details class="in-view" id="in-view" hidden>
+              <summary id="in-view-sum">Buildings in view</summary>
+              <ol class="near-list" id="in-view-list"></ol>
             </details>
+          </section>
 
-            <section class="fp-city" aria-labelledby="fp-city-title">
-              <h2 id="fp-city-title" class="fp-h2">The same grid, for every building in Toronto</h2>
-              <p class="fp-city-sub">Each column is one inspection item, in the same order as above. Its colours show the share of buildings at each rating, with the lowest marks at the bottom.</p>
-              <div class="fp-city-notes" id="fp-city-notes"></div>
-              <div id="fp-city-chart" class="chart fp-city-chart"></div>
+          <aside class="card place" id="place" aria-labelledby="place-title" tabindex="-1" hidden></aside>
+
+          <section class="card legend-card" id="legend" aria-label="Map legend"></section>
+        </div>
+
+        <!-- Right rail: map settings and the one active analysis layer -->
+        <div class="rail rail-right" id="rail-right">
+          <div class="tools" role="group" aria-label="Map tools">
+            <button type="button" class="tool" id="lens-btn" aria-expanded="false" aria-controls="lens-menu">Analysis</button>
+            <button type="button" class="tool" id="layers-btn" aria-expanded="false" aria-controls="layers-panel">Layers</button>
+          </div>
+
+          <div class="card pop-panel" id="lens-menu" hidden>
+            <fieldset class="lens-pick" id="lens-pick">
+              <legend>Analysis layer <button type="button" class="info-btn" data-info="layers" aria-label="About map layers and analysis">i</button></legend>
+              <div id="lens-options"></div>
+            </fieldset>
+          </div>
+
+          <div class="card pop-panel" id="layers-panel" hidden>
+            <fieldset class="seg seg-full" id="period">
+              <legend>Scoring system <button type="button" class="info-btn" data-info="scoring-system" aria-label="About the two scoring systems">i</button></legend>
+              <label><input type="radio" name="period" value="cur" checked /><span>2023 – now</span></label>
+              <label><input type="radio" name="period" value="pre" /><span>2017 – 2023</span></label>
+            </fieldset>
+            <p class="filter-note" id="period-note"></p>
+            <fieldset class="seg seg-full seg-3" id="map-show">
+              <legend>Buildings shown <button type="button" class="info-btn" data-info="lowest-10" aria-label="What “lowest 10%” means">i</button></legend>
+              <label><input type="radio" name="map-show" value="all" checked /><span>All</span></label>
+              <label><input type="radio" name="map-show" value="low25" /><span>Lowest 25%</span></label>
+              <label><input type="radio" name="map-show" value="low10" /><span>Lowest 10%</span></label>
+            </fieldset>
+            <label class="field">
+              <span class="field-label">Ward</span>
+              <select id="ward"><option value="">All of Toronto</option></select>
+            </label>
+            <div class="layers-foot layers-foot-single">
+              <button type="button" class="link-btn" data-info="limits" aria-label="What this data can’t tell you">Data limitations</button>
+            </div>
+          </div>
+
+          <!-- One analysis layer at a time. Each section is an existing D3 view. -->
+          <aside class="card lens" id="lens" aria-labelledby="lens-title" hidden>
+            <header class="lens-head">
+              <div>
+                <p class="lens-scope" id="lens-scope"></p>
+                <h2 class="lens-title" id="lens-title" tabindex="-1"></h2>
+              </div>
+              <button type="button" class="icon-button" id="lens-close" aria-label="Close analysis layer" title="Close">×</button>
+            </header>
+
+            <section class="lens-view" data-lens="distribution" hidden>
+              <p class="view-intro">How many buildings got each latest score.</p>
+              <div class="story-visual chart" id="dist-chart"></div>
             </section>
 
-            <section class="fp-method-block" aria-labelledby="fp-method-title">
-              <h2 id="fp-method-title" class="fp-h2">Source and method</h2>
-              <div id="fp-method" class="fp-method"></div>
+            <section class="lens-view" data-lens="wards" hidden>
+              <p class="view-intro">Share of each ward’s buildings in Toronto’s lowest-scoring 10%. Select a ward to explore it. <button type="button" class="info-btn" data-info="lowest-10" aria-label="What “lowest 10%” means">i</button></p>
+              <div class="finding" id="q1-takeaway"></div>
+              <div class="insight-block ward-block"><div id="ward-chart" class="ward-chart"></div></div>
+              <details class="method"><summary>How this is calculated</summary><div id="q1-method"></div></details>
             </section>
-          </div>
-        </div>
-      </section>
 
-      <!-- Q1 ------------------------------------------------------------- -->
-      <section class="view q-view" data-view="q1" aria-labelledby="q1-title" hidden>
-        <header class="view-head">
-          <p class="eyebrow">Question 1 of 5 · Location</p>
-          <h1 id="q1-title">Where are the lowest-scoring apartment buildings in Toronto, and are they geographically clustered?</h1>
-        </header>
-        <div class="view-body">
-          <div class="viz">
-            <div class="viz-bar">
-              <fieldset class="seg seg-sm" id="map-show">
-                <legend class="visually-hidden">Buildings to show</legend>
-                <label><input type="radio" name="map-show" value="all" checked /><span>All buildings</span></label>
-                <label><input type="radio" name="map-show" value="low25" /><span>Lowest 25%</span></label>
-                <label><input type="radio" name="map-show" value="low10" /><span>Lowest 10%</span></label>
-              </fieldset>
-              <div id="map-legend" class="legend" aria-label="Map legend"></div>
-            </div>
-            <div class="viz-area map-area">
-              <div id="map" role="application" aria-label="Map of apartment buildings coloured by score. Use the ward list or building search for keyboard access."></div>
-            </div>
-          </div>
-          <aside class="insight">
-            <div class="finding" id="q1-takeaway"></div>
-            <div class="insight-block ward-block">
-              <h2 class="insight-title">Share in the lowest 10%, by ward</h2>
-              <p class="insight-sub">Select a ward to zoom in and filter every view.</p>
-              <div id="ward-chart" class="ward-chart"></div>
-            </div>
-            <details class="method"><summary>How this is calculated</summary><div id="q1-method"></div></details>
-          </aside>
-        </div>
-      </section>
-
-      <!-- Q2 ------------------------------------------------------------- -->
-      <section class="view q-view" data-view="q2" aria-labelledby="q2-title" hidden>
-        <header class="view-head">
-          <p class="eyebrow">Question 2 of 5 · Building age</p>
-          <h1 id="q2-title">Do older buildings tend to receive lower evaluation scores than newer buildings?</h1>
-        </header>
-        <div class="view-body">
-          <div class="viz">
-            <div class="viz-bar"><p class="viz-title">Latest score vs. year built, one dot per building</p><div id="age-legend" class="legend"></div></div>
-            <div id="age-chart" class="viz-area chart"></div>
-          </div>
-          <aside class="insight">
-            <div class="finding" id="q2-takeaway"></div>
-            <div id="age-stats" class="mini-stats"></div>
-            <details class="method"><summary>How this is calculated</summary><div id="q2-method"></div></details>
-          </aside>
-        </div>
-      </section>
-
-      <!-- Q3 ------------------------------------------------------------- -->
-      <section class="view q-view" data-view="q3" aria-labelledby="q3-title" hidden>
-        <header class="view-head">
-          <p class="eyebrow">Question 3 of 5 · Common problems</p>
-          <h1 id="q3-title">What are the most common problems found in Toronto apartment buildings?</h1>
-        </header>
-        <div class="view-body">
-          <div class="viz">
-            <div class="viz-bar">
-              <fieldset class="seg seg-sm" id="item-group">
-                <legend class="visually-hidden">Inspection items</legend>
-                <label><input type="radio" name="item-group" value="all" checked /><span>All items</span></label>
-                <label><input type="radio" name="item-group" value="physical" /><span>Physical conditions</span></label>
-                <label><input type="radio" name="item-group" value="record" /><span>Records &amp; plans</span></label>
-              </fieldset>
-              <button type="button" class="btn btn-quiet" id="problem-more"></button>
-            </div>
-            <p class="viz-title viz-title-row">Share of buildings with each item rated poorly</p>
-            <div id="problem-chart" class="viz-area chart scroll"></div>
-          </div>
-          <aside class="insight">
-            <div class="finding" id="q3-takeaway"></div>
-            <div class="insight-block"><h2 class="insight-title">What counts as a problem?</h2><p class="insight-text" id="problem-def"></p></div>
-            <details class="method"><summary>How this is calculated</summary><div id="q3-method"></div></details>
-          </aside>
-        </div>
-      </section>
-
-      <!-- Q4 ------------------------------------------------------------- -->
-      <section class="view q-view" data-view="q4" aria-labelledby="q4-title" hidden>
-        <header class="view-head">
-          <p class="eyebrow">Question 4 of 5 · Re-inspections</p>
-          <h1 id="q4-title">When a building is inspected again, does its overall score usually improve?</h1>
-        </header>
-        <div class="view-body">
-          <div class="viz">
-            <div class="viz-bar">
+            <section class="lens-view" data-lens="changes" hidden>
+              <p class="view-intro">When a building is inspected again, does its score usually go up? Compared within one scoring system only. <button type="button" class="info-btn" data-info="reinspection" aria-label="What a re-inspection is">i</button></p>
               <fieldset class="seg seg-sm" id="change-start">
                 <legend class="visually-hidden">Which buildings</legend>
                 <label><input type="radio" name="change-start" value="all" checked /><span>All re-inspections</span></label>
-                <label><input type="radio" name="change-start" value="low" /><span>Started in the lowest 25%</span></label>
+                <label><input type="radio" name="change-start" value="low" /><span>Started in lowest 25%</span></label>
               </fieldset>
-            </div>
-            <div id="change-split" class="split"></div>
-            <p class="viz-title viz-title-row">How much scores changed</p>
-            <div id="change-chart" class="viz-area chart"></div>
-          </div>
-          <aside class="insight">
-            <div class="finding" id="q4-takeaway"></div>
-            <div class="insight-block"><h2 class="insight-title">What's a re-inspection?</h2>
-              <p class="insight-text">The next RentSafeTO evaluation of the same building. We compare its score with the one before it: <b>new score − previous score</b>.</p></div>
-            <details class="method"><summary>How this is calculated</summary><div id="q4-method"></div></details>
-          </aside>
-        </div>
-      </section>
+              <div id="change-split" class="split"></div>
+              <p class="viz-title viz-title-row">How much scores changed</p>
+              <div id="change-chart" class="chart"></div>
+              <div class="finding" id="q4-takeaway"></div>
+              <details class="method"><summary>How this is calculated</summary><div id="q4-method"></div></details>
+            </section>
 
-      <!-- Q5 ------------------------------------------------------------- -->
-      <section class="view q-view" data-view="q5" aria-labelledby="q5-title" hidden>
-        <header class="view-head">
-          <p class="eyebrow">Question 5 of 5 · Biggest changes</p>
-          <h1 id="q5-title">Which buildings improved or declined the most between evaluations?</h1>
-        </header>
-        <div class="view-body">
-          <div class="viz">
-            <div class="viz-bar">
+            <section class="lens-view" data-lens="age" hidden>
+              <p class="view-intro">Latest score against year built, one dot per building. <button type="button" class="info-btn" data-info="correlation" aria-label="How to read the age chart">i</button></p>
+              <div id="age-legend" class="legend"></div>
+              <div id="age-chart" class="chart"></div>
+              <div class="finding" id="q2-takeaway"></div>
+              <div id="age-stats" class="mini-stats"></div>
+              <details class="method"><summary>How this is calculated</summary><div id="q2-method"></div></details>
+            </section>
+
+            <section class="lens-view" data-lens="problems" hidden>
+              <p class="view-intro">Share of buildings with each item rated poorly at their latest evaluation. <button type="button" class="info-btn" data-info="problem" data-info-from="problem-def" aria-label="What counts as a problem">i</button></p>
+              <fieldset class="seg seg-sm" id="item-group">
+                <legend class="visually-hidden">Inspection items</legend>
+                <label><input type="radio" name="item-group" value="all" checked /><span>All</span></label>
+                <label><input type="radio" name="item-group" value="physical" /><span>Physical</span></label>
+                <label><input type="radio" name="item-group" value="record" /><span>Records &amp; plans</span></label>
+              </fieldset>
+              <div id="problem-chart" class="chart"></div>
+              <button type="button" class="btn btn-quiet" id="problem-more"></button>
+              <div class="finding" id="q3-takeaway"></div>
+              <div class="info-source" id="problem-def" hidden></div>
+              <details class="method"><summary>How this is calculated</summary><div id="q3-method"></div></details>
+            </section>
+
+            <section class="lens-view" data-lens="movers" hidden>
+              <p class="view-intro">The largest rises and drops between consecutive evaluations. Select one to find it on the map. <button type="button" class="info-btn" data-info="movers" aria-label="How movers are chosen">i</button></p>
               <fieldset class="seg seg-sm" id="movers-n">
                 <legend class="visually-hidden">Number of buildings</legend>
                 <label><input type="radio" name="movers-n" value="5" /><span>Top 5</span></label>
@@ -308,43 +222,239 @@
                 <label><input type="radio" name="movers-n" value="15" /><span>Top 15</span></label>
               </fieldset>
               <div class="legend" id="movers-legend"></div>
-            </div>
-            <div id="movers-chart" class="viz-area chart scroll"></div>
-          </div>
-          <aside class="insight">
-            <div class="finding" id="q5-takeaway"></div>
-            <div class="insight-block"><h2 class="insight-title">Tip</h2>
-              <p class="insight-text">Select any building to highlight it on every chart, then open its full report from the bar at the top.</p></div>
-            <details class="method"><summary>How this is calculated</summary><div id="q5-method"></div></details>
+              <div id="movers-chart" class="chart"></div>
+              <div class="finding" id="q5-takeaway"></div>
+              <details class="method"><summary>How this is calculated</summary><div id="q5-method"></div></details>
+            </section>
           </aside>
         </div>
-      </section>
 
-      <!-- About ---------------------------------------------------------- -->
-      <section class="view" data-view="about" aria-labelledby="about-title" hidden>
-        <header class="view-head">
-          <p class="eyebrow">About</p>
-          <h1 id="about-title">About the data</h1>
-        </header>
-        <div class="about-grid">
-          <article class="card"><h2 class="card-headline">Source</h2><p class="card-text" id="data-note"></p></article>
-          <article class="card"><h2 class="card-headline">Reading these charts</h2>
-            <p class="card-text">Scores describe the condition of common areas on the inspection day, not individual units, rents or landlord practices. Patterns here are associations; they don't show what causes a low score.</p>
-            <p class="card-text">The City changed its scoring system in 2023. Scores from the two systems use different rating scales and items, so they're never compared with each other here.</p></article>
-          <article class="card"><h2 class="card-headline">Item ratings</h2>
-            <p class="card-text">Since 2023, inspectors rate up to 50 items from 0 to 3, where 3 is the top mark. N/A means an item doesn't apply and is never counted as a problem. The <a href="#/fingerprint">inspection fingerprint</a> explains how the ratings are grouped and counted.</p></article>
-          <article class="card"><h2 class="card-headline">For analysts</h2>
-            <p class="card-text">The <a href="../explorer/">data explorer</a> shows every record, every filter, and full data notes.</p></article>
+        <p id="status" class="status" role="status">Loading RentSafeTO evaluations…</p>
+
+        <!-- Depth: the levels below the map (inspection X-Ray, comparison, story visuals, pages). -->
+        <div class="depth" id="depth" hidden>
+          <div class="depth-bar">
+            <button type="button" class="btn btn-sm depth-back" id="depth-back"><span aria-hidden="true">←</span> Back to map</button>
+            <nav aria-label="You are here"><ol class="crumbs" id="depth-crumbs"></ol></nav>
+          </div>
+          <div class="depth-body" id="depth-body">
+          <!-- Building X-Ray: one building's inspection by category, in 3D ------------------------- -->
+          <section class="view xr-view" data-view="xray" aria-labelledby="xr-title" hidden>
+            <div id="xr-empty" class="b-empty">
+              <h1>Building X-Ray</h1>
+              <p class="lede">Search for an address above, or select a building on the map, to open its X-Ray: the latest inspection, laid out category by category on a 3D model of the building.</p>
+              <p class="b-empty-note" id="xr-empty-note"></p>
+              <p class="section-label">Or try</p>
+              <div id="xr-suggest" class="chips"></div>
+            </div>
+
+            <div id="xr-main" class="xr-wrap" hidden>
+              <header class="view-head xr-head">
+                <h1 id="xr-title"></h1>
+                <p class="meta" id="xr-meta"></p>
+                <p class="xr-showing" id="xr-showing" aria-live="polite"></p>
+              </header>
+
+              <div class="xr-grid">
+                <article class="xr-stage-card" id="xr-stage-card" aria-label="3D model of the building">
+                  <div class="xr-toolbar">
+                    <div class="xr-bar-id"><b id="xr-bar-title"></b><span class="xr-bar-meta" id="xr-bar-meta"></span></div>
+                    <fieldset class="seg seg-sm xr-modes" id="xr-mode">
+                      <legend class="visually-hidden">View</legend>
+                      <label><input type="radio" name="xr-mode" value="exterior" checked /><span>Exterior</span></label>
+                      <label><input type="radio" name="xr-mode" value="cutaway" /><span>Cutaway</span></label>
+                      <label><input type="radio" name="xr-mode" value="focus" /><span>Focus</span></label>
+                    </fieldset>
+                  </div>
+                  <div class="xr-toolbar xr-toolbar-2">
+                    <p class="xr-finding" id="xr-finding" aria-live="polite"></p>
+                    <div class="xr-cam" id="xr-cam" role="group" aria-label="Camera">
+                      <button type="button" class="btn btn-sm" id="xr-reset" title="Return to the default three-quarter view">Reset view</button>
+                      <details class="menu" id="xr-cam-menu">
+                        <summary class="btn btn-sm">Camera</summary>
+                        <div class="menu-list" role="group" aria-label="More camera controls">
+                          <button type="button" class="menu-item" id="xr-focus" disabled>Focus on category</button>
+                          <button type="button" class="menu-item" id="xr-all" disabled>Show whole building</button>
+                          <button type="button" class="menu-item" id="xr-rot-left">Turn 45° left</button>
+                          <button type="button" class="menu-item" id="xr-rot-right">Turn 45° right</button>
+                        </div>
+                      </details>
+                      <button type="button" class="info-btn" data-info="xray-controls" aria-label="How to move the camera">i</button>
+                    </div>
+                  </div>
+                  <div class="xr-stage" id="xr-stage"></div>
+                  <div class="xr-foot">
+                    <p class="xr-prov" id="xr-prov" aria-live="polite"></p>
+                    <div id="xr-prov-detail" hidden></div>
+                    <div class="xr-legend legend" id="xr-legend" aria-label="Legend"></div>
+                    <p class="xr-caveat"><b>Exterior geometry is based on available building data. Interior spaces are illustrative and do not represent the actual floor plan.</b>
+                      Colours show how inspectors rated each category, not where problems are.
+                      <button type="button" class="link-btn xr-method-link" id="xr-method-open">How this works</button></p>
+                  </div>
+                </article>
+
+                <aside class="xr-side">
+                  <nav class="xr-zones" id="xr-zones" aria-label="Inspection categories"></nav>
+                  <section class="xr-panel" id="xr-panel" aria-live="polite"></section>
+                </aside>
+              </div>
+
+              <section class="xr-section" aria-labelledby="xr-cmp-title">
+                <h2 class="fp-h2" id="xr-cmp-title">Same score. Different story.</h2>
+                <p class="xr-section-sub">Two buildings can receive similar overall scores while having very different inspection results.</p>
+                <div id="xr-compare"></div>
+              </section>
+
+              <section class="xr-section" id="xr-history" aria-labelledby="xr-tl-title">
+                <h2 class="fp-h2" id="xr-tl-title">Is this score still current?</h2>
+                <p class="xr-section-sub">Every evaluation of this building. Select a point to open that inspection in the X-Ray.</p>
+                <div id="xr-timeline" class="chart"></div>
+              </section>
+
+              <details class="method xr-method" id="xr-method-box"><summary>How the X-Ray works, and which items are in each category</summary><div id="xr-method"></div></details>
+            </div>
+          </section>
+
+          <!-- Compare buildings: same score, different story --------------------------------------- -->
+          <section class="view fp-view" data-view="compare" aria-labelledby="fp-title" hidden>
+            <div class="fp-wrap">
+              <header class="fp-intro">
+                <h1 id="fp-title">Same score, different story <button type="button" class="info-btn" data-info="low-mark" aria-label="What a low mark is">i</button></h1>
+                <p class="lede"><span id="fp-spread"></span>. Lay the inspection items side by side and two buildings with the same score can look nothing alike.</p>
+              </header>
+
+              <div id="fp-unavailable" class="fp-unavailable" hidden>
+                <p>The comparison uses the item ratings from the City’s current scoring system (2023 – now). The 2017 – 2023 system rated different items on a different scale.</p>
+                <button type="button" class="btn btn-primary" id="fp-goto-cur">Switch to 2023 – now</button>
+              </div>
+
+              <div id="fp-main">
+                <div class="fp-controls" role="group" aria-label="Choose buildings to compare">
+                  <label class="field fp-field-score"><span class="field-label">Overall score</span><select id="fp-score"></select></label>
+                  <label class="field"><span class="field-label">Building A</span><input id="fp-a" type="search" list="building-list" autocomplete="off" /></label>
+                  <label class="field"><span class="field-label">Building B</span><input id="fp-b" type="search" list="building-list" autocomplete="off" /></label>
+                  <div class="fp-actions">
+                    <button type="button" class="btn" id="fp-next"></button>
+                    <button type="button" class="btn btn-quiet" id="fp-reset" hidden>Back to example pairs</button>
+                  </div>
+                </div>
+
+                <p class="fp-verdict" id="fp-verdict" aria-live="polite"></p>
+                <div id="fp-legend" class="legend fp-legend" aria-label="Legend"></div>
+
+                <div class="fp-pair">
+                  <article class="fp-building" id="fp-a-card"><div class="fp-head"></div><div class="fp-chart chart"></div><div class="fp-lows"></div><div class="fp-notes"></div></article>
+                  <article class="fp-building" id="fp-b-card"><div class="fp-head"></div><div class="fp-chart chart"></div><div class="fp-lows"></div><div class="fp-notes"></div></article>
+                </div>
+                <p class="visually-hidden" id="fp-live" aria-live="polite"></p>
+
+                <details class="fp-table">
+                  <summary>Show every item as a table</summary>
+                  <div class="fp-table-scroll"><table><thead id="fp-table-head"></thead><tbody id="fp-table-body"></tbody></table></div>
+                </details>
+
+                <section class="fp-city" aria-labelledby="fp-city-title">
+                  <h2 id="fp-city-title" class="fp-h2">The same grid, for every building in Toronto</h2>
+                  <p class="fp-city-sub">Each column is one inspection item, in the same order as above. Its colours show the share of buildings at each rating, with the lowest marks at the bottom.</p>
+                  <div class="fp-city-notes" id="fp-city-notes"></div>
+                  <div id="fp-city-chart" class="chart fp-city-chart"></div>
+                </section>
+
+                <details class="method fp-method-block">
+                  <summary>Source and method</summary>
+                  <div id="fp-method" class="fp-method"></div>
+                </details>
+              </div>
+            </div>
+          </section>
+
+          <!-- Guided story: chapters that need their own canvas (prologue, aha, resolution) --------- -->
+          <section class="view story-view" data-view="story" aria-labelledby="story-view-title" hidden>
+            <h2 class="visually-hidden" id="story-view-title">Story visual</h2>
+            <div class="story-visual" id="story-visual"></div>
+          </section>
+
+          <!-- About: what LeaseLens is, how it works, and the sources. Methods sit behind disclosures. -->
+          <section class="view page-view" data-view="about" aria-labelledby="about-title" hidden>
+            <article class="page">
+              <h1 id="about-title">About LeaseLens</h1>
+              <p class="lede">A RentSafeTO score sums up a whole inspection in one number. LeaseLens keeps the number and shows what sits underneath it: where it is, what was inspected, and how it has changed.</p>
+              <p class="notice">LeaseLens is an independent student-built project using public City of Toronto data. It is not an official City of Toronto service.</p>
+
+              <h2>How to use it</h2>
+              <ol class="steps">
+                <li><b>Compare areas.</b> Start with the city map and zoom into a ward to see where lower scores cluster. <a href="#/explore">Explore the map</a></li>
+                <li><b>Check one building.</b> Select it and inspect its results, category by category.</li>
+                <li><b>Look at its history.</b> A score describes inspection day. See whether it has been rising or falling. <a href="#/explore?lens=changes">Re-inspection changes</a></li>
+              </ol>
+
+              <h2>Reading the scores</h2>
+              <p>Scores describe common areas on the inspection day, not individual units, rents or landlords. Patterns here are associations; they don’t show what causes a low score.</p>
+              <p>The City changed its scoring system in 2023. The two systems use different items and scales, so they are never compared with each other here.</p>
+
+              <h2>Sources</h2>
+              <p id="data-note"></p>
+              <p>Base map © OpenStreetMap contributors. Ward boundaries simplified to about 12 m. Building marks sit at the address point in each RentSafeTO record.</p>
+
+              <h2>Methods and limits</h2>
+              <details class="method">
+                <summary>How ratings are counted</summary>
+                <p>Since 2023, inspectors rate up to 50 items from 0 to 3, where 3 is the top mark. N/A means an item doesn’t apply. Neither N/A nor a blank is ever counted as a pass or as a problem. “Lowest 10%” and “lowest 25%” are citywide cut-offs on each building’s latest score in the chosen system, with ties included.</p>
+              </details>
+              <details class="method">
+                <summary>What is real and what is drawn</summary>
+                <table class="truth-table">
+                  <thead><tr><th scope="col">On the page</th><th scope="col">What it is</th></tr></thead>
+                  <tbody>
+                    <tr><th scope="row">Scores, dates, item ratings</th><td>Actual records from the City’s Apartment Building Evaluations files.</td></tr>
+                    <tr><th scope="row">Building shape and height (“massing” badge)</th><td>Actual footprint and height from the City’s 3D Massing data, used only when the address matched one footprint reliably.</td></tr>
+                    <tr><th scope="row">Building shape (“approximate” badge)</th><td>Estimated from the registered number of storeys. Not the real shape.</td></tr>
+                    <tr><th scope="row">X-Ray interiors, entrances, parking and site details</th><td>Conceptual. They show where a category belongs, not a real floor plan.</td></tr>
+                    <tr><th scope="row">Homepage drawing of downtown</th><td>Actual City footprints, heights, streets and shoreline, simplified: small buildings and minor streets are left out.</td></tr>
+                  </tbody>
+                </table>
+              </details>
+              <details class="method">
+                <summary>What we will not do</summary>
+                <ul class="plain">
+                  <li>Invent scores, dates, ratings or comparisons. Every number is computed from the City’s published records.</li>
+                  <li>Mix the two scoring systems.</li>
+                  <li>Treat a missing or N/A rating as a pass. Missing results stay missing.</li>
+                  <li>Present the X-Ray’s interior as a real floor plan, or suggest a problem is in a particular apartment.</li>
+                </ul>
+              </details>
+              <details class="method">
+                <summary>Colours</summary>
+                <p>Blue, white and red, inspired by the Toronto flag (Pantone 287 and 186; the screen colours are approximations). Red marks low scores and declines only, and charts never rely on red and blue alone.</p>
+              </details>
+              <p class="page-foot">Analysts: the <a href="../explorer/">data explorer</a> shows every record, every filter and full data notes.</p>
+            </article>
+          </section>
+
+          <!-- Help ------------------------------------------------------------------------------------ -->
+          <section class="view page-view" data-view="help" aria-labelledby="help-title" hidden>
+            <article class="page">
+              <h1 id="help-title">Help</h1>
+              <h2>Exploring the map</h2>
+              <p>The map starts with Toronto’s 25 wards. Zoom in (scroll, pinch, the + and − buttons, or + and − on the keyboard while the map has focus) and nearby buildings appear as groups, then as individual buildings. Select a ward or a building to open its details beside the map; × or Esc closes them without moving the map.</p>
+              <h2>Finding a building</h2>
+              <p>Type an address in the search box at the top, move through the matches with ↑ and ↓, and press Enter. The map flies to the building. Each ward card and the “Buildings in view” list are also keyboard routes to individual buildings.</p>
+              <h2>Going deeper</h2>
+              <p>From a building, <b>Inspect building</b> opens its X-Ray, <b>Compare nearby</b> lists the closest evaluated buildings, and <b>View history</b> shows every evaluation. <b>Back to map</b> returns to the same place and zoom. The browser’s Back and Forward buttons, and copied links, work at every level.</p>
+              <h2>Layers and analysis</h2>
+              <p><b>Layers</b> holds the scoring system, which buildings are shown, and the ward. <b>Analysis</b> opens one chart at a time beside the map, for the selected ward or all of Toronto. The two scoring systems are never mixed.</p>
+              <h2>The guided story</h2>
+              <p>Use Next and Back, or the ← and → keys. You can leave the story at any time; your previous view and filters come back as they were.</p>
+              <h2>Building X-Ray</h2>
+              <p>Drag to orbit, right-drag or use two fingers to pan, scroll to zoom, and double-click to fly to a point. Select a category in the list or on the model to open its items. Esc returns to the whole building. The camera stays outside the building.</p>
+              <h2>Information buttons</h2>
+              <p>Buttons marked <span class="info-btn info-demo" aria-hidden="true">i</span> open a short explanation. Press Esc or select outside it to close.</p>
+            </article>
+          </section>
+          </div>
         </div>
-      </section>
-
-      <!-- Pager: previous / next question --------------------------------- -->
-      <nav class="pager" id="pager" aria-label="Question navigation" hidden>
-        <a class="pager-link prev" id="pager-prev"></a>
-        <ol class="pager-dots" id="pager-dots"></ol>
-        <a class="pager-link next" id="pager-next"></a>
-      </nav>
-    </main>
+      </main>
+    </div>
   </div>
 
   <div id="tooltip" class="tooltip" role="tooltip" hidden></div>
