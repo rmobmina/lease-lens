@@ -15,7 +15,7 @@ const WORDS = {
   inMap: { shown: 'The latest evaluation, shown on the map.', pick: 'Click to inspect this evaluation in the X-Ray.', aShown: ' Shown on the map.', aPick: ' Press Enter to inspect it in the X-Ray.', group: 'Enter to inspect one in the X-Ray' },
 };
 
-export function renderTimeline(box, { points, shown, era, P, systemChange, onPick, where = 'inXray', height: fixedH = 230 }) {
+export function renderTimeline(box, { points, shown, era, P, systemChange, onPick, where = 'inXray', height: fixedH = 230, brief = false }) {
   const W = WORDS[where];
   box.innerHTML = '';
   const summary = document.createElement('p');
@@ -24,7 +24,7 @@ export function renderTimeline(box, { points, shown, era, P, systemChange, onPic
 
   const t = trendSummary(points, era);
   const other = points.filter((p) => p.era !== era).length;
-  const otherTxt = other ? ` This building also has ${other} evaluation${other === 1 ? '' : 's'} in the ${era === 'cur' ? '2017 – 2023' : '2023 – now'} system, drawn in grey. Those scores used different items and a different scale, so they aren't connected or compared.` : '';
+  const otherTxt = other && brief ? ` Grey: ${other} earlier-system evaluation${other === 1 ? '' : 's'}, not compared.` : other ? ` This building also has ${other} evaluation${other === 1 ? '' : 's'} in the ${era === 'cur' ? '2017 – 2023' : '2023 – now'} system, drawn in grey. Those scores used different items and a different scale, so they aren't connected or compared.` : '';
   if (t.kind === 'empty') {
     summary.innerHTML = `No evaluations in the ${esc(P.long)}.${otherTxt}`;
     if (!points.length) return;
@@ -33,7 +33,7 @@ export function renderTimeline(box, { points, shown, era, P, systemChange, onPic
   } else {
     const d = t.latest.delta;
     summary.innerHTML = `${d === 0 ? 'No change' : `<b>${d > 0 ? 'Up' : 'Down'} ${Math.abs(d)} point${Math.abs(d) === 1 ? '' : 's'}</b>`} at the latest evaluation (${formatDate(t.latest.rec.date)}, score <b>${t.latest.rec.score}</b>) compared with the one before (${formatDate(t.latest.prev.date)}, ${t.latest.prev.score}).
-      ${t.n > 2 ? `${t.n} evaluations in this system, ${signed(t.total)} points overall.` : ''} A score describes the building on inspection day, so an older score may no longer reflect it.${otherTxt}`;
+      ${t.n > 2 ? `${t.n} evaluations in this system, ${signed(t.total)} points overall.` : ''}${brief ? '' : ' A score describes the building on inspection day, so an older score may no longer reflect it.'}${otherTxt}`;
   }
 
   const width = Math.max(300, box.clientWidth);

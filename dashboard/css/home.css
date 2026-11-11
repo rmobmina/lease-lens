@@ -11,8 +11,8 @@ body[data-layer="home"] { background: var(--atlas-bg); }
 .home::before { content: ""; position: absolute; inset: 0; z-index: -1; pointer-events: none;
   background-image: linear-gradient(var(--hero-grid) 1px, transparent 1px), linear-gradient(90deg, var(--hero-grid) 1px, transparent 1px);
   background-size: 48px 48px; background-position: -1px -1px;
-  -webkit-mask-image: radial-gradient(ellipse 70% 75% at 68% 48%, #000 25%, transparent 78%);
-          mask-image: radial-gradient(ellipse 70% 75% at 68% 48%, #000 25%, transparent 78%); }
+  -webkit-mask-image: radial-gradient(ellipse 85% 90% at 62% 48%, #000 40%, transparent 92%);
+          mask-image: radial-gradient(ellipse 85% 90% at 62% 48%, #000 40%, transparent 92%); }
 
 /* hero ---------------------------------------------------------------------------------------- */
 .hero { position: relative; display: grid; grid-template-columns: minmax(440px, 5fr) minmax(0, 7fr); column-gap: var(--space-6); min-height: 0; outline: none; }

@@ -43,7 +43,7 @@
     </div>
     <nav class="atlas-nav" id="atlas-nav" aria-label="Main">
       <a href="#/explore" data-route="explore" id="nav-explore">Explore</a>
-      <a href="#/story" data-route="story">Guided story</a>
+      <a href="#/story" data-route="story">Story</a>
       <a href="#/about" data-route="about">About</a>
     </nav>
     <button type="button" class="theme-toggle" data-theme-toggle aria-label="Switch to dark mode">
@@ -62,7 +62,7 @@
     <main class="hero" id="home-main" tabindex="-1">
       <div class="hero-copy">
         <h1 class="hero-title"><span>Your next home</span> <span>is more than</span> <span>a score.</span></h1>
-        <p class="hero-sub">Explore what Toronto’s rental building inspections reveal.</p>
+        <p class="hero-sub">Look beyond RentSafeTO ratings to explore building conditions, inspection history, and patterns across Toronto.</p>
         <div class="hero-actions">
           <a class="btn btn-primary btn-lg" href="#/explore" data-enter>Let’s explore</a>
           <a class="btn btn-lg" href="#/story">Follow the story</a>
@@ -77,10 +77,6 @@
       </figure>
     </main>
 
-    <footer class="site-foot">
-      <p>Contains information licensed under the <a href="https://open.toronto.ca/open-data-license/" target="_blank" rel="noopener">Open Government Licence – Toronto</a>. <a href="#/about">Sources</a></p>
-      <button type="button" class="info-btn" data-info="atlas" aria-label="How the homepage drawing is made">i</button>
-    </footer>
   </div>
 
   <!-- ===================================================================== -->
@@ -250,12 +246,21 @@
 
             <div id="xr-main" class="xr-wrap" hidden>
               <header class="view-head xr-head">
-                <h1 id="xr-title"></h1>
-                <p class="meta" id="xr-meta"></p>
-                <p class="xr-showing" id="xr-showing" aria-live="polite"></p>
+                <div class="xr-head-id">
+                  <h1 id="xr-title"></h1>
+                  <p class="meta" id="xr-meta"></p>
+                  <p class="xr-showing" id="xr-showing" aria-live="polite"></p>
+                </div>
+                <!-- One view at a time, each fitted to the window: nothing on this page scrolls. -->
+                <div class="xr-tabs" role="tablist" aria-label="Building X-Ray views">
+                  <button type="button" role="tab" id="xr-tab-model" aria-controls="xr-pane-model" data-xr-tab="model">Inspection</button>
+                  <button type="button" role="tab" id="xr-tab-compare" aria-controls="xr-pane-compare" data-xr-tab="compare">Same score</button>
+                  <button type="button" role="tab" id="xr-tab-history" aria-controls="xr-history" data-xr-tab="history">History</button>
+                  <button type="button" role="tab" id="xr-tab-method" aria-controls="xr-pane-method" data-xr-tab="method">How it works</button>
+                </div>
               </header>
 
-              <div class="xr-grid">
+              <div class="xr-grid xr-pane" id="xr-pane-model" role="tabpanel" aria-labelledby="xr-tab-model">
                 <article class="xr-stage-card" id="xr-stage-card" aria-label="3D model of the building">
                   <div class="xr-toolbar">
                     <div class="xr-bar-id"><b id="xr-bar-title"></b><span class="xr-bar-meta" id="xr-bar-meta"></span></div>
@@ -288,7 +293,7 @@
                     <div id="xr-prov-detail" hidden></div>
                     <div class="xr-legend legend" id="xr-legend" aria-label="Legend"></div>
                     <p class="xr-caveat"><b>Exterior geometry is based on available building data. Interior spaces are illustrative and do not represent the actual floor plan.</b>
-                      Colours show how inspectors rated each category, not where problems are.
+                      <span class="xr-caveat-more">Colours show how inspectors rated each category, not where problems are.</span>
                       <button type="button" class="link-btn xr-method-link" id="xr-method-open">How this works</button></p>
                   </div>
                 </article>
@@ -299,19 +304,22 @@
                 </aside>
               </div>
 
-              <section class="xr-section" aria-labelledby="xr-cmp-title">
-                <h2 class="fp-h2" id="xr-cmp-title">Same score. Different story.</h2>
+              <section class="xr-section xr-pane" id="xr-pane-compare" role="tabpanel" aria-labelledby="xr-tab-compare" hidden>
+                <h2 class="fp-h2">Same score. Different story.</h2>
                 <p class="xr-section-sub">Two buildings can receive similar overall scores while having very different inspection results.</p>
                 <div id="xr-compare"></div>
               </section>
 
-              <section class="xr-section" id="xr-history" aria-labelledby="xr-tl-title">
-                <h2 class="fp-h2" id="xr-tl-title">Is this score still current?</h2>
+              <section class="xr-section xr-pane" id="xr-history" role="tabpanel" aria-labelledby="xr-tab-history" hidden>
+                <h2 class="fp-h2">Is this score still current?</h2>
                 <p class="xr-section-sub">Every evaluation of this building. Select a point to open that inspection in the X-Ray.</p>
                 <div id="xr-timeline" class="chart"></div>
               </section>
 
-              <details class="method xr-method" id="xr-method-box"><summary>How the X-Ray works, and which items are in each category</summary><div id="xr-method"></div></details>
+              <section class="xr-section xr-pane xr-method" id="xr-pane-method" role="tabpanel" aria-labelledby="xr-tab-method" hidden>
+                <h2 class="fp-h2">How the X-Ray works</h2>
+                <div id="xr-method"></div>
+              </section>
             </div>
           </section>
 
@@ -375,12 +383,16 @@
           </section>
 
           <!-- About: what LeaseLens is, how it works, and the sources. Methods sit behind disclosures. -->
-          <section class="view page-view" data-view="about" aria-labelledby="about-title" hidden>
-            <article class="page">
+          <section class="view page-view about-view" data-view="about" aria-labelledby="about-title" hidden>
+            <article class="page about">
+              <div class="about-col">
               <h1 id="about-title">About LeaseLens</h1>
               <p class="lede">A RentSafeTO score sums up a whole inspection in one number. LeaseLens keeps the number and shows what sits underneath it: where it is, what was inspected, and how it has changed.</p>
               <p class="notice">LeaseLens is an independent student-built project using public City of Toronto data. It is not an official City of Toronto service.</p>
+              <p class="page-foot">Analysts: the <a href="../explorer/">data explorer</a> shows every record, every filter and full data notes.</p>
+              </div>
 
+              <div class="about-col">
               <h2>How to use it</h2>
               <ol class="steps">
                 <li><b>Compare areas.</b> Start with the city map and zoom into a ward to see where lower scores cluster. <a href="#/explore">Explore the map</a></li>
@@ -391,7 +403,9 @@
               <h2>Reading the scores</h2>
               <p>Scores describe common areas on the inspection day, not individual units, rents or landlords. Patterns here are associations; they don’t show what causes a low score.</p>
               <p>The City changed its scoring system in 2023. The two systems use different items and scales, so they are never compared with each other here.</p>
+              </div>
 
+              <div class="about-col about-col-scroll">
               <h2>Sources</h2>
               <p id="data-note"></p>
               <p>Base map © OpenStreetMap contributors. Ward boundaries simplified to about 12 m. Building marks sit at the address point in each RentSafeTO record.</p>
@@ -427,7 +441,7 @@
                 <summary>Colours</summary>
                 <p>Blue, white and red, inspired by the Toronto flag (Pantone 287 and 186; the screen colours are approximations). Red marks low scores and declines only, and charts never rely on red and blue alone.</p>
               </details>
-              <p class="page-foot">Analysts: the <a href="../explorer/">data explorer</a> shows every record, every filter and full data notes.</p>
+              </div>
             </article>
           </section>
 

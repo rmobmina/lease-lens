@@ -84,3 +84,35 @@ body[data-layer="work"] { background: var(--surface-2); }
 }
 
 .fp-legend-label { text-transform: none; letter-spacing: 0; font-size: var(--text-sm); }
+
+/* About: one screen, three columns (who we are · how to read it · sources and methods). The page never
+   scrolls on a computer; only the methods column scrolls, inside itself, if every section is opened. */
+@media (min-width: 900px) {
+  body[data-depth="page"] .depth:has(.about-view:not([hidden])) { overflow: hidden; display: flex; flex-direction: column; }
+  body[data-depth="page"] .depth:has(.about-view:not([hidden])) .depth-body { flex: 1; min-height: 0; display: flex; }
+  .about-view { flex: 1; min-height: 0; display: flex; padding: var(--space-5) var(--space-6); }
+  .page.about { max-width: 1280px; width: 100%; padding: 0; display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr) minmax(0, 1fr); gap: var(--space-7); align-items: stretch; min-height: 0; }
+  .about-col { min-height: 0; }
+  .about-col-scroll { overflow-y: auto; padding-right: var(--space-2); }
+  .about-col > h2:first-child { margin-top: 0; }
+  .page.about h2 { margin-top: var(--space-5); font-size: var(--text-lg); }
+  .page.about p, .page.about li { font-size: var(--text-base); margin-top: var(--space-2); }
+  .page.about .lede { font-size: var(--text-lg); }
+  .page.about #data-note { font-size: var(--text-sm); }
+  .page.about .steps { margin-top: var(--space-3); }
+  .page.about details.method { margin-top: var(--space-2); }
+}
+@media (min-width: 900px) and (max-height: 800px) {
+  .about-view { padding: var(--space-4) var(--space-6); }
+  .page.about h1 { font-size: 34px; }
+  .page.about p, .page.about li { font-size: var(--text-sm); }
+  .page.about .lede { font-size: var(--text-md); }
+}
+@media (min-width: 900px) {
+  .page.about .about-col > h2:first-child { margin-top: var(--space-3); } /* sits on the h1's line */
+}
+@media (min-width: 900px) and (max-width: 1300px) {
+  .page.about { gap: var(--space-5); }
+  .about-view { padding-left: var(--space-5); padding-right: var(--space-5); }
+  .page.about #data-note { font-size: var(--text-xs); }
+}

@@ -23,7 +23,7 @@ import { renderChanges } from './sections/changes.js';
 import { renderMovers } from './sections/movers.js';
 import { renderPlace } from './sections/building.js';
 import { renderFingerprint } from './sections/fingerprint.js';
-import { renderXray, disposeXray, loadMassing } from './sections/xray.js';
+import { renderXray, disposeXray, loadMassing, holdStage, warmXray } from './sections/xray.js';
 import { initInfoPopovers } from './components/info-popover.js';
 import { createStory } from './story/controller.js';
 import { drawVisual } from './story/visuals.js';
@@ -505,15 +505,37 @@ function setLens(id, { focus = false } = {}) {
 }
 
 // ---- deeper levels ------------------------------------------------------------------------------------------------------
-// Going down from the map: remember exactly where the map is, then cross-fade into the level.
+// Going down from the map: remember exactly where the map is, then open the level out of the building
+// itself. The X-Ray grows from the building's point on the map while the map eases in behind it, and
+// it starts only once the X-Ray has drawn, so nothing pops in afterwards. Going back reverses it into
+// the same point. Any newer move cancels a running one; reduced motion swaps instantly.
+let revealFrom = null; // client point the next depth level opens out of
 function goDeep(hash) {
   commitView();
   lastExplore = exploreHash();
-  const run = () => { history.pushState({ fromMap: true }, '', hash); onRoute(); };
-  if (!document.startViewTransition || reducedMotion()) run();
-  else { document.documentElement.classList.add('vt-depth'); document.startViewTransition(run).finished.finally(() => document.documentElement.classList.remove('vt-depth')); }
+  revealFrom = reducedMotion() ? null : placeOrigin();
+  history.pushState({ fromMap: true }, '', hash);
+  onRoute();
 }
 
+const REVEAL = { open: 520, close: 340, ease: 'cubic-bezier(0.22, 0.8, 0.24, 1)', easeIn: 'cubic-bezier(0.45, 0, 0.7, 0.4)' };
+function circleAt(pt) {
+  const r = $('depth').getBoundingClientRect();
+  const x = Math.round(pt.x - r.left), y = Math.round(pt.y - r.top);
+  const R = Math.ceil(Math.hypot(Math.max(x, r.width - x), Math.max(y, r.height - y)));
+  return { small: `circle(14px at ${x}px ${y}px)`, big: `circle(${R}px at ${x}px ${y}px)`, origin: `${pt.x - $('map-wrap').getBoundingClientRect().left}px ${pt.y - $('map-wrap').getBoundingClientRect().top}px` };
+}
+function stopReveal() {
+  for (const el of [$('depth'), $('map-wrap')]) el.getAnimations().forEach((a) => { if (a.id === 'reveal') a.cancel(); });
+}
+function revealDepth(pt) {
+  const d = $('depth'), c = circleAt(pt);
+  d.style.visibility = '';
+  d.animate([{ clipPath: c.small, opacity: 0.35 }, { clipPath: c.big, opacity: 1 }], { duration: REVEAL.open, easing: REVEAL.ease, id: 'reveal' });
+  const m = $('map-wrap');
+  m.style.transformOrigin = c.origin;
+  m.animate([{ transform: 'scale(1)' }, { transform: 'scale(1.08)', opacity: 0.6 }], { duration: REVEAL.open, easing: REVEAL.ease, id: 'reveal' });
+}
 function backToMap() {
   if (history.state?.fromMap) { history.back(); return; }
   navigate(lastExplore ?? encodeExplore({ ward: state.ward, selected: state.selected, lens: state.lens, period: state.period, mapShow: state.mapShow }));
@@ -524,7 +546,13 @@ function openDepth(kind, page = null, after) {
   if (prev === 'xray' && kind !== 'xray') disposeXray();
   state.depth = kind; state.page = page;
   document.body.dataset.depth = kind;
+  stopReveal();
+  const from = revealFrom; revealFrom = null;
   $('depth').hidden = false;
+  $('depth').inert = false;
+  $('depth').classList.toggle('is-revealing', !!from); // no default fade: the reveal replaces it
+  if (from) { $('depth').style.visibility = 'hidden'; holdStage(REVEAL.open + 60); } // hold until the level has drawn; 3D waits for the motion
+  const reveal = () => { if (from && state.depth === kind) revealDepth(from); else $('depth').style.visibility = ''; };
   for (const id of ['map-wrap', 'rail-left', 'rail-right']) $(id).inert = true;
   if (document.body.classList.contains('story-detail')) $('rail-right').inert = false;
   const view = kind === 'page' ? page : kind;
@@ -541,9 +569,10 @@ function openDepth(kind, page = null, after) {
   if (M && (kind === 'xray' || kind === 'compare')) {
     requestAnimationFrame(() => {
       try { kind === 'xray' ? renderXray(context(), M, state.xray) : renderFingerprint(context(), M, state.fp); } catch (err) { console.error(err); }
+      reveal();
       if (after) requestAnimationFrame(after);
     });
-  } else if (after) requestAnimationFrame(after);
+  } else { reveal(); if (after) requestAnimationFrame(after); }
   // Going down a level moves focus to its heading (the story keeps focus in its own panel).
   if ((prev !== kind || prevPage !== page) && !story?.active()) {
     // after the view has rendered (the X-Ray shows either its empty state or the building)
@@ -556,12 +585,26 @@ function openDepth(kind, page = null, after) {
 
 function closeDepth() {
   if (state.depth === 'map') return;
-  if (state.depth === 'xray') disposeXray();
+  const was = state.depth;
   state.depth = 'map'; state.page = null;
   document.body.dataset.depth = 'map';
-  $('depth').hidden = true;
+  stopReveal();
   for (const id of ['map-wrap', 'rail-left', 'rail-right']) $(id).inert = false;
   requestAnimationFrame(Atlas.invalidate);
+  // focus goes back to the button that opened the level
+  if (!story?.active() && (was === 'xray' || was === 'compare')) requestAnimationFrame(() => { if (state.depth === 'map') $('place').querySelector('[data-act=inspect]')?.focus({ preventScroll: true }); });
+  const d = $('depth');
+  const done = () => { if (state.depth !== 'map') return; d.hidden = true; d.inert = false; if (was === 'xray') disposeXray(); };
+  // Back from a building's X-Ray or comparison: the level closes back into the building on the map.
+  const pt = !reducedMotion() && !story?.active() && (was === 'xray' || was === 'compare') && !d.hidden ? placeOrigin() : null;
+  if (!pt) { done(); return; }
+  d.inert = true;
+  const c = circleAt(pt);
+  const m = $('map-wrap');
+  m.style.transformOrigin = c.origin;
+  m.animate([{ transform: 'scale(1.08)', opacity: 0.6 }, { transform: 'scale(1)', opacity: 1 }], { duration: REVEAL.close, easing: REVEAL.ease, id: 'reveal' });
+  d.animate([{ clipPath: c.big, opacity: 1 }, { clipPath: c.small, opacity: 0 }], { duration: REVEAL.close, easing: REVEAL.easeIn, id: 'reveal' })
+    .finished.then(done, () => {});
 }
 
 // ---- interactions ---------------------------------------------------------------------------------------------------------
@@ -647,7 +690,8 @@ function renderMetaNotes() {
     (pre-2023 and 2023–current files, ${fmt.n(M.data.records.length)} evaluations in total).
     ${fmt.n(ex('pre').flagged + ex('cur').flagged)} records flagged in the data as created in error, empty of ratings, or duplicated were left out,
     along with ${fmt.n(ex('pre').noScore + ex('cur').noScore)} with no score. Nothing else was removed or changed. Buildings are matched by their City registration number (RSN).
-    Building shapes: City of Toronto <a href="https://open.toronto.ca/dataset/3d-massing/" target="_blank" rel="noopener">3D Massing</a>; ward boundaries: <a href="https://open.toronto.ca/dataset/city-wards/" target="_blank" rel="noopener">City Wards</a>; streets and shoreline: <a href="https://open.toronto.ca/dataset/toronto-centreline-tcl/" target="_blank" rel="noopener">Toronto Centreline</a>. All under the Open Government Licence – Toronto.`;
+    Building shapes: City of Toronto <a href="https://open.toronto.ca/dataset/3d-massing/" target="_blank" rel="noopener">3D Massing</a>; ward boundaries: <a href="https://open.toronto.ca/dataset/city-wards/" target="_blank" rel="noopener">City Wards</a>; streets and shoreline: <a href="https://open.toronto.ca/dataset/toronto-centreline-tcl/" target="_blank" rel="noopener">Toronto Centreline</a>.
+    Contains information licensed under the <a href="https://open.toronto.ca/open-data-license/" target="_blank" rel="noopener">Open Government Licence – Toronto</a>.`;
 }
 
 // Search covers every evaluated building: the chosen system first, then buildings only in the other one.
@@ -843,9 +887,9 @@ const app = {
       frame(via);
       setTimeout(() => {
         if (!live()) return;
-        const run = () => openDepth(depth, null, done);
-        if (!document.startViewTransition) run();
-        else { document.documentElement.classList.add('vt-depth'); document.startViewTransition(run).finished.finally(() => document.documentElement.classList.remove('vt-depth')); }
+        const r = via.kind === 'building' && recOf(via.rsn);
+        revealFrom = r?.lat != null ? Atlas.clientPointOf(r.lat, r.lon) : null;
+        openDepth(depth, null, done);
       }, 1150);
       return;
     }
@@ -880,5 +924,6 @@ const app = {
   renderMetaNotes();
   watchResize();
   document.body.dataset.ready = '1';
+  warmXray();
   if (state.layer === 'work') onRoute();
 })();

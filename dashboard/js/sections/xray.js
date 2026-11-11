@@ -36,6 +36,10 @@ export function loadMassing(rsn) {
   return shardCache.get(k).then((d) => d[rsn] ?? null);
 }
 
+// The page is animating into the X-Ray for the next `ms`: hold the heavy 3D work until then.
+let stageHoldUntil = 0;
+export function holdStage(ms) { stageHoldUntil = performance.now() + ms; }
+
 export function disposeXray() {
   if (scene3d?.api) scene3d.api.dispose();
   scene3d = null;
@@ -62,7 +66,7 @@ export function renderXray(ctx, M, xs) {
 
   // A new building resets the inspection being shown and the comparison choice. Older states (X-Ray /
   // Exploded views) open as the cutaway.
-  if (xs.rsn !== rsn) Object.assign(xs, { rsn, evalUid: null, matchRsn: null });
+  if (xs.rsn !== rsn) Object.assign(xs, { rsn, evalUid: null, matchRsn: null, tab: 'model' });
   if (!MODES.includes(xs.mode)) xs.mode = xs.mode ? 'cutaway' : 'exterior';
   if (xs.mode === 'focus' && !xs.zone) xs.mode = 'cutaway';
   const latestInPeriod = pm.latestByRsn.get(rsn);
@@ -86,24 +90,52 @@ export function renderXray(ctx, M, xs) {
   }
   renderProvenance(entry, rec);
   renderBar(rec);
-  renderStage(profile, xs, entry);
-  renderTimeline($('xr-timeline'), {
-    points, shown: rec, era: pm.era, P: pm.P, systemChange: M.byPeriod.cur.dates[0],
-    onPick: (uid) => { xs.evalUid = uid; rerender(); revealStage(); },
-  });
-  renderCompare($('xr-compare'), {
+  // One view at a time (tabs), each fitted to the window. Only the visible one is drawn, so its charts
+  // measure their real size; the guided story always shows the model.
+  if (!TABS.includes(xs.tab) || document.body.classList.contains('is-story')) xs.tab = 'model';
+  showTab(xs.tab);
+  if (xs.tab === 'model') renderStage(profile, xs, entry);
+  else disposeXray();
+  if (xs.tab === 'history') {
+    // Drawn once at a generous height, then once more at exactly the height the tab has left.
+    const pane = $('xr-history');
+    const draw = (height) => renderTimeline($('xr-timeline'), {
+      points, shown: rec, era: pm.era, P: pm.P, systemChange: M.byPeriod.cur.dates[0],
+      onPick: (uid) => { xs.evalUid = uid; revealStage(); }, height,
+    });
+    draw(460);
+    const over = pane.scrollHeight - pane.clientHeight;
+    if (over > 0) draw(Math.max(180, 460 - over - 4));
+  }
+  if (xs.tab === 'compare') renderCompare($('xr-compare'), {
     rec: latestInPeriod, pm, ctx, M, matchRsn: xs.matchRsn,
     onChoose: (r) => { xs.matchRsn = r; rerender(); },
     onOpen: (r) => ctx.select(r, { open: true }),
   });
-  renderMethod();
+  if (xs.tab === 'method') renderMethod();
+}
+
+const TABS = ['model', 'compare', 'history', 'method'];
+const PANE = { model: 'xr-pane-model', compare: 'xr-pane-compare', history: 'xr-history', method: 'xr-pane-method' };
+function showTab(tab) {
+  for (const t of TABS) {
+    const b = document.querySelector(`[data-xr-tab="${t}"]`);
+    b.setAttribute('aria-selected', String(t === tab));
+    b.tabIndex = t === tab ? 0 : -1;
+    $(PANE[t]).hidden = t !== tab;
+  }
+}
+function setTab(tab, { focus = false } = {}) {
+  if (!lastCtx) return;
+  lastCtx.xs.tab = tab;
+  rerender();
+  if (focus) document.querySelector(`[data-xr-tab="${tab}"]`)?.focus();
 }
 
 function rerender() { if (lastCtx) renderXray(lastCtx.ctx, lastCtx.M, lastCtx.xs); }
 
-function revealStage() {
-  $('xr-stage-card').scrollIntoView({ behavior: reducedMotion() ? 'auto' : 'smooth', block: 'start' });
-}
+// A point picked in the history opens that inspection on the model.
+function revealStage() { setTab('model'); }
 
 // ---- header -------------------------------------------------------------------------------
 function renderHead(rec, pm, isDefault, latestInPeriod, all) {
@@ -367,7 +399,9 @@ function renderStage(profile, xs, entry) {
     status.className = 'xr-loading';
     status.textContent = 'Loading the 3D model…';
     stage.append(status);
-    import('../xray/scene.js').then((mod) => {
+    // Building the scene blocks the page for a moment, so it waits until an opening animation is done.
+    const settled = (v) => new Promise((res) => setTimeout(() => res(v), Math.max(0, stageHoldUntil - performance.now())));
+    import('../xray/scene.js').then(settled).then((mod) => {
       status.remove();
       if (!scene3d || !document.body.contains(stage)) return; // left the view while loading
       scene3d.api = mod.createXrayScene(stage, {
@@ -414,6 +448,11 @@ function renderStage(profile, xs, entry) {
 }
 
 let webglCache = null;
+// Warm-up while the page is idle: the WebGL check and the 3D code, so opening an X-Ray never stalls on them.
+export function warmXray() {
+  const go = () => { webgl(); import('../xray/scene.js').catch(() => {}); };
+  if ('requestIdleCallback' in window) requestIdleCallback(go, { timeout: 4000 }); else setTimeout(go, 1500);
+}
 function webgl() {
   if (webglCache == null) {
     try {
@@ -507,7 +546,19 @@ function wire() {
   $('xr-reset').addEventListener('click', () => scene3d?.api?.reset());
   $('xr-all').addEventListener('click', () => selectZone(null));
   $('xr-focus').addEventListener('click', () => scene3d?.api?.focus(lastCtx?.xs.zone));
-  $('xr-method-open').addEventListener('click', () => { const d = $('xr-method-box'); d.open = true; d.scrollIntoView({ behavior: reducedMotion() ? 'auto' : 'smooth', block: 'start' }); });
+  $('xr-method-open').addEventListener('click', () => setTab('method', { focus: true }));
+  // Tabs: click, or ← → Home End between them (the usual tablist keys).
+  const tabs = [...document.querySelectorAll('[data-xr-tab]')];
+  tabs.forEach((b) => {
+    b.addEventListener('click', () => setTab(b.dataset.xrTab));
+    b.addEventListener('keydown', (e) => {
+      const i = tabs.indexOf(b);
+      const j = { ArrowRight: i + 1, ArrowLeft: i - 1, Home: 0, End: tabs.length - 1 }[e.key];
+      if (j == null) return;
+      e.preventDefault();
+      setTab(tabs[(j + tabs.length) % tabs.length].dataset.xrTab, { focus: true });
+    });
+  });
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' && lastCtx?.xs.zone && !$('xr-main').hidden && document.querySelector('[data-view="xray"]:not([hidden])')) selectZone(null);
   });

@@ -516,3 +516,141 @@ svg .xr-d-sub { font-size: var(--text-xs); fill: var(--muted); font-weight: 400;
 @media (prefers-reduced-motion: reduce) {
   .xr-zone, .xr-label-box { transition: none; }
 }
+
+/* ---- Building X-Ray: fitted to the window ------------------------------------------------------
+   The page never scrolls. A compact header (name, facts, which inspection) carries four tabs; the chosen
+   view fills the rest of the window. Inspection: the model takes the stage, categories and the item list
+   beside it. Only an unusually long item list, or the method notes, can scroll, inside their own box. */
+.xr-tabs { display: flex; gap: var(--space-1); border-bottom: var(--border-width) solid var(--border-color); flex: none; }
+.xr-tabs button { font: inherit; font-size: var(--text-base); font-weight: var(--weight-medium); color: var(--ink-2); background: none; border: 0;
+  border-bottom: var(--border-width-strong) solid transparent; margin-bottom: calc(var(--border-width) * -1); padding: var(--space-2) var(--space-3); cursor: pointer; white-space: nowrap; }
+.xr-tabs button:hover { color: var(--ink); }
+.xr-tabs button[aria-selected="true"] { color: var(--accent); border-bottom-color: var(--accent); font-weight: var(--weight-semibold); }
+
+body[data-depth="xray"]:not(.is-story) .depth { overflow: hidden; display: flex; flex-direction: column; }
+body[data-depth="xray"]:not(.is-story) .depth-body { flex: 1; min-height: 0; display: flex; }
+body:not(.is-story) .xr-view { flex: 1; min-height: 0; display: flex; padding: var(--space-3) var(--space-5) var(--space-4); overflow: hidden; }
+body:not(.is-story) .xr-view > .xr-wrap { flex: 1; min-height: 0; width: 100%; margin: 0 auto; display: flex; flex-direction: column; }
+body:not(.is-story) .xr-view > .xr-wrap[hidden] { display: none; }
+body:not(.is-story) .xr-head { display: flex; align-items: flex-end; justify-content: space-between; gap: var(--space-3) var(--space-5); flex-wrap: wrap; margin-bottom: var(--space-3); flex: none; }
+.xr-head-id { min-width: 0; }
+body:not(.is-story) .xr-head h1 { font-size: var(--text-2xl); line-height: 1.1; }
+body:not(.is-story) .xr-head .meta { margin-top: var(--space-1); font-size: var(--text-sm); }
+body:not(.is-story) .xr-showing { font-size: var(--text-sm); margin-top: var(--space-1); }
+.xr-pane[hidden] { display: none !important; }
+body:not(.is-story) .xr-pane { flex: 1; min-height: 0; }
+
+/* inspection */
+body:not(.is-story) .xr-grid { align-items: stretch; grid-template-columns: minmax(0, 1fr) minmax(300px, 340px); }
+body:not(.is-story) .xr-stage-card { position: static; display: flex; flex-direction: column; min-height: 0; }
+body:not(.is-story) .xr-stage { flex: 1; min-height: 220px; height: auto; }
+body:not(.is-story) .xr-bar-id { display: none; } /* the header already names the building */
+body:not(.is-story) .xr-toolbar:first-child { justify-content: flex-end; }
+body:not(.is-story) .xr-toolbar-2 { margin-top: var(--space-1); }
+body:not(.is-story) .xr-finding { font-size: var(--text-sm); }
+body:not(.is-story) .xr-foot { gap: var(--space-1); }
+body:not(.is-story) .xr-caveat, body:not(.is-story) .xr-prov { font-size: var(--text-xs); line-height: 1.4; }
+body:not(.is-story) .xr-side { min-height: 0; gap: var(--space-2); }
+body:not(.is-story) .xr-zones { flex: none; padding: var(--space-2) var(--space-3); }
+body:not(.is-story) .xr-zone { padding: 5px var(--space-2); }
+body:not(.is-story) .xr-zone-list { margin-top: var(--space-1); }
+body:not(.is-story) .xr-panel { flex: 1; min-height: 0; overflow-y: auto; padding: var(--space-3); }
+body:not(.is-story) .xr-panel-title { font-size: var(--text-lg); }
+
+/* same score / history / method */
+body:not(.is-story) .xr-section { margin: 0; padding: 0; border: 0; display: flex; flex-direction: column; }
+body:not(.is-story) .xr-section > .fp-h2 { font-size: var(--text-lg); margin: 0; }
+body:not(.is-story) .xr-section-sub { margin: var(--space-1) 0 var(--space-3); }
+body:not(.is-story) #xr-compare { flex: 1; min-height: 0; }
+body:not(.is-story) #xr-timeline { flex: none; }
+body:not(.is-story) .xr-method { overflow-y: auto; }
+.xr-method #xr-method { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); gap: var(--space-4) var(--space-6); align-items: start; margin-top: var(--space-3); font-size: var(--text-sm); }
+.xr-method #xr-method ul { margin: 0; padding-left: 1.1em; display: grid; gap: var(--space-2); }
+.xr-method .xr-map-table { font-size: var(--text-xs); }
+@media (max-width: 1100px) { .xr-method #xr-method { grid-template-columns: 1fr; } }
+
+/* tablets and phones: model on top, categories under it; the X-Ray header stays short */
+@media (max-width: 1100px) {
+  body:not(.is-story) .xr-grid { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto; }
+  body:not(.is-story) .xr-side { flex-direction: row; overflow-x: auto; }
+  body:not(.is-story) .xr-panel { display: none; }
+  body:not(.is-story) .xr-zones { flex: 1; }
+  body:not(.is-story) .xr-zone-list { grid-auto-flow: column; grid-auto-columns: minmax(150px, 1fr); }
+  body:not(.is-story) .xr-zone-text small { display: none; }
+}
+@media (max-width: 760px) {
+  body:not(.is-story) .xr-view { padding: var(--space-2) var(--space-3) var(--space-3); }
+  body:not(.is-story) .xr-head h1 { font-size: var(--text-xl); }
+  body:not(.is-story) .xr-head .meta, body:not(.is-story) .xr-showing { display: none; }
+  .xr-tabs { width: 100%; overflow-x: auto; }
+  .xr-tabs button { padding: var(--space-2); font-size: var(--text-sm); }
+  body:not(.is-story) .xr-foot .xr-legend, body:not(.is-story) .xr-finding { display: none; }
+}
+
+/* fitted X-Ray, second pass: one-line facts, a wider category list, and Same score in two columns */
+body:not(.is-story) .xr-head-id { display: flex; flex-wrap: wrap; align-items: baseline; column-gap: var(--space-4); }
+body:not(.is-story) .xr-head-id h1 { flex: 1 0 100%; }
+body:not(.is-story) .xr-head .meta, body:not(.is-story) .xr-showing { margin-top: var(--space-1); }
+body:not(.is-story) .xr-grid { grid-template-columns: minmax(0, 1fr) minmax(340px, 380px); }
+body:not(.is-story) .xr-zone-text small { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+@media (min-width: 761px) {
+  body:not(.is-story) #xr-compare { display: grid; grid-template-columns: minmax(300px, 360px) minmax(0, 1fr); grid-template-rows: auto auto 1fr; gap: 0 var(--space-6); align-content: start; }
+  body:not(.is-story) #xr-compare > .xr-cmp-controls { grid-column: 1; grid-row: 1; display: block; }
+  body:not(.is-story) #xr-compare > .xr-cmp-verdict { grid-column: 1; grid-row: 2; font-size: var(--text-base); margin: var(--space-3) 0; }
+  body:not(.is-story) #xr-compare > .xr-cmp-pair { grid-column: 1; grid-row: 3; grid-template-columns: 1fr 1fr; gap: var(--space-3); align-self: start; }
+  body:not(.is-story) #xr-compare > .xr-cmp-chart { grid-column: 2; grid-row: 1 / 3; margin: 0; }
+  body:not(.is-story) #xr-compare > .xr-cmp-legend { grid-column: 2; grid-row: 3; align-self: start; margin-top: var(--space-2); }
+  body:not(.is-story) #xr-compare > .fp-table { grid-column: 2; grid-row: 4; }
+  body:not(.is-story) .xr-cmp-controls select { width: 100%; }
+  body:not(.is-story) .xr-cmp-note { font-size: var(--text-xs); margin-top: var(--space-1); }
+  body:not(.is-story) .xr-cmp-card { padding: 0; border: 0; }
+  body:not(.is-story) .xr-cmp-card + .xr-cmp-card { border-left: var(--border-width) solid var(--border-color); padding-left: var(--space-3); }
+  body:not(.is-story) .xr-cmp-card .fp-meta { font-size: var(--text-xs); }
+  body:not(.is-story) .xr-cmp-card .fp-score-num { font-size: 32px; }
+  body:not(.is-story) .xr-cmp-card .fp-score-sub { display: block; font-size: var(--text-xs); }
+}
+/* phones: the views keep to the window except Same score and the method notes, which scroll in place */
+@media (max-width: 760px) {
+  body:not(.is-story) #xr-pane-compare { overflow-y: auto; }
+}
+body:not(.is-story) .xr-head { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; }
+body:not(.is-story) #xr-pane-compare > .xr-section-sub, body:not(.is-story) .xr-cmp-here { display: none; }
+@media (max-width: 1100px) { body:not(.is-story) .xr-head { grid-template-columns: minmax(0, 1fr); } }
+.xr-modes { flex: none; }
+@media (max-width: 1100px) {
+  body:not(.is-story) .xr-grid { display: flex; flex-direction: column; gap: var(--space-2); }
+  body:not(.is-story) .xr-stage-card { flex: 1; min-height: 0; }
+  body:not(.is-story) .xr-side { flex: none; overflow-x: auto; overflow-y: hidden; }
+  body:not(.is-story) .xr-zones { padding: var(--space-1) var(--space-2); }
+  body:not(.is-story) .xr-zone-list { margin: 0; }
+  body:not(.is-story) .xr-zones > .card-label { display: none; }
+}
+@media (max-width: 1280px), (max-height: 800px) {
+  body:not(.is-story) .xr-cmp-note, body:not(.is-story) .xr-cmp-card .fp-meta { display: none; }
+  body:not(.is-story) .xr-panel-note { font-size: var(--text-sm); }
+}
+@media (max-width: 760px) {
+  body:not(.is-story) .xr-toolbar-2, body:not(.is-story) .xr-caveat-more, body:not(.is-story) .xr-prov .info-btn { display: none; }
+  body:not(.is-story) .xr-toolbar:first-child { justify-content: flex-start; }
+  body:not(.is-story) .xr-stage { min-height: 150px; }
+  body:not(.is-story) .xr-stage-card { padding: var(--space-1) var(--space-2) var(--space-2); }
+  body:not(.is-story) .xr-stage { margin: var(--space-1) calc(var(--space-2) * -1) 0; }
+  body:not(.is-story) .xr-zone-list { grid-auto-columns: minmax(118px, 1fr); }
+  body:not(.is-story) .xr-zone-text b { font-size: var(--text-sm); }
+  body:not(.is-story) .xr-section-sub { display: none; }
+}
+@media (min-width: 761px) {
+  body:not(.is-story) #xr-compare { grid-template-rows: auto auto 1fr auto auto; }
+  body:not(.is-story) #xr-compare > .xr-cmp-chart { grid-row: 1 / 4; }
+  body:not(.is-story) #xr-compare > .xr-cmp-legend { grid-row: 4; }
+  body:not(.is-story) #xr-compare > .fp-table { grid-row: 5; }
+}
+@media (max-height: 800px) and (min-width: 1101px) {
+  body:not(.is-story) .xr-zone-text small { display: none; } /* the share beside each category still shows it */
+  body:not(.is-story) .xr-zone { padding: 4px var(--space-2); }
+}
+/* the 3D model settles in when it has loaded, instead of popping over the loading note */
+.xr-canvas { animation: xr-in 0.35s ease-out; }
+@keyframes xr-in { from { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .xr-canvas { animation: none; } }

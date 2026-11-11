@@ -98,6 +98,14 @@ body[data-layer="home"] .skip-work, body[data-layer="work"] .skip-home { display
 .place .near-list button { padding: var(--space-2) var(--space-1); font-size: var(--text-base); }
 .place-tl { margin-top: var(--space-1); }
 .place-tl .xr-tl-summary { font-size: var(--text-sm); }
+/* compact card (Compare nearby / View history): name, one score line and the actions; the chosen view
+   takes the details' room and the legend steps aside, so the panel never scrolls */
+.place.is-compact .place-facts, .place.is-compact .place-rank, .place.is-compact .place-date { display: none; }
+.place.is-compact .score-line { margin-top: var(--space-2); }
+.place.is-compact .score-num { font-size: 32px; }
+.place.is-compact .place-actions { margin-top: var(--space-3); }
+.place.is-compact .place-more { margin-top: var(--space-4); }
+body:has(.place.is-compact:not([hidden])) .legend-card { display: none; }
 
 /* legend */
 .legend-card { margin-top: auto; flex: none; width: fit-content; min-width: 220px; max-width: 100%; padding: var(--space-3) var(--space-4) !important; font-size: var(--text-sm); max-height: 50%; overflow-y: auto; }
@@ -207,6 +215,7 @@ h1[tabindex="-1"]:focus:not(:focus-visible), h2[tabindex="-1"]:focus:not(:focus-
 .depth .xr-stage-card { top: 64px; }
 .depth .story-view { min-height: calc(100% - 56px); padding: var(--space-6); }
 @keyframes depth-in { from { opacity: 0; } }
+.depth.is-revealing { animation: none; }
 @keyframes rail-in { from { opacity: 0; transform: translateX(-10px); } }
 @keyframes rail-in-r { from { opacity: 0; transform: translateX(10px); } }
 
@@ -246,6 +255,9 @@ h1[tabindex="-1"]:focus:not(:focus-visible), h2[tabindex="-1"]:focus:not(:focus-
   .legend-card { margin-bottom: var(--space-2); max-height: 40%; }
   body.has-place .legend-card, body.has-lens .legend-card { display: none; }
   .place-facts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .rail .place.is-compact { max-height: 82%; } /* the view gets the room; the map stays visible above */
+  .place.is-compact .place-actions .btn { height: 34px; }
+  .place.is-compact .place-more { margin-top: var(--space-3); }
   .leaflet-bottom.leaflet-right { bottom: 0; }
   body.has-place .leaflet-control-zoom, body.has-lens .leaflet-control-zoom { display: none; }
   body.has-lens .leaflet-bottom.leaflet-right { right: 0; }

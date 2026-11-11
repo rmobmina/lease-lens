@@ -6,7 +6,7 @@
 
 | Layer | Route | What it is |
 |---|---|---|
-| A. Homepage | `#/` | Headline, one supporting line and two actions, beside the downtown drawing on a faint blueprint grid. No eyebrow, captions or disclaimer: the drawing's ⓘ and About carry those, and the footer keeps only the licence attribution. The drawing has no street labels; line weight follows building height, and the far side fades for depth. |
+| A. Homepage | `#/` | Headline, one supporting line and two actions, beside the downtown drawing (no text labels) on a blueprint grid. No eyebrow, captions, disclaimer or footer: the licence attribution and the disclaimer live on About. Every ordinary building has the same outline: one device pixel wide, in a solid colour (the line colour flattened onto the ground), so edges where buildings touch never paint darker. Only evaluated rental buildings are drawn heavier. |
 | B. Atlas | everything else | One map of Toronto, explored by zooming in. Deeper levels open over it and close back onto it. |
 
 ## The atlas: semantic zoom
@@ -18,11 +18,11 @@ Detail grows with scale and intent: **Toronto → neighbourhood → building →
 | City | zoom < 12 | Ward choropleth (25-ward model, real City boundaries). No building dots. | Title, legend |
 | Neighbourhood | 12 – 14 | Groups of nearby buildings on a screen-space grid (88 px cells at the whole zoom level below) that nests between zoom levels, plus a pass that merges any discs that would overlap: about 100 groups citywide at zoom 12 (was ~330), none overlapping. Groups of 1–2 show as a plain dot. Number = buildings; red arc = share in the lowest 10%. Ward fill fades to a wash. | Ward card when a ward is selected, “Buildings in view” list |
 | Building | ≥ 14 | One canvas mark per building (citywide band colour and size). The selection gets a ring, one label and its real 3D Massing footprint. Other marks dim. | Place panel: address, score, date, characteristics, **Inspect building · Compare nearby · View history** |
-| Inspection | `#/xray/<RSN>` | The Building X-Ray opens over the map (crossfade), with **Back to map** and a breadcrumb | — |
+| Inspection | `#/xray/<RSN>` | The Building X-Ray opens out of the building's point on the map (a circular reveal while the map eases in; the 3D model is built only once the motion ends) and closes back into it. **Back to map** and a breadcrumb. The page never scrolls: four tabs (Inspection, Same score, History, How it works) each fit the window. | — |
 
 **The choropleth.** Each ward's value is the share of its evaluated buildings (latest evaluation, chosen scoring system) whose score is in the citywide lowest 10%. That is the project's existing definition (`model.js`, ties included). Classes are relative to the citywide share (below 0.5×, 0.5–0.85×, 0.85–1.15×, 1.15–1.5×, 1.5× or more): blue below the city, grey about the same, red above. The legend prints the actual percentages. Wards with fewer than 30 evaluated buildings get a dashed outline and are left out of the ward-comparison headline.
 
-**No flicker.** Level changes use separate zoom-in and zoom-out thresholds (in at 12 and 14, out only below 11.5 and 13.5; `atlas/logic.js levelFor`). Layers cross-fade by pane opacity, and the ward fill fades continuously with zoom.
+**No flicker.** Level changes use separate zoom-in and zoom-out thresholds (in at 12 and 14, out only below 11.5 and 13.5; `atlas/logic.js levelFor`). Layers cross-fade by pane opacity. The ward fill is solid at the city view (zoom 11 and out) and fades slowly and smoothly as you zoom in, to a faint wash by zoom 15 (`atlas/logic.js wardFillOpacity`, `WARD_FADE`).
 
 **Why Leaflet, not a WebGL map.** The data are about 3,600 points and 25 polygons. Leaflet's canvas renderer draws the buildings in a few milliseconds. After viewport culling, the groups are a few dozen keyboard-focusable DOM markers. Tiles, attribution and existing interactions stay as they were. MapLibre GL would add a large dependency and a rewrite without changing what the reader can see. Revisit it only if the map needs every footprint citywide (vector tiles).
 
@@ -108,7 +108,6 @@ A border has to mean grouping, focus or interaction. Inner separators, note boxe
 
 - Footprints and heights come from **3D Massing (2025)**.
 - Streets (expressways, arterials, collectors, locals) and the Lake Ontario shoreline come from the **Toronto Centreline (TCL)**.
-- Street labels sit on their own centreline.
 - Highlighted buildings are RentSafeTO buildings whose footprint was matched reliably by `build_massing.py`. That means the "massing" provenance only; approximate matches are left out.
 
 **Simplified:**

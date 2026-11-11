@@ -71,6 +71,9 @@ function renderBuildingCard(box, ctx, M, opts) {
     ['Units', r.units ?? '–'],
     ['Rated poorly', `${poor} of ${rated.length} items`],
   ];
+  // Summary: the full card. Nearby / history: the card condenses to name, score and the actions, and the
+  // chosen view takes the room the details used, so nothing in the panel has to scroll.
+  box.classList.toggle('is-compact', tab !== 'summary');
   box.innerHTML = `${head}
     <div class="place-score">
       <p class="score-line"><span class="score-num">${r.score}</span><span class="score-of">/100</span>
@@ -96,7 +99,7 @@ function renderBuildingCard(box, ctx, M, opts) {
 
 function renderNearby(el, r, ctx, M) {
   const { pm } = ctx;
-  const near = nearby(r, pm.latest, 5, 1500);
+  const near = nearby(r, pm.latest, 4, 1500);
   const scores = near.map((x) => x.r.score);
   const typical = scores.length ? d3.median(scores) : null;
   el.innerHTML = `<h3 class="place-h3">Nearest evaluated buildings</h3>
@@ -116,12 +119,15 @@ function renderHistory(el, r, ctx, M, opts) {
     points: timelinePoints(all), shown: r, era: pm.era, P: pm.P, systemChange: M.byPeriod.cur.dates[0],
     onPick: (uid) => opts.onInspect(r.rsn, uid),
     where: 'inMap',
+    height: matchMedia('(max-width: 760px)').matches ? 150 : 170,
+    brief: true,
   });
 }
 
 // ---- ward ------------------------------------------------------------------------------------------------
 function renderWardCard(box, ctx, M, opts) {
   const { pm, ward, ch } = ctx;
+  box.classList.remove('is-compact');
   const row = ch?.byWard.get(ward);
   box.hidden = false;
   const name = M.wardName.get(ward) ?? `Ward ${+ward}`;

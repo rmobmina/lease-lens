@@ -90,6 +90,17 @@ export async function mountHeroAtlas(host, { reducedMotion = false, onPick, onRe
   host.append(label);
 
   let C = colors();
+  // One outline for every ordinary building: the line colour flattened onto the ground (so edges that
+  // overlap where buildings touch never paint darker) and exactly one device pixel wide (so no edge
+  // falls between pixels and looks thinner than its neighbour). Only evaluated buildings differ.
+  const solid = (fg, bg) => {
+    const c = document.createElement('canvas'); c.width = c.height = 1;
+    const x = c.getContext('2d', { willReadFrequently: true });
+    x.fillStyle = bg; x.fillRect(0, 0, 1, 1); x.fillStyle = fg; x.fillRect(0, 0, 1, 1);
+    const [r, g2, b2] = x.getImageData(0, 0, 1, 1).data;
+    return `rgb(${r}, ${g2}, ${b2})`;
+  };
+  let outline = solid(C.line, C.bg);
   let W = 0, H = 0, dpr = 1;
   let view = { ...VIEW };
   const target = { ...VIEW };
@@ -137,13 +148,17 @@ export async function mountHeroAtlas(host, { reducedMotion = false, onPick, onRe
     const T = transform();
     sortOrder();
     g.setTransform(dpr, 0, 0, dpr, 0, 0);
-    g.clearRect(0, 0, W, H); // the page's blueprint ground (tokens.css --hero-ground) shows through
+    g.clearRect(0, 0, W, H); // the page's blueprint grid shows through the open ground
     const pt = (x, y, z = 0) => [T.ox + P.sx(x, y) * T.s, T.oy + P.sy(x, y, z) * T.s];
 
     // 1. the ground: streets by class, then the shoreline
     const roadsIn = ease(t / 700);
     g.lineCap = 'round'; g.lineJoin = 'round';
-    for (const [cls, width, alpha] of [[0, 0.5, 0.3], [1, 0.7, 0.45], [2, 1, 0.65], [3, 1.3, 0.8]]) { // minor streets recede
+    // One line scale for the whole drawing, built on the building outline (one device pixel): buildings
+    // carry the drawing, streets sit under them in lighter ink, and the shoreline is a quiet hairline
+    // that tells land from water without drawing a border. Widths step gently, never in jumps.
+    const hair = 1 / dpr;
+    for (const [cls, width, alpha] of [[0, 1, 0.35], [1, 1, 0.5], [2, 1.4, 0.6], [3, 1.8, 0.7]]) {
       g.beginPath();
       for (const r of D.roads) {
         if (r.c !== cls) continue;
@@ -154,7 +169,7 @@ export async function mountHeroAtlas(host, { reducedMotion = false, onPick, onRe
       }
       g.globalAlpha = alpha * roadsIn;
       g.strokeStyle = C.road;
-      g.lineWidth = width;
+      g.lineWidth = width * hair;
       g.stroke();
     }
     g.beginPath();
@@ -163,16 +178,14 @@ export async function mountHeroAtlas(host, { reducedMotion = false, onPick, onRe
       g.moveTo(x, y);
       for (let k = 2; k < p.length; k += 2) { [x, y] = pt(p[k], p[k + 1]); g.lineTo(x, y); }
     }
-    g.globalAlpha = roadsIn;
+    g.globalAlpha = 0.8 * roadsIn;
     g.strokeStyle = C.shore;
-    g.lineWidth = 1.4;
+    g.lineWidth = 1.4 * hair;
     g.stroke();
     g.globalAlpha = 1;
 
     // 2. buildings rise, nearest to the origin first; hidden lines removed by painting far to near
     const lx = -P.fx, ly = -P.fy; // toward the camera
-    // Line hierarchy: towers carry the drawing, low-rise fabric stays light, and the far side of the
-    // city fades a little (atmospheric depth). Fills stay opaque so hidden lines stay hidden.
     for (let n = 0; n < D.nb; n++) {
       const i = order[n];
       const dist = Math.hypot(D.cx[i], D.cy[i]);
@@ -194,13 +207,9 @@ export async function mountHeroAtlas(host, { reducedMotion = false, onPick, onRe
       roofPath(P, T, i, z1);
       g.fillStyle = lit ? C.rentalFillHover : rental ? C.rentalFill : C.fill;
       g.fill();
-      const tall = Math.min(1, Math.max(0, (D.top[i] - 12) / 110)); // 0 = low-rise, 1 = tower
-      const near = 0.62 + 0.38 * (n / D.nb);                          // order runs far → near
-      g.globalAlpha = rental ? 1 : (0.32 + 0.68 * tall) * near;
-      g.strokeStyle = rental ? C.rental : C.line;
-      g.lineWidth = rental ? (lit ? 1.4 : 0.9) : 0.4 + 0.45 * tall;
+      g.strokeStyle = rental ? C.rental : outline;
+      g.lineWidth = rental ? (lit ? 1.4 : 0.9) : hair;
       g.stroke();
-      g.globalAlpha = 1;
     }
 
     // No text labels: the drawing is read as geometry. (Street names stay in the data file, unused.)
@@ -284,7 +293,7 @@ export async function mountHeroAtlas(host, { reducedMotion = false, onPick, onRe
 
   return {
     data: D,
-    restyle() { C = colors(); kick(); },
+    restyle() { C = colors(); outline = solid(C.line, C.bg); kick(); },
     destroy() {
       alive = false;
       cancelAnimationFrame(raf);

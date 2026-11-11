@@ -118,6 +118,8 @@ test('levels: zoom thresholds use hysteresis, so jitter at a boundary never flip
   // ward fill fades monotonically with zoom
   const f = [10, 11.5, 12, 12.5, 13, 13.5, 16].map(A.wardFillOpacity);
   for (let i = 1; i < f.length; i++) assert.ok(f[i] <= f[i - 1]);
+  assert.equal(A.wardFillOpacity(11), 1); // solid at the city view
+  assert.ok(A.wardFillOpacity(16) < 0.1); // a faint wash among buildings
 });
 
 test('clusters: every mapped building is counted exactly once, with its band', () => {

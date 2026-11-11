@@ -68,7 +68,7 @@ function card(label, r, p, openRsn) {
     <p class="fp-meta">Ward ${+r.ward} · ${esc(r.wardName)} · evaluated ${formatDate(r.date)}</p>
     <p class="fp-score"><span class="fp-score-num">${r.score}</span><span class="fp-score-of">/100</span>
       <span class="fp-score-sub">${p.poor ? `<b>${p.poor}</b> of ${p.applicable} items rated poorly` : `none of ${p.applicable} items rated poorly`}</span></p>
-    ${openRsn ? `<button type="button" class="btn btn-sm" data-open="${openRsn}">Open its X-Ray</button>` : '<p class="xr-cmp-here">Shown in the X-Ray above</p>'}
+    ${openRsn ? `<button type="button" class="btn btn-sm" data-open="${openRsn}">Open its X-Ray</button>` : '<p class="xr-cmp-here">The building in this X-Ray</p>'}
   </article>`;
 }
 
