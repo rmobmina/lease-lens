@@ -12,7 +12,16 @@ body[data-layer="work"] { overflow: hidden; }
 .site-bar { flex: none; height: var(--header-h); display: flex; align-items: center; gap: var(--space-5); padding: 0 var(--space-5);
   background: var(--surface); border-bottom: var(--border); position: relative; z-index: 1200; view-transition-name: site-bar; /* stays put while pages change */ }
 .wordmark { flex: none; font-family: var(--font-display); font-size: var(--text-xl); font-weight: var(--weight-bold); letter-spacing: var(--tracking-heading); color: var(--ink); text-decoration: none; line-height: 1; }
-.wordmark span { color: var(--accent); }
+.wordmark { display: inline-flex; align-items: center; }
+.wordmark .logo { display: block; height: 34px; width: auto; }
+/* the lockup has dark ink: the light-ink version shows whenever the dark theme is on */
+.logo-dark { display: none !important; }
+:root[data-theme="dark"] .logo-light { display: none !important; }
+:root[data-theme="dark"] .logo-dark { display: block !important; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .logo-light { display: none !important; }
+  :root:not([data-theme="light"]) .logo-dark { display: block !important; }
+}
 body[data-layer="home"] .site-bar .search { display: none; }
 body[data-layer="home"] .skip-work, body[data-layer="work"] .skip-home { display: none; }
 .search { position: relative; flex: 0 1 420px; min-width: 0; }
@@ -228,7 +237,7 @@ h1[tabindex="-1"]:focus:not(:focus-visible), h2[tabindex="-1"]:focus:not(:focus-
 /* ---- small screens: the rails become a top card and bottom sheets ----------------------------------------------- */
 @media (max-width: 760px) {
   .site-bar { gap: var(--space-2); padding: 0 var(--space-3) 0 var(--space-4); }
-  .wordmark { font-size: var(--text-lg); }
+  .wordmark .logo { height: 28px; }
   .search { flex: 1 1 auto; }
   .menu-button { display: block; flex: none; }
   .theme-toggle .tt-label { display: none; }

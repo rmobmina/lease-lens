@@ -5,7 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>LeaseLens</title>
   <meta name="description" content="Look beyond RentSafeTO ratings to explore building conditions, inspection history, and patterns across Toronto. An independent student project using City of Toronto Open Data." />
-  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%2329458F'/%3E%3Cpath d='M9 24V12l7-4 7 4v12' fill='none' stroke='white' stroke-width='2'/%3E%3Cpath d='M13 24v-6h6v6' fill='none' stroke='white' stroke-width='2'/%3E%3C/svg%3E" />
+  <link rel="icon" type="image/png" sizes="32x32" href="assets/brand/icon-32.png" />
+  <link rel="icon" type="image/png" sizes="192x192" href="assets/brand/icon-192.png" />
+  <link rel="apple-touch-icon" href="assets/brand/apple-touch-icon.png" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" />
@@ -34,7 +36,10 @@
 
   <!-- One header on every route: the same wordmark, navigation, theme toggle and height. -->
   <header class="site-bar" id="site-bar">
-    <a class="wordmark" href="#/" aria-label="LeaseLens home">Lease<span>Lens</span></a>
+    <a class="wordmark" href="#/" aria-label="LeaseLens home">
+      <img class="logo logo-light" src="assets/brand/lockup.png" alt="" width="140" height="40" />
+      <img class="logo logo-dark" src="assets/brand/lockup-dark.png" alt="" width="140" height="40" />
+    </a>
     <div class="search" role="search">
       <label class="visually-hidden" for="search">Search an address</label>
       <input id="search" type="text" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="search-list"
