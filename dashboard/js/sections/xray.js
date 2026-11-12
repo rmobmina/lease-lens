@@ -6,8 +6,8 @@
 // The scene is ../xray/scene.js (Three.js, lazy-loaded); data work is ../xray-model.js.
 
 import { itemLabel, itemProblemRates } from '../model.js';
-import { XRAY_ZONES, STATUS, CONCENTRATED, zoneByKey, zoneProfile, buildingEvaluations, timelinePoints, ratingClass } from '../xray-model.js';
-import { pct, fmt, esc, titleCase, formatDate, cssVar } from '../ui.js';
+import { XRAY_ZONES, STATUS, CONCENTRATED, zoneByKey, zoneProfile, buildingEvaluations, timelinePoints, trendSummary, ratingClass } from '../xray-model.js';
+import { pct, fmt, esc, titleCase, formatDate, cssVar, signed } from '../ui.js';
 import { renderTimeline } from './xray-timeline.js';
 import { renderCompare } from './xray-compare.js';
 
@@ -56,19 +56,23 @@ export function renderXray(ctx, M, xs) {
   const empty = $('xr-empty'), main = $('xr-main');
   if (!all.length) {
     main.hidden = true; empty.hidden = false;
+    document.body.classList.remove('xr-has-building');
     $('xr-empty-note').textContent = rsn ? 'This building has no usable evaluation in either scoring system.' : '';
     renderSuggestions(ctx, M);
     disposeXray();
     return;
   }
   empty.hidden = true; main.hidden = false;
+  document.body.classList.add('xr-has-building');
   if (location.hash.startsWith("#/xray") && location.hash !== `#/xray/${rsn}`) history.replaceState(null, '', `#/xray/${rsn}`);
 
-  // A new building resets the inspection being shown and the comparison choice. Older states (X-Ray /
-  // Exploded views) open as the cutaway.
-  if (xs.rsn !== rsn) Object.assign(xs, { rsn, evalUid: null, matchRsn: null, tab: 'model' });
+  // A new building resets the inspection being shown, the comparison and the history selection. Older
+  // states (X-Ray / Exploded views) open as the cutaway; the retired "How it works" tab opens the methodology.
+  if (xs.rsn !== rsn) Object.assign(xs, { rsn, evalUid: null, matchRsn: null, tab: 'model', items: false, cmpZone: null, tlPick: null });
+  if (xs.tab === 'method') { xs.tab = 'model'; requestAnimationFrame(openMethod); }
   if (!MODES.includes(xs.mode)) xs.mode = xs.mode ? 'cutaway' : 'exterior';
   if (xs.mode === 'focus' && !xs.zone) xs.mode = 'cutaway';
+  if (!xs.zone) xs.items = false;
   const latestInPeriod = pm.latestByRsn.get(rsn);
   const rec = all.find((r) => r.uid === xs.evalUid) ?? latestInPeriod ?? all.at(-1);
   const isDefault = rec === (latestInPeriod ?? all.at(-1));
@@ -96,27 +100,18 @@ export function renderXray(ctx, M, xs) {
   showTab(xs.tab);
   if (xs.tab === 'model') renderStage(profile, xs, entry);
   else disposeXray();
-  if (xs.tab === 'history') {
-    // Drawn once at a generous height, then once more at exactly the height the tab has left.
-    const pane = $('xr-history');
-    const draw = (height) => renderTimeline($('xr-timeline'), {
-      points, shown: rec, era: pm.era, P: pm.P, systemChange: M.byPeriod.cur.dates[0],
-      onPick: (uid) => { xs.evalUid = uid; revealStage(); }, height,
-    });
-    draw(460);
-    const over = pane.scrollHeight - pane.clientHeight;
-    if (over > 0) draw(Math.max(180, 460 - over - 4));
-  }
+  if (xs.tab === 'history') renderHistory(points, rec, pm, M, xs);
   if (xs.tab === 'compare') renderCompare($('xr-compare'), {
-    rec: latestInPeriod, pm, ctx, M, matchRsn: xs.matchRsn,
+    rec: latestInPeriod, pm, ctx, M, matchRsn: xs.matchRsn, zone: xs.cmpZone,
     onChoose: (r) => { xs.matchRsn = r; rerender(); },
+    onZone: (z) => { xs.cmpZone = z; },
     onOpen: (r) => ctx.select(r, { open: true }),
   });
-  if (xs.tab === 'method') renderMethod();
 }
 
-const TABS = ['model', 'compare', 'history', 'method'];
-const PANE = { model: 'xr-pane-model', compare: 'xr-pane-compare', history: 'xr-history', method: 'xr-pane-method' };
+const TABS = ['model', 'compare', 'history'];
+const PANE = { model: 'xr-pane-model', compare: 'xr-pane-compare', history: 'xr-history' };
+let shownTab = null, paneAnim = null;
 function showTab(tab) {
   for (const t of TABS) {
     const b = document.querySelector(`[data-xr-tab="${t}"]`);
@@ -124,6 +119,12 @@ function showTab(tab) {
     b.tabIndex = t === tab ? 0 : -1;
     $(PANE[t]).hidden = t !== tab;
   }
+  // Switching views crossfades the new one in place: the panes share one fixed area, so nothing jumps.
+  if (shownTab && shownTab !== tab && !reducedMotion()) {
+    paneAnim?.cancel();
+    paneAnim = $(PANE[tab]).animate([{ opacity: 0 }, { opacity: 1 }], { duration: 180, easing: 'cubic-bezier(0.2, 0.7, 0.2, 1)' });
+  }
+  shownTab = tab;
 }
 function setTab(tab, { focus = false } = {}) {
   if (!lastCtx) return;
@@ -134,39 +135,72 @@ function setTab(tab, { focus = false } = {}) {
 
 function rerender() { if (lastCtx) renderXray(lastCtx.ctx, lastCtx.M, lastCtx.xs); }
 
-// A point picked in the history opens that inspection on the model.
-function revealStage() { setTab('model'); }
-
-// ---- header -------------------------------------------------------------------------------
+// ---- header: address, the facts that matter, the score and when it was given -------------------------
 function renderHead(rec, pm, isDefault, latestInPeriod, all) {
   $('xr-title').textContent = titleCase(rec.address);
   $('xr-meta').innerHTML = [
-    `Ward ${+rec.ward} · ${esc(rec.wardName)}`,
+    `<span title="Ward ${+rec.ward}">${esc(rec.wardName)}</span>`,
     rec.yearBuilt ? `Built ${rec.yearBuilt}` : 'Year built not recorded',
-    `${rec.storeys ?? '–'} storeys · ${rec.units ?? '–'} units`,
-  ].map((s) => `<span>${s}</span>`).join('');
-  const system = rec.era === 'cur' ? '2023 – now scoring system' : '2017 – 2023 scoring system';
+    rec.storeys ? `${rec.storeys} storeys` : null,
+    rec.units ? `${rec.units} units` : null,
+  ].filter(Boolean).join('<span class="bx-dot" aria-hidden="true"> · </span>');
+  $('xr-score').innerHTML = `<p class="bx-score-line"><span class="visually-hidden">RentSafeTO score </span><span class="bx-score-num">${rec.score}</span><span class="bx-score-of">/ 100</span></p>
+    <p class="bx-score-date">Inspected ${formatDate(rec.date)}</p>`;
+  // Only what needs saying: an earlier inspection is open, or the shown one is from the other scoring system.
   const notes = [];
-  if (!isDefault) notes.push(`<button type="button" class="btn btn-quiet btn-sm" id="xr-back-latest">Back to the ${latestInPeriod ? 'latest' : 'most recent'} inspection</button>`);
-  else if (!latestInPeriod) notes.push(`<span class="muted">No evaluation in the ${esc(pm.P.long)}, so the most recent one from the other system is shown.</span>`);
-  if (rec.era !== pm.era && latestInPeriod) notes.push(`<span class="muted">This inspection uses a different scoring system from the one chosen in Layers.</span>`);
-  $('xr-showing').innerHTML = `<span class="xr-showing-main">Showing the inspection of <b>${formatDate(rec.date)}</b> · score <b>${rec.score}</b>/100 · ${system}${all.length > 1 ? ` · ${rec === all.at(-1) ? 'most recent' : `${all.indexOf(rec) + 1} of ${all.length} inspections`}` : ''}</span>${notes.join(' ')}`;
+  if (!isDefault) notes.push(`<span>Earlier inspection (${all.indexOf(rec) + 1} of ${all.length}).</span> <button type="button" class="link-btn" id="xr-back-latest">Back to the ${latestInPeriod ? 'latest' : 'most recent'} inspection</button>`);
+  else if (!latestInPeriod) notes.push(`<span>No evaluation in the ${esc(pm.P.long)}; showing the most recent from the other system.</span>`);
+  if (rec.era !== pm.era && latestInPeriod) notes.push(`<span>This inspection uses the ${rec.era === 'cur' ? '2023 – now' : '2017 – 2023'} scoring system.</span>`);
+  const note = $('xr-showing');
+  note.innerHTML = notes.join(' ');
+  note.hidden = !notes.length;
   $('xr-back-latest')?.addEventListener('click', () => { lastCtx.xs.evalUid = null; rerender(); });
 }
 
-// ---- category list (the keyboard and screen-reader way to choose a zone) ----------------------
+// ---- inspection explorer: the overall finding, then one row per category -------------------------------
+// The list is the keyboard and screen-reader way to choose a category. The chosen row opens in place to show
+// what inspectors found; its item-by-item ratings are one step further, on demand.
+const countWords = (z) => (z.status === 'none' ? (z.items.length ? 'Not evaluated (all N/A)' : 'Not in this scoring system') : `${z.poor} of ${z.applicable} rated poorly`);
 const statusWords = (z) => (z.status === 'none' ? (z.items.length ? 'all items N/A' : 'no items in this scoring system') : z.poor ? `${z.poor} of ${z.applicable} rated poorly` : `None of ${z.applicable} rated poorly`);
+
+// One short finding for a category: what was rated poorly, by name. Never repeats the share.
+function zoneFinding(z, era) {
+  if (z.status === 'none') return z.items.length ? 'Every item was marked N/A or left blank in this inspection. Missing data is not a pass.'
+    : `The ${era === 'pre' ? '2017 – 2023' : '2023 – now'} scoring system has no items in this category. Missing data is not a pass.`;
+  const poor = z.items.filter((i) => i.poor).sort((a, b) => a.rating - b.rating).map((i) => esc(itemLabel(i.col)));
+  if (!poor.length) return `${esc(STATUS.ok.label)}: every applicable item was rated above the poor range.`;
+  const more = poor.length > 2 ? ` and ${poor.length - 2} more` : '';
+  return `${esc(STATUS[z.status].label)}. Rated poorly: ${poor.slice(0, 2).join(', ')}${more}.`;
+}
+
+function overallFinding(profile) {
+  const worst = [...profile.zones].filter((d) => d.poor).sort((a, b) => b.poor - a.poor || (b.share ?? 0) - (a.share ?? 0))[0];
+  return {
+    head: profile.poor ? `${profile.poor} of ${profile.applicable} items rated poorly` : `None of ${profile.applicable} items rated poorly`,
+    sub: worst ? `${worst.poor === profile.poor ? 'All' : 'Most'} in ${esc(zoneByKey.get(worst.key).label.toLowerCase())}` : 'Every applicable item rated above the poor range',
+  };
+}
 
 function renderZoneList(profile, xs) {
   const box = $('xr-zones');
   const byKey = new Map(profile.zones.map((z) => [z.key, z]));
-  box.innerHTML = `<p class="card-label" id="xr-zones-label">Inspection categories</p>
+  const f = overallFinding(profile);
+  box.innerHTML = `<div class="bx-side-head">
+      <h2 class="bx-eyebrow" id="xr-zones-label">Inspection findings <button type="button" class="info-btn" data-info="xray-ratings" aria-label="How poor ratings are counted">i</button></h2>
+      <p class="bx-side-finding">${f.head}</p>
+      <p class="bx-side-sub">${f.sub}</p>
+    </div>
     <ul class="xr-zone-list" aria-labelledby="xr-zones-label">${LIST_ORDER.map((k) => {
-      const z = byKey.get(k), meta = zoneByKey.get(k);
-      return `<li><button type="button" class="xr-zone" data-zone="${k}" data-status="${z.status}" aria-pressed="${xs.zone === k}">
-        <span class="xr-swatch s-${z.status}" aria-hidden="true"></span>
-        <span class="xr-zone-text"><b>${esc(meta.label)}</b><small>${esc(STATUS[z.status].label)} · ${statusWords(z)}</small></span>
-        <span class="xr-zone-pct">${z.share == null ? '—' : pct(z.share)}</span></button></li>`;
+      const z = byKey.get(k), meta = zoneByKey.get(k), sel = xs.zone === k;
+      return `<li class="xr-zone-row${sel ? ' is-selected' : ''}">
+        <button type="button" class="xr-zone" data-zone="${k}" data-status="${z.status}" aria-expanded="${sel}" aria-controls="xr-zone-more-${k}">
+          <span class="xr-swatch s-${z.status}" aria-hidden="true"></span>
+          <span class="xr-zone-text"><b>${esc(meta.label)}</b><small><span class="visually-hidden">${esc(STATUS[z.status].label)}: </span>${countWords(z)}</small></span>
+          <span class="xr-zone-pct">${z.share == null ? '—' : pct(z.share)}</span></button>
+        <div class="xr-zone-more" id="xr-zone-more-${k}"${sel ? '' : ' hidden'}>
+          ${sel ? `<p>${zoneFinding(z, profile.rec.era)}</p>
+          ${z.items.length ? `<button type="button" class="link-btn xr-items-open">View all ${z.items.length} item${z.items.length === 1 ? '' : 's'} <span aria-hidden="true">→</span></button>` : ''}` : ''}
+        </div></li>`;
     }).join('')}</ul>`;
   const buttons = [...box.querySelectorAll('.xr-zone')];
   buttons.forEach((b, i) => {
@@ -182,6 +216,20 @@ function renderZoneList(profile, xs) {
       buttons[j].focus();
     });
   });
+  box.querySelector('.xr-items-open')?.addEventListener('click', () => showItems(true));
+}
+
+// The item list replaces the category list in the side panel (and back), moving focus with it.
+function showItems(on) {
+  if (!lastCtx) return;
+  const xs = lastCtx.xs;
+  xs.items = on && !!xs.zone;
+  const zone = xs.zone;
+  rerender();
+  requestAnimationFrame(() => {
+    if (xs.items) $('xr-panel').querySelector('.xr-panel-title')?.focus({ preventScroll: true });
+    else document.querySelector(`.xr-zone[data-zone="${zone}"]`)?.focus({ preventScroll: true });
+  });
 }
 
 // One entry point for the list, the labels and the model: choosing a category opens its Focus view;
@@ -189,13 +237,17 @@ function renderZoneList(profile, xs) {
 function selectZone(zone) {
   if (!lastCtx) return;
   const xs = lastCtx.xs;
+  const refocus = document.activeElement?.closest?.('.xr-zone') ? document.activeElement.dataset.zone : null;
   xs.zone = zone;
+  xs.items = false;
   if (zone) xs.mode = 'focus';
   else if (xs.mode === 'focus') xs.mode = 'cutaway';
   rerender();
+  // the list is re-drawn: keep keyboard focus on the row that was used
+  if (refocus) document.querySelector(`.xr-zone[data-zone="${refocus}"]`)?.focus({ preventScroll: true });
 }
 
-// The one-line key finding under the toolbar: the category in focus, or the inspection as a whole.
+// The finding announced to screen readers when the category in focus changes.
 function renderFinding(profile, xs) {
   const z = xs.zone && profile.zones.find((d) => d.key === xs.zone);
   const label = (k) => zoneByKey.get(k).label;
@@ -204,9 +256,8 @@ function renderFinding(profile, xs) {
     text = z.status === 'none' ? `<b>${esc(label(z.key))}:</b> not evaluated in this inspection.`
       : `<b>${esc(label(z.key))}:</b> ${z.poor ? `${z.poor} of ${z.applicable} applicable items rated poorly (${pct(z.share)})` : `none of ${z.applicable} applicable items rated poorly`}.`;
   } else {
-    const worst = [...profile.zones].filter((d) => d.poor).sort((a, b) => b.poor - a.poor || (b.share ?? 0) - (a.share ?? 0))[0];
-    text = !profile.poor ? `None of ${profile.applicable} rated items scored poorly in this inspection.`
-      : `${profile.poor} of ${profile.applicable} rated items scored poorly${worst ? `, ${worst.poor === profile.poor ? 'all' : 'most'} in <b>${esc(label(worst.key).toLowerCase())}</b> (${worst.poor} of ${worst.applicable})` : ''}.`;
+    const f = overallFinding(profile);
+    text = `${f.head}. ${f.sub}.`;
   }
   $('xr-finding').innerHTML = text;
 }
@@ -234,14 +285,10 @@ function pips(rating, S) {
 function renderPanel(profile, xs, M, prevSame) {
   const box = $('xr-panel');
   const S = profile.scale, rec = profile.rec;
-  const scaleText = `Items are rated ${S.min}–${S.max}, where ${S.max} is the top mark. LeaseLens counts ${S.text.replace(' on the', ' (on the').replace(' scale', ' scale)')} as <b>rated poorly</b>, the same rule as the Common problems view. N/A means the item doesn't apply and is never counted.`;
+  $('xr-side').dataset.view = xs.items && xs.zone ? 'items' : 'list';
   const z = xs.zone && profile.zones.find((d) => d.key === xs.zone);
   if (!z) {
-    box.innerHTML = `<p class="card-label">Inspection of ${formatDate(rec.date)}</p>
-      <h2 class="xr-panel-title">${profile.poor ? `${profile.poor} of ${profile.applicable} items rated poorly` : `None of ${profile.applicable} items rated poorly`}</h2>
-      <p class="card-text">Choose a category in the list, a label, or a room on the model to see every item inspectors rated in it. The model opens that category's Focus view.</p>
-      <p class="xr-scale">${scaleText}</p>
-      ${profile.unmapped.length ? `<p class="xr-warn">${profile.unmapped.length} item(s) in this file have no category yet: ${profile.unmapped.map(esc).join(', ')}.</p>` : ''}`;
+    box.innerHTML = profile.unmapped.length ? `<p class="xr-warn">${profile.unmapped.length} item(s) in this file have no category yet: ${profile.unmapped.map(esc).join(', ')}.</p>` : '';
     return;
   }
   const meta = zoneByKey.get(z.key);
@@ -264,21 +311,18 @@ function renderPanel(profile, xs, M, prevSame) {
         ${city ? `<dt>Across Toronto</dt><dd>${pct(city.share, 1)} of ${fmt.n(city.rated)} buildings had this item rated poorly in their latest ${rec.era === 'cur' ? '2023 – now' : '2017 – 2023'} evaluation.</dd>` : ''}
       </dl></details></li>`;
   };
-  box.innerHTML = `<p class="card-label">Inspection category</p>
-    <h2 class="xr-panel-title"><span class="xr-swatch s-${z.status}" aria-hidden="true"></span>${esc(meta.label)}</h2>
-    <p class="xr-panel-note">${esc(meta.note)} <span class="muted">On the model: ${esc(PLACE[z.key])}.</span></p>
-    <dl class="xr-stats">
-      <div><dt>Inspected</dt><dd>${formatDate(rec.date)}</dd></div>
-      <div><dt>Applicable items</dt><dd>${z.applicable}</dd></div>
-      <div><dt>Rated poorly</dt><dd>${z.poor}</dd></div>
-      <div><dt>Share rated poorly</dt><dd>${z.share == null ? '—' : pct(z.share)}</dd></div>
-    </dl>
-    <p class="xr-status-line s-${z.status}"><b>${esc(STATUS[z.status].label)}.</b> ${esc(STATUS[z.status].long)}.</p>
-    ${z.status === 'none' ? `<p class="card-text">${z.items.length ? 'Every item in this category was marked N/A or left blank in this inspection.' : `The ${rec.era === 'pre' ? '2017 – 2023' : '2023 – now'} scoring system has no items in this category, so there is nothing to show. Missing data is not a pass.`}</p>` : ''}
+  box.innerHTML = `<div class="bx-panel-head">
+      <button type="button" class="link-btn bx-back-link" id="xr-items-back"><span aria-hidden="true">←</span> All categories</button>
+      <h2 class="xr-panel-title" tabindex="-1"><span class="xr-swatch s-${z.status}" aria-hidden="true"></span>${esc(meta.label)}</h2>
+      <p class="bx-side-sub">${countWords(z)} · inspected ${formatDate(rec.date)}</p>
+      <p class="xr-panel-note">${esc(meta.note)} <span class="muted">On the model: ${esc(PLACE[z.key])}.</span></p>
+    </div>
+    ${z.status === 'none' ? `<p class="card-text">${zoneFinding(z, rec.era)}</p>` : ''}
     ${rated.length ? `<ul class="xr-items" aria-label="Items rated in ${esc(meta.label)}">${rated.map(item).join('')}</ul>` : ''}
     ${na.length ? `<p class="card-sub">Not applicable (N/A)</p><p class="xr-na">${na.map((i) => esc(itemLabel(i.col))).join(' · ')}</p>` : ''}
     ${blank.length ? `<p class="card-sub">Not recorded (blank)</p><p class="xr-na">${blank.map((i) => esc(itemLabel(i.col))).join(' · ')}</p>` : ''}
-    <p class="xr-scale">${scaleText}</p>`;
+    <p class="xr-scale">Rated ${S.min}–${S.max}, where ${S.max} is the top mark; ${esc(S.text.replace(' on the', ' (on the').replace(' scale', ' scale)'))} counts as rated poorly.</p>`;
+  $('xr-items-back').addEventListener('click', () => showItems(false));
 }
 
 // where each category appears in the cutaway model (illustrative spaces, not real locations)
@@ -290,13 +334,14 @@ const PLACE = {
   records: 'an abstract inspection sheet beside the building, one tile per record item; paperwork has no place in the building',
 };
 
-// ---- legend -----------------------------------------------------------------------------------
+// ---- legend: one compact key for the model's colours --------------------------------------------------
+const LEGEND = { ok: 'None', some: 'Some', high: 'Concentrated', none: 'Not evaluated' };
 function renderLegend() {
-  $('xr-legend').innerHTML = `<span class="xr-legend-lead">Room floor tint:</span>` + ['ok', 'some', 'high', 'none'].map((k) =>
-    `<span class="key"><span class="xr-swatch s-${k}" aria-hidden="true"></span>${STATUS[k].label}</span>`).join('');
+  $('xr-legend').innerHTML = `<span class="xr-legend-lead">Poor ratings</span>` + ['ok', 'some', 'high', 'none'].map((k) =>
+    `<span class="key"><span class="xr-swatch s-${k}" aria-hidden="true"></span>${LEGEND[k]}<span class="visually-hidden"> (${STATUS[k].label})</span></span>`).join('');
 }
 
-// ---- top bar + provenance ------------------------------------------------------------------------
+// ---- top bar (shown in the guided story, where the page header is hidden) + provenance ------------------
 function renderBar(rec) {
   $('xr-bar-title').textContent = titleCase(rec.address);
   $('xr-bar-meta').innerHTML = `<span class="xr-bar-score"><b>${rec.score}</b>/100</span><span>${formatDate(rec.date)}</span>`;
@@ -326,12 +371,13 @@ function renderProvenance(entry, rec) {
   } else {
     detail = `${esc(m.note || 'No reliable geometry match.')} The grey hatched block is sized from the registered storeys${rec.units ? ' and units' : ''}; its shape and footprint are <b>not</b> this building's.`;
   }
-  const short = entry.provenance === 'massing' || entry.provenance === 'footprint'
-    ? `City of Toronto 3D Massing, ${m.confidence === 'high' ? 'high' : 'medium'} match confidence. The rooms in the cutaway are illustrative.`
-    : 'Not this building\u2019s real shape. The rooms in the cutaway are illustrative.';
+  // The one visible clarification under the model; the match detail is one ⓘ away (and in the methodology).
+  const short = entry.provenance === 'massing' ? 'Exterior massing is sourced; interior details are illustrative.'
+    : entry.provenance === 'footprint' ? 'Footprint is sourced, height estimated; interior details are illustrative.'
+    : 'Exterior is approximate, not this building’s real shape; interior details are illustrative.';
   $('xr-prov-detail').innerHTML = detail;
   box.innerHTML = `<span class="xr-prov-badge p-${entry.provenance}">${p.label}</span><span class="xr-prov-text">${short}</span>
-    <button type="button" class="info-btn" data-info="xray-model" data-info-from="xr-prov-detail" aria-label="About this model: geometry source, rating definitions and limits">i</button>`;
+    <button type="button" class="info-btn" data-info="xray-model" data-info-from="xr-prov-detail" aria-label="Is this the building’s actual interior? Geometry source and limits">i</button>`;
 }
 
 // ---- stage: 3D scene (lazy) or 2D diagram (only without WebGL) ---------------------------------------
@@ -528,6 +574,66 @@ function renderSuggestions(ctx, M) {
   box.querySelectorAll('[data-rsn]').forEach((b) => b.addEventListener('click', () => ctx.select(b.dataset.rsn, { open: true })));
 }
 
+// ---- history: one headline, one key change, one large timeline ---------------------------------------
+const monthYear = (iso) => new Date(iso + 'T12:00:00').toLocaleDateString('en-CA', { month: 'short', year: 'numeric' });
+const SYS = { cur: '2023 – now system', pre: '2017 – 2023 system' };
+
+function renderHistory(points, rec, pm, M, xs) {
+  const t = trendSummary(points, pm.era);
+  const other = points.filter((p) => p.era !== pm.era).length;
+  let head, sub;
+  if (t.kind === 'empty') { head = `No evaluations in the ${esc(pm.P.long)}.`; sub = other ? `${other} in the ${pm.era === 'cur' ? '2017 – 2023' : '2023 – now'} system, shown in grey.` : ''; }
+  else if (t.kind === 'single') { head = 'One evaluation in this scoring system.'; sub = `Score ${t.latest.rec.score} · ${monthYear(t.latest.rec.date)}`; }
+  else {
+    const d = t.latest.delta;
+    head = d === 0 ? 'No change since the previous inspection.' : `${d > 0 ? 'Up' : 'Down'} ${Math.abs(d)} point${Math.abs(d) === 1 ? '' : 's'} since the previous inspection.`;
+    sub = `${t.latest.prev.score} → ${t.latest.rec.score} · ${monthYear(t.latest.prev.date)} – ${monthYear(t.latest.rec.date)}`;
+  }
+  $('xr-tl-finding').innerHTML = head;
+  $('xr-tl-sub').textContent = sub;
+  $('xr-tl-sub').hidden = !sub;
+  $('xr-tl-note').innerHTML = other
+    ? `<span class="bx-key bx-key-cur" aria-hidden="true"></span>${SYS[pm.era]} <span class="bx-key bx-key-pre" aria-hidden="true"></span>${SYS[pm.era === 'cur' ? 'pre' : 'cur']}: <b>not directly comparable</b>, so never connected.`
+    : `All evaluations here use the ${esc(pm.P.long)}. Scores from the other system are not directly comparable.`;
+
+  const pick = points.find((p) => p.rec.uid === xs.tlPick) ?? points.find((p) => p.rec === rec) ?? points.at(-1);
+  renderPick(pick, rec);   // first, so the chart measures the room the finished header leaves it
+  const box = $('xr-timeline');
+  box.innerHTML = '';
+  const height = Math.max(200, Math.floor(box.clientHeight || 360));
+  renderTimeline(box, {
+    points, shown: rec, era: pm.era, P: pm.P, systemChange: M.byPeriod.cur.dates[0], height, summary: false,
+    selected: pick.rec.uid, onSelect: (uid) => { xs.tlPick = uid; renderPick(points.find((p) => p.rec.uid === uid), rec); },
+  });
+}
+
+// The selected evaluation, and the one next step: open it in the Inspection view.
+function renderPick(p, shownRec) {
+  const box = $('xr-tl-pick');
+  if (!p) { box.innerHTML = ''; return; }
+  const change = p.delta == null ? 'First in this system' : p.delta === 0 ? `No change since ${monthYear(p.prev.date)}` : `${signed(p.delta)} since ${monthYear(p.prev.date)}`;
+  const isShown = p.rec === shownRec;
+  box.innerHTML = `<p class="bx-pick-label">Selected evaluation</p>
+    <p class="bx-pick-main"><b>${p.rec.score}</b><span> / 100</span> · ${formatDate(p.rec.date)}</p>
+    <p class="bx-pick-sub">${SYS[p.era]} · ${change}</p>
+    <button type="button" class="btn btn-sm ${isShown ? '' : 'btn-primary'}" id="xr-tl-open">${isShown ? 'View in Inspection' : 'Inspect this evaluation'}</button>`;
+  $('xr-tl-open').addEventListener('click', () => {
+    const xs = lastCtx.xs;
+    if (!isShown) { xs.evalUid = p.rec.uid; xs.zone = null; xs.items = false; if (xs.mode === 'focus') xs.mode = 'cutaway'; }
+    setTab('model', { focus: true });
+  });
+}
+
+// ---- methodology: the full method, one question per section, closed by default ------------------------
+function openMethod() {
+  const dlg = $('xr-method-dialog');
+  if (!dlg || dlg.open) return;
+  renderMethod();
+  dlg.showModal();
+  if (!reducedMotion()) dlg.animate([{ opacity: 0, transform: 'translateY(8px)' }, { opacity: 1, transform: 'none' }], { duration: 200, easing: 'cubic-bezier(0.2, 0.7, 0.2, 1)' });
+  dlg.querySelector('summary')?.focus();
+}
+
 function wire() {
   if (wired) return;
   wired = true;
@@ -546,7 +652,12 @@ function wire() {
   $('xr-reset').addEventListener('click', () => scene3d?.api?.reset());
   $('xr-all').addEventListener('click', () => selectZone(null));
   $('xr-focus').addEventListener('click', () => scene3d?.api?.focus(lastCtx?.xs.zone));
-  $('xr-method-open').addEventListener('click', () => setTab('method', { focus: true }));
+  $('xr-back').addEventListener('click', () => $('depth-back').click());
+  $('xr-method-open').addEventListener('click', openMethod);
+  const dlg = $('xr-method-dialog');
+  $('xr-method-close').addEventListener('click', () => dlg.close());
+  dlg.addEventListener('click', (e) => { if (e.target === dlg) dlg.close(); });   // the backdrop
+  dlg.addEventListener('close', () => $('xr-method-open').focus({ preventScroll: true }));
   // Tabs: click, or ← → Home End between them (the usual tablist keys).
   const tabs = [...document.querySelectorAll('[data-xr-tab]')];
   tabs.forEach((b) => {
@@ -559,28 +670,43 @@ function wire() {
       setTab(tabs[(j + tabs.length) % tabs.length].dataset.xrTab, { focus: true });
     });
   });
+  // Esc steps back one level: item ratings → the category list → the whole building.
   document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape' && lastCtx?.xs.zone && !$('xr-main').hidden && document.querySelector('[data-view="xray"]:not([hidden])')) selectZone(null);
+    if (e.key !== 'Escape' || e.defaultPrevented || dlg.open || !lastCtx || $('xr-main').hidden || !document.querySelector('[data-view="xray"]:not([hidden])')) return;
+    if (e.target.closest?.('.ll-select, .ll-select-pop, .popover')) return;
+    if (lastCtx.xs.items) showItems(false);
+    else if (lastCtx.xs.zone) selectZone(null);
   });
 }
 
 function renderMethod() {
-  if ($('xr-method').dataset.done) return;
-  $('xr-method').dataset.done = '1';
+  const box = $('xr-method');
+  const sec = (title, body, open = false) => `<details class="disclosure"${open ? ' open' : ''}><summary>${title}</summary><div class="disclosure-body">${body}</div></details>`;
   const row = (z) => `<tr><th scope="row">${esc(z.label)}</th><td>${z.items.cur.map((c) => esc(LL.prettyCat(c))).join(', ')}</td><td>${z.items.pre.length ? z.items.pre.map((c) => esc(LL.prettyCat(c))).join(', ') : '<span class="muted">none</span>'}</td></tr>`;
-  $('xr-method').innerHTML = `<ul>
-    <li><b>Exterior: real geometry where it exists.</b> The outer shape and height come from the City of Toronto's 3D Massing data (2025, Open Government Licence – Toronto), matched to the RentSafeTO address point. A footprint is used only if the point is inside it, or it is the clear nearest within 15 m, and its height must fit the registered storeys (2.3–4.8 m per storey). Otherwise the building is drawn as a hatched approximate block and labelled so. The match type and confidence are shown under the model.</li>
-    <li><b>Interior: illustrative.</b> Exterior geometry is based on available building data. Interior spaces are illustrative and do not represent the actual floor plan. <i>Cutaway</i> opens one corner of the building at street level, a box a few storeys high, and keeps the rest of the sourced massing solid. Inside is the same short stack of generic rooms for every building: ground-level parking and a waste room, a services room (elevator shaft, air handling, electrical panels, pipes) and a corridor with unit doors and a stair. Only their size follows the real wing; the slabs around them follow the real outline. While you orbit, the opening moves to the street corner facing you. Windows, balconies, the entrance, the garage door and the rooftop plant are a generic pattern scaled to the building's height, not surveyed features; the base, paths and trees are a neutral setting, not the real lot.</li>
-    <li><b>Focus</b> outlines one category's room in blue and dims the others. Each room's floor carries a light tint of the category's status. The rooms show the kind of space inspectors look at, never where a problem is: nothing in them is drawn damaged, and results are never assigned to a floor, unit or room.</li>
-    <li><b>Colour shows categories, not locations.</b> A tinted part means inspectors rated items in that category poorly. It doesn't mean that part of the real building is damaged, and the records tiles beside the building are an abstract layer: paperwork has no place in the building. Category status is not a certified safety-risk score.</li>
-    <li><b>One inspection at a time.</b> The X-Ray shows one evaluation (by default the latest in the scoring system chosen in Layers). Pick any point in the history to see that inspection instead.</li>
-    <li><b>Rated poorly</b> means 0 or 1 on the 0–3 scale (2023 – now) or 1 or 2 on the 1–5 scale (2017 – 2023), the same rule as the Common problems view. N/A items don't apply and are never counted; blank items were not recorded.</li>
-    <li><b>Category status.</b> Share rated poorly = poorly rated items ÷ applicable (rated) items in the category. <i>No poor ratings</i>: none. <i>Some poor ratings</i>: at least one. <i>Concentrated</i>: at least ${CONCENTRATED.minPoor} items and at least ${CONCENTRATED.minShare * 100}% of applicable items, both required because the exterior category has only four items. <i>Not evaluated</i>: no applicable items. Missing data is never shown as a pass.</li>
-    <li><b>No heating or plumbing.</b> RentSafeTO's open data has no heating, plumbing or water items, so the X-Ray doesn't show any.</li>
-    <li><b>Same score, different story</b> compares latest evaluations from the same scoring system only. It looks for the same overall score first, then within 1, then within 2 points (labelled), and lists the most different profiles first. With a ward filter on, matches come from that ward when there are any.</li>
-    <li><b>History.</b> Points are connected only within one scoring system, and change is measured only against the previous evaluation in the same system. The two systems use different items and scales and are never compared.</li>
-  </ul>
-  <div class="fp-table-scroll"><table class="xr-map-table"><caption>Which inspection items belong to each category</caption>
-    <thead><tr><th scope="col">Category</th><th scope="col">2023 – now items</th><th scope="col">2017 – 2023 items</th></tr></thead>
-    <tbody>${XRAY_ZONES.map(row).join('')}</tbody></table></div>`;
+  const here = $('xr-prov-detail').innerHTML.trim();
+  box.innerHTML = `<p class="bx-dialog-lede">How the Building Explorer turns the City’s records into the views you see. Open a section to read it.</p>
+  <div class="disclosures">
+  ${sec('Building geometry', `<p><b>Exterior: real geometry where it exists.</b> The outer shape and height come from the City of Toronto's 3D Massing data (2025, Open Government Licence – Toronto), matched to the RentSafeTO address point. A footprint is used only if the point is inside it, or it is the clear nearest within 15 m, and its height must fit the registered storeys (2.3–4.8 m per storey). Otherwise the building is drawn as a hatched approximate block and labelled so.</p>
+    <p>Windows, balconies, the entrance, the garage door and the rooftop plant are a generic pattern scaled to the building's height, not surveyed features; the base, paths and trees are a neutral setting, not the real lot.</p>
+    ${here ? `<p><b>This building:</b> ${here}</p>` : ''}`)}
+  ${sec('Illustrative interiors', `<p>Exterior geometry is based on available building data. Interior spaces are illustrative and do not represent the actual floor plan.</p>
+    <p><b>Cutaway</b> opens one corner of the building at street level, a box a few storeys high, and keeps the rest of the sourced massing solid. Inside is the same short stack of generic rooms for every building: ground-level parking and a waste room, a services room (elevator shaft, air handling, electrical panels, pipes) and a corridor with unit doors and a stair. Only their size follows the real wing; the slabs around them follow the real outline. While you orbit, the opening moves to the street corner facing you.</p>
+    <p><b>Focus</b> outlines one category's room in blue and dims the others. Each room's floor carries a light tint of the category's status. The rooms show the kind of space inspectors look at, never where a problem is: nothing in them is drawn damaged, and results are never assigned to a floor, unit or room.</p>
+    <p><b>Colour shows categories, not locations.</b> A tinted part means inspectors rated items in that category poorly. It doesn't mean that part of the real building is damaged, and the records tiles beside the building are an abstract layer: paperwork has no place in the building. Category status is not a certified safety-risk score.</p>`)}
+  ${sec('Inspection categories', `<p>LeaseLens groups the City's inspection items into five categories. The grouping is ours, based on the item names; the City publishes the items, not the groups.</p>
+    <p><b>Category status.</b> Share rated poorly = poorly rated items ÷ applicable (rated) items in the category. <i>No poor ratings</i>: none. <i>Some poor ratings</i>: at least one. <i>Concentrated</i>: at least ${CONCENTRATED.minPoor} items and at least ${CONCENTRATED.minShare * 100}% of applicable items, both required because the exterior category has only four items. <i>Not evaluated</i>: no applicable items. Missing data is never shown as a pass.</p>
+    <p><b>No heating or plumbing.</b> RentSafeTO's open data has no heating, plumbing or water items, so the X-Ray doesn't show any.</p>
+    <div class="fp-table-scroll"><table class="xr-map-table"><caption>Which inspection items belong to each category</caption>
+      <thead><tr><th scope="col">Category</th><th scope="col">2023 – now items</th><th scope="col">2017 – 2023 items</th></tr></thead>
+      <tbody>${XRAY_ZONES.map(row).join('')}</tbody></table></div>`)}
+  ${sec('Rating definitions', `<p><b>Rated poorly</b> means 0 or 1 on the 0–3 scale (2023 – now) or 1 or 2 on the 1–5 scale (2017 – 2023), the same rule as the Common problems view.</p>
+    <p>N/A items don't apply and are never counted; blank items were not recorded. Neither is ever treated as a pass or as a problem.</p>`)}
+  ${sec('Scoring systems', `<p><b>One inspection at a time.</b> The Inspection view shows one evaluation (by default the latest in the scoring system chosen in Layers). Select any point in the history and choose <i>Inspect this evaluation</i> to see that inspection instead.</p>
+    <p><b>History.</b> The City changed its scoring system in 2023. Points are connected only within one scoring system, and change is measured only against the previous evaluation in the same system. The two systems use different items and scales and are never compared.</p>`)}
+  ${sec('Building comparisons', `<p><b>Compare</b> uses latest evaluations from the same scoring system only. It looks for the same overall score first, then within 1, then within 2 points (labelled), and lists the most different inspection profiles first. With a ward filter on, matches come from that ward when there are any.</p>
+    <p>Each category is compared on the same 0–100% scale: the share of its applicable items rated poorly in each building.</p>`)}
+  ${sec('Data sources', `<p>Scores, dates and item ratings are actual records from the City of Toronto's Apartment Building Evaluations (RentSafeTO) open data. Building shapes come from the City's 3D Massing data. Nothing is estimated, adjusted or invented, and the two scoring systems are never mixed.</p>
+    <p><a href="#/about">About the data</a> has sources, licences and limitations.</p>`)}
+  </div>`;
+  box.querySelectorAll('a[href^="#"]').forEach((a) => a.addEventListener('click', () => $('xr-method-dialog').close()));
 }

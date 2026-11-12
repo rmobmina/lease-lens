@@ -3,6 +3,7 @@
 
 import { itemProblemRates } from '../model.js';
 import { tip, pct, fmt, esc, svgIn, cssVar, empty, setFinding } from '../ui.js';
+import { snapshot, play } from '../chart-motion.js';
 
 const TOP = 12;
 const MIN_RATED = 30; // items rated in fewer buildings than this are listed separately, not ranked
@@ -11,6 +12,7 @@ export function renderProblems(ctx, state) {
   const { latest, pm, ward } = ctx;
   const box = document.getElementById('problem-chart');
   const more = document.getElementById('problem-more');
+  const before = snapshot(box);
   box.innerHTML = '';
 
   // The records/physical split only exists in the 2023+ item list.
@@ -55,6 +57,7 @@ export function renderProblems(ctx, state) {
     .call(d3.axisBottom(x).ticks(5).tickFormat(d3.format('.0%')).tickSizeOuter(0));
 
   const g = svg.append('g').selectAll('g').data(shown).join('g')
+    .attr('data-k', (d) => d.col)
     .attr('transform', (d, i) => `translate(0,${i * rowH + 4})`);
   const barY = narrow ? 20 : (rowH - barH) / 2 - 2;
   g.append('rect').attr('class', 'row-hit').attr('x', 0).attr('y', -2).attr('width', width).attr('height', rowH - 2).attr('rx', 4);
@@ -63,12 +66,12 @@ export function renderProblems(ctx, state) {
     .text((d) => d.label)
     .append('tspan').attr('class', 'row-sub').text((d) => (d.record && group === 'all' ? '  · record/plan' : ''));
   // bar with a 4px rounded data end, square at the baseline
-  g.append('path').attr('fill', fillFor).attr('class', (d) => (hl && hl.has(d.col) ? 'is-highlight' : null))
+  g.append('path').attr('data-bar', '').attr('fill', fillFor).attr('class', (d) => (hl && hl.has(d.col) ? 'is-highlight' : null))
     .attr('d', (d) => {
       const w = Math.max(2, x(d.share) - x0), r = Math.min(4, w / 2), y0 = barY, h = barH;
       return `M${x0},${y0}h${w - r}a${r},${r} 0 0 1 ${r},${r}v${h - 2 * r}a${r},${r} 0 0 1 -${r},${r}h-${w - r}z`;
     });
-  g.append('text').attr('class', 'value').attr('x', (d) => x(d.share) + 8).attr('y', barY + barH / 2 + 4)
+  g.append('text').attr('class', 'value').attr('data-val', '').attr('x', (d) => x(d.share) + 8).attr('y', barY + barH / 2 + 4)
     .html((d) => `<tspan class="value-strong">${pct(d.share, 1)}</tspan> · ${fmt.n(d.poor)} bldgs`);
 
   g.attr('tabindex', 0).attr('class', 'row')
@@ -77,6 +80,7 @@ export function renderProblems(ctx, state) {
     .on('mousemove', (ev) => tip.move(ev)).on('mouseleave', () => tip.hide())
     .on('focus', function (ev, d) { const b = this.getBoundingClientRect(); tip.show(problemTip(d, latest.length), { clientX: b.left + 260, clientY: b.top + b.height }); })
     .on('blur', () => tip.hide());
+  play(before, box);
 
   // takeaway
   const anyPoor = latest.filter((r) => pm.cats.some((c) => r.ratings[c] != null && r.ratings[c] <= pm.P.poorMax)).length;

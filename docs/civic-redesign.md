@@ -17,7 +17,7 @@ Detail grows with scale and intent: **Toronto → neighbourhood → building →
 |---|---|---|---|
 | City | zoom < 12 | Ward choropleth (25-ward model, real City boundaries). No building dots. | Title, legend |
 | Neighbourhood | 12 – 14 | Groups of nearby buildings on a screen-space grid (88 px cells at the whole zoom level below) that nests between zoom levels, plus a pass that merges any discs that would overlap: about 100 groups citywide at zoom 12 (was ~330), none overlapping. Groups of 1–2 show as a plain dot. Number = buildings; red arc = share in the lowest 10%. Ward fill fades to a wash. | Ward card when a ward is selected, “Buildings in view” list |
-| Building | ≥ 14 | One canvas mark per building (citywide band colour and size). The selection gets a ring, one label and its real 3D Massing footprint. Other marks dim. | Place panel: address, score, date, characteristics, **Inspect building · Compare nearby · View history** |
+| Building | ≥ 14 | One canvas mark per building (citywide band colour and size). The selection gets a ring, one label and its real 3D Massing footprint. Other marks dim. | Place panel: address, score and band, latest inspection date, one context line; **Inspect building** (primary), then **History** and **Compare nearby** (quiet) |
 | Inspection | `#/xray/<RSN>` | The Building X-Ray opens out of the building's point on the map (a circular reveal while the map eases in; the 3D model is built only once the motion ends) and closes back into it. **Back to map** and a breadcrumb. The page never scrolls: four tabs (Inspection, Same score, History, How it works) each fit the window. | — |
 
 **The choropleth.** Each ward's value is the share of its evaluated buildings (latest evaluation, chosen scoring system) whose score is in the citywide lowest 10%. That is the project's existing definition (`model.js`, ties included). Classes are relative to the citywide share (below 0.5×, 0.5–0.85×, 0.85–1.15×, 1.15–1.5×, 1.5× or more): blue below the city, grey about the same, red above. The legend prints the actual percentages. Wards with fewer than 30 evaluated buildings get a dashed outline and are left out of the ward-comparison headline.
@@ -98,7 +98,11 @@ A border has to mean grouping, focus or interaction. Inner separators, note boxe
 - **Camera:** Leaflet `flyTo`, with 0.35–0.7 s depending on distance. Any new flight, drag, wheel or touch replaces the current one where it is.
 - **Place panel:** opens scaling out of the selected building (or ward) on the map and closes back into it. Focus returns to whatever opened it (search box, list), or to the map.
 - **Home → map:** View Transition; the header stays put and the drawing settles into the map's box.
-- Durations: micro 160 ms, panels 260 ms, group splits 340 ms, flights 350–700 ms.
+- Durations (tokens in `tokens.css`): hover 120 ms, press 140 ms, popovers 200 ms (out 120), panels 260 ms, chart updates 360 ms, theme 450 ms, group splits 340 ms, flights 350–700 ms.
+- **Popovers** grow out of their ⓘ button and shrink back into it; reopening mid-animation continues from where the box is.
+- **Theme:** a circular reveal of the new theme from the toggle (View Transitions; a colour cross-fade elsewhere). A second press skips the running reveal to its end. The saved theme is applied by an inline `<head>` script, so a reload never flashes. The sun and moon turn a quarter turn as they swap.
+- **Charts** (`chart-motion.js`): the analysis charts redraw from scratch, so marks opt in with `data-k` / `data-bar` / `data-val` and the new marks start where the old ones were (FLIP). Bars grow from their baseline, rows slide to their new rank, new rows fade in; unchanged data and resizes don't move.
+- **Analysis layers** switch in place (one at a time); the new view rises in, and a newer switch cancels it.
 
 ## Homepage atlas: what is accurate and what is simplified
 
@@ -207,3 +211,14 @@ This has been checked with automated keyboard and focus tests and visual review.
 - The transition into the workspace is a crossfade of boxes, not a continuous geographic camera.
 - Without network access to Google Fonts, the pages fall back to Georgia and the system sans-serif.
 - Story text is written for the current data. Numbers update automatically, but the editorial framing ("more than twice", "highest category") is computed by rules that could choose a different ward or category if the data changes.
+
+## Final polish pass (November 2026)
+
+- **ⓘ control:** one component (`.info-btn`), a drawn "i" (mask) in a 20 px circle with a 40 px hit area. A typed italic glyph was never optically centred.
+- **Type:** every weight maps to the four loaded weights (400/500/600/700); headings and large numbers use the display face and the tracking tokens (`--tracking-hero/-display/-heading`). Hero: two balanced lines at about 40% of a wide screen.
+- **Focus:** headings and panels that take focus only for screen readers (`tabindex="-1"`) never draw a ring; every control keeps the shared ring.
+- **About:** one reading column: purpose, three steps, then one disclosure pattern (Understanding the scores · Sources and methodology · Limitations), and the independence note once.
+- **Ward card:** one finding (share in the lowest 10%, against the city as two bars) and one action, **Explore ward**, which opens the median, rank, lowest-scoring buildings and the per-ward analyses.
+- **Analysis layers:** the finding is a number and its caption; the interpretation moved into the layer's single "How to read this" disclosure, beside the method.
+- **X-Ray:** one toolbar row: Exterior / Cutaway / Focus on the left, Reset view · Camera · ⓘ on the right. The footer says once that interiors are illustrative.
+- **Same score, different story:** a paired inspection profile (`sections/fp-profile.js`, rules in `fingerprint-model.js pairedProfile`, tested in `tests/polish.test.mjs`): one row per area, A to the left and B to the right on one scale, the (at most two) real largest differences emphasised, items on request. The full item grids stay below on the Compare page and behind "Show every item" in the story.

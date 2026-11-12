@@ -14,20 +14,22 @@ body[data-layer="home"] { background: var(--atlas-bg); }
   -webkit-mask-image: radial-gradient(ellipse 85% 90% at 62% 48%, #000 40%, transparent 92%);
           mask-image: radial-gradient(ellipse 85% 90% at 62% 48%, #000 40%, transparent 92%); }
 
-/* hero ---------------------------------------------------------------------------------------- */
-.hero { position: relative; display: grid; grid-template-columns: minmax(440px, 5fr) minmax(0, 7fr); column-gap: var(--space-6); min-height: 0; outline: none; }
-.hero-copy { align-self: center; padding: 0 0 var(--space-8) var(--space-7); max-width: 640px; position: relative; z-index: 2; }
-.hero-title { font-family: var(--font-display); font-weight: var(--weight-bold); font-size: var(--text-hero); line-height: 0.98;
-  letter-spacing: var(--tracking-display); font-kerning: normal; font-optical-sizing: auto; color: var(--ink); }
-/* deliberate line breaks: one phrase per line */
+/* hero ----------------------------------------------------------------------------------------
+   The copy takes about 40% of a wide screen and never more than its column; the drawing keeps the rest.
+   Size, measure and tracking are tuned together: two balanced lines ("Your next home is / more than a
+   score."), set tight like a display face should be, with a clear channel between the words and the city. */
+.hero { position: relative; display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); column-gap: clamp(var(--space-6), 4vw, var(--space-8)); min-height: 0; outline: none; }
+.hero-copy { align-self: center; padding: 0 0 var(--space-8) clamp(var(--space-5), 4.4vw, var(--space-8)); max-width: 620px; position: relative; z-index: 2; }
+.hero-title { font-family: var(--font-display); font-weight: var(--weight-bold); font-size: var(--text-hero); line-height: 1.02;
+  letter-spacing: var(--tracking-hero); font-kerning: normal; font-feature-settings: "kern" 1; font-optical-sizing: auto; color: var(--ink); text-wrap: balance; }
+/* deliberate line breaks on wide screens; natural, balanced wrapping where the column is narrow */
 .hero-title span { display: block; white-space: nowrap; }
-@media (max-width: 400px) { .hero-title span { white-space: normal; } }
-.hero-title span:last-child { color: var(--accent); }
-.hero-sub { font-size: var(--text-lg); line-height: var(--leading-body); color: var(--ink-2); margin-top: var(--space-5); max-width: 26em; }
+.hero-title em { font-style: normal; color: var(--accent); }
+.hero-sub { font-size: var(--text-lg); line-height: var(--leading-body); color: var(--ink-2); margin-top: var(--space-5); max-width: 30em; text-wrap: pretty; }
 .hero-actions { display: flex; flex-wrap: wrap; gap: var(--space-3); margin-top: var(--space-6); }
-.btn-lg { height: 48px; padding: 0 var(--space-5); font-size: var(--text-md); display: inline-flex; align-items: center; text-decoration: none; }
-.hero-actions .btn:not(.btn-primary) { background: transparent; border-color: var(--ink); color: var(--ink); }
-.hero-actions .btn:not(.btn-primary):hover { background: color-mix(in srgb, var(--ink) 6%, transparent); }
+.btn-lg { height: 48px; padding: 0 var(--space-5); font-size: var(--text-md); }
+.hero-actions .btn:not(.btn-primary) { background: transparent; border-color: color-mix(in srgb, var(--ink) 70%, transparent); color: var(--ink); }
+.hero-actions .btn:not(.btn-primary):hover { background: color-mix(in srgb, var(--ink) 6%, transparent); border-color: var(--ink); }
 
 .hero-atlas { margin: 0; position: relative; min-height: 0; display: grid; }
 .atlas-stage { position: relative; overflow: hidden; min-height: 420px; view-transition-name: atlas; }
@@ -53,7 +55,8 @@ body[data-layer="home"] { background: var(--atlas-bg); }
 /* tablet --------------------------------------------------------------------------------------- */
 @media (max-width: 1080px) {
   .hero { grid-template-columns: 1fr; grid-template-rows: auto minmax(0, 1fr); }
-  .hero-copy { padding: var(--space-7) var(--space-6) 0; max-width: 760px; }
+  .hero-copy { padding: var(--space-7) var(--space-6) 0; max-width: 680px; }
+  :root { --text-hero: clamp(36px, 6.4vw, 60px); }
   .atlas-stage { min-height: 0; height: 52vh; }
   .site-foot { padding: var(--space-4) var(--space-6); }
 }
@@ -61,6 +64,8 @@ body[data-layer="home"] { background: var(--atlas-bg); }
 /* mobile: the drawing sits under the copy at a fixed height ------------------------------------- */
 @media (max-width: 640px) {
   .hero-copy { padding: var(--space-6) var(--space-4) 0; }
+  :root { --text-hero: clamp(34px, 9.6vw, 44px); --tracking-hero: -0.035em; }
+  .hero-title span { white-space: normal; display: inline; }
   .hero-sub { margin-top: var(--space-4); font-size: var(--text-md); }
   .hero-actions { margin-top: var(--space-5); }
   .hero-actions .btn { flex: 1 1 auto; justify-content: center; }

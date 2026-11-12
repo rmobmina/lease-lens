@@ -4,6 +4,7 @@
 
 import { changeSummary } from '../model.js';
 import { tip, pct, fmt, signed, svgIn, cssVar, empty, setFinding } from '../ui.js';
+import { snapshot, play } from '../chart-motion.js';
 
 const CLIP = 30; // changes beyond ±30 are grouped into the end bars (labelled)
 
@@ -12,6 +13,7 @@ export function renderChanges(ctx, state) {
   const pairs = state.start === 'low' ? allPairs.filter((p) => p.a.score <= pm.t25) : allPairs;
   const split = document.getElementById('change-split');
   const box = document.getElementById('change-chart');
+  const before = snapshot(box);
   box.innerHTML = '';
   if (!pairs.length) { split.innerHTML = ''; empty(box, 'No re-inspections for this selection.'); setFinding('q4-takeaway', null); return; }
 
@@ -52,6 +54,7 @@ export function renderChanges(ctx, state) {
 
   const colorOf = (k) => (k > 0 ? C.up : k < 0 ? C.down : C.flat);
   const bars = svg.append('g').selectAll('rect').data(bins.filter((b) => b.n > 0)).join('rect')
+    .attr('data-k', (b) => b.k).attr('data-bar', '')
     .attr('x', (b) => x(b.k) + gap / 2).attr('width', Math.max(1, x.bandwidth() - gap))
     .attr('y', (b) => y(b.n)).attr('height', (b) => y(0) - y(b.n)).attr('fill', (b) => colorOf(b.k));
   // invisible full-height hit targets per bin (bigger than the bars)
@@ -60,6 +63,8 @@ export function renderChanges(ctx, state) {
     .on('mouseenter', (ev, b) => { bars.attr('fill-opacity', (d) => (d.k === b.k ? 1 : 0.55)); tip.show(binTip(b, s.n), ev); })
     .on('mousemove', (ev) => tip.move(ev))
     .on('mouseleave', () => { bars.attr('fill-opacity', 1); tip.hide(); });
+
+  play(before, box);
 
   // zero line + median annotation
   const zx = x(0) + x.bandwidth() / 2;
@@ -73,14 +78,17 @@ export function renderChanges(ctx, state) {
   }
 
   const months = Math.round(s.medianDays / 30.4);
+  // The split bar above already gives the up / same / down shares, so the finding adds what it can't show:
+  // how big the typical change is.
+  const within10 = pct(pairs.filter((p) => Math.abs(p.delta) <= 10).length / s.n);
   setFinding('q4-takeaway', state.start === 'low' ? {
-    value: pct(s.up / s.n),
-    caption: `of buildings that started in the lowest 25% (score ${pm.t25} or below) improved at their next inspection`,
-    text: `The median change was <b>${signed(s.median)} points</b>. Part of this rebound is expected statistically: a building that scores unusually low once tends to score closer to typical next time, even without real repairs.`,
+    value: `${signed(s.median)}`,
+    caption: `points: the typical change for buildings that started in the lowest 25% (score ${pm.t25} or below)`,
+    text: `${pct(s.up / s.n)} of them improved at their next inspection. Part of this rebound is expected statistically: a building that scores unusually low once tends to score closer to typical next time, even without real repairs.`,
   } : {
-    value: pct(s.up / s.n),
-    caption: 'of re-inspections scored higher than the previous evaluation',
-    text: `Usually, yes. ${pct(s.down / s.n)} scored lower. The typical change is <b>${signed(s.median)} points</b>, measured about ${months} months apart, and ${pct(pairs.filter((p) => Math.abs(p.delta) <= 10).length / s.n)} of scores moved by 10 points or less.`,
+    value: `${signed(s.median)}`,
+    caption: `points: the typical change between inspections, about ${months} months apart`,
+    text: `Scores usually rise a little at re-inspection, but ${pct(s.down / s.n)} fell. ${within10} of scores moved by 10 points or less.`,
   });
 
   document.getElementById('q4-method').innerHTML = `<ul>

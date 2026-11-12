@@ -235,7 +235,8 @@ export function createXrayScene(container, { onSelect, onHover, onContextLost, p
   // canvas kept free around the model: ~10% padding, and room for the label column at the sides
   function safeInsets(mode = state.mode) {
     const w = canvasWrap.clientWidth || 600, h = canvasWrap.clientHeight || 420;
-    const labels = w < 560 || mode !== 'cutaway' ? 0 : Math.min(160, w * 0.17);
+    // room beside the model for the one selected annotation (Focus); otherwise only the padding
+    const labels = w < 560 || mode !== 'focus' ? 0 : Math.min(150, w * 0.14);
     const side = Math.max(w * 0.07, labels) / w;
     return { l: side, r: side, t: h < 480 ? 0.08 : 0.1, b: h < 480 ? 0.07 : 0.09 };
   }
@@ -568,17 +569,15 @@ export function createXrayScene(container, { onSelect, onHover, onContextLost, p
     const b = state.building;
     const w = canvasWrap.clientWidth, h = canvasWrap.clientHeight;
     if (!b) { notes.update([], { w, h }); return; }
-    const narrow = w < 560 || h < 380;
     const ext = projectedExtent();
     const items = [];
     for (const zone of ZONES) {
       const l = state.labels[zone];
       if (!l) continue;
       const hot = zone === state.hover, sel = zone === state.selected;
-      // one strong label at a time. Cutaway with nothing selected: a short title for each room. Focus: only
-      // the selected category (and whatever is hovered). Exterior: only on hover.
-      let show = sel || hot;
-      if (!state.selected && state.mode === 'cutaway' && SCENES.includes(zone)) show = !narrow || hot;
+      // One annotation at a time, so the building stays the focus: the selected category, or whatever is
+      // hovered. The category list beside the model names every category; nothing else floats over it.
+      const show = sel || hot;
       const p = show ? anchorOf(zone) : null;
       let x = 0, y = 0, visible = false;
       if (p) {

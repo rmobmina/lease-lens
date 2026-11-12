@@ -6,6 +6,7 @@
 import { wardLowShares } from '../model.js';
 import { SMALL_WARD } from '../atlas/logic.js';
 import { pct, fmt, esc, setFinding } from '../ui.js';
+import { snapshot, play } from '../chart-motion.js';
 
 export function renderWards(ctx) {
   const { pm, ward } = ctx;
@@ -13,14 +14,16 @@ export function renderWards(ctx) {
   const city = pm.latest.filter((r) => r.score <= pm.t10).length / pm.latest.length;
   const max = Math.max(city, d3.max(rows, (d) => d.share)) * 1.05;
   const el = document.getElementById('ward-chart');
+  const before = snapshot(el);
   el.innerHTML = rows.map((d) => `
-    <button type="button" class="ward-row ${d.ward === ward ? 'active' : ''}" data-ward="${d.ward}" aria-pressed="${d.ward === ward}"
+    <button type="button" class="ward-row ${d.ward === ward ? 'active' : ''}" data-ward="${d.ward}" data-k="${d.ward}" aria-pressed="${d.ward === ward}"
       aria-label="Ward ${+d.ward} ${esc(d.name)}: ${d.low10} of ${d.n} buildings (${pct(d.share)}) in the lowest 10%"
       title="${d.low10} of ${d.n} buildings · median score ${d.median}">
       <span class="name">${esc(d.name)}</span>
-      <span class="track" aria-hidden="true"><span class="fill" style="width:${(d.share / max) * 100}%"></span><span class="city" style="left:${(city / max) * 100}%"></span></span>
+      <span class="track" aria-hidden="true"><span class="fill" data-bar style="width:${(d.share / max) * 100}%"></span><span class="city" style="left:${(city / max) * 100}%"></span></span>
       <span class="val">${pct(d.share)}</span>
     </button>`).join('');
+  play(before, el); // switching scoring system reorders the wards: rows slide to their new rank
   let foot = el.parentElement.querySelector('.ward-foot');
   if (!foot) { foot = document.createElement('div'); foot.className = 'ward-foot'; el.parentElement.appendChild(foot); }
   foot.innerHTML = `<span class="city-key" aria-hidden="true"></span> Citywide: ${pct(city)} of buildings are in the lowest 10%`;

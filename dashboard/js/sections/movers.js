@@ -3,10 +3,12 @@
 
 import { biggestMovers } from '../model.js';
 import { setFinding, tip, fmt, pct, esc, titleCase, signed, svgIn, cssVar, legendKey, formatDate, empty } from '../ui.js';
+import { snapshot, play } from '../chart-motion.js';
 
 export function renderMovers(ctx, state) {
   const { pairs, pm, ward, selected } = ctx;
   const box = document.getElementById('movers-chart');
+  const before = snapshot(box);
   box.innerHTML = '';
   const C = { up: cssVar('--up'), down: cssVar('--down') };
   document.getElementById('movers-legend').innerHTML = legendKey(C.up, '▲ Score went up', 'bar') + legendKey(C.down, '▼ Score went down', 'bar');
@@ -46,6 +48,7 @@ export function renderMovers(ctx, state) {
     yOff += headH;
     const rows = svg.append('g').selectAll('g').data(g.rows).join('g')
       .attr('class', (p) => `row${p.rsn === selected ? ' selected' : ''}`)
+      .attr('data-k', (p) => `${g.title}|${p.rsn}|${p.b.date}`)
       .attr('transform', (p, i) => `translate(0,${yOff + i * rowH})`)
       .attr('tabindex', 0).attr('role', 'button')
       .attr('aria-label', (p) => `${titleCase(p.b.address)}: ${p.delta > 0 ? 'up' : 'down'} ${Math.abs(p.delta)} points, from ${p.a.score} to ${p.b.score}. Press Enter to select.`)
@@ -64,8 +67,8 @@ export function renderMovers(ctx, state) {
     const lab = rows.append('text').attr('class', 'row-label').attr('x', narrow ? 0 : labelW - 8).attr('y', narrow ? 15 : by + barH / 2 + 4.5).attr('text-anchor', narrow ? 'start' : 'end');
     lab.append('tspan').text((p) => titleCase(p.b.address));
     lab.append('tspan').attr('class', 'row-sub').text((p) => `  ${p.b.wardName}`);
-    rows.append('path').attr('fill', (p) => (p.delta > 0 ? C.up : C.down)).attr('d', (p) => barPath(zx, x(p.delta), by, barH));
-    rows.append('text').attr('class', 'value')
+    rows.append('path').attr('data-bar', '').attr('fill', (p) => (p.delta > 0 ? C.up : C.down)).attr('d', (p) => barPath(zx, x(p.delta), by, barH));
+    rows.append('text').attr('class', 'value').attr('data-val', '')
       .attr('x', (p) => x(p.delta) + (p.delta > 0 ? 8 : -8)).attr('y', by + barH / 2 + 4).attr('text-anchor', (p) => (p.delta > 0 ? 'start' : 'end'))
       .html((p) => `<tspan class="value-strong">${p.delta > 0 ? '▲' : '▼'} ${signed(p.delta)}</tspan>`);
     rows.append('text').attr('class', 'row-sub')
@@ -73,6 +76,7 @@ export function renderMovers(ctx, state) {
       .text((p) => `${p.a.score} → ${p.b.score}`);
   }
   svg.append('line').attr('x1', zx).attr('x2', zx).attr('y1', headH - 6).attr('y2', H - 24).attr('stroke', cssVar('--ink')).attr('stroke-width', 1.5);
+  play(before, box);
 
   const top = up[0], bot = down[0];
   setFinding('q5-takeaway', top && {

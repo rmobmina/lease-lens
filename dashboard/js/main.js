@@ -25,6 +25,7 @@ import { renderPlace } from './sections/building.js';
 import { renderFingerprint } from './sections/fingerprint.js';
 import { renderXray, disposeXray, loadMassing, holdStage, warmXray } from './sections/xray.js';
 import { initInfoPopovers } from './components/info-popover.js';
+import { enhanceSelect } from './components/select.js';
 import { createStory } from './story/controller.js';
 import { drawVisual } from './story/visuals.js';
 import { scoreDistribution } from './story/selectors.js';
@@ -479,15 +480,30 @@ function renderLensMenu() {
   $('lens-btn').classList.toggle('is-on', !!state.lens);
 }
 
+// One analysis layer at a time. Switching layers replaces the drawer's content in place (it never stacks
+// another card): the new view rises in briefly from where the old one was, and a newer switch mid-way
+// cancels the running one.
+let lensShown = null, lensAnim = null;
 function renderLens(ctx) {
   const box = $('lens');
   const l = state.lens && lensById.get(state.lens);
+  const wasOpen = !box.hidden;
   box.hidden = !l;
-  if (!l) return;
+  if (!l) { lensShown = null; return; }
   $('lens-title').textContent = l.label;
   const ward = state.ward ? M.wardName.get(state.ward) : '';
   $('lens-scope').textContent = `${l.citywide ? 'All wards' : ward || 'All of Toronto'} · ${ctx.pm.P.label} system`;
   box.querySelectorAll('.lens-view').forEach((s) => (s.hidden = s.dataset.lens !== l.id));
+  if (wasOpen && lensShown && lensShown !== l.id) {
+    box.scrollTop = 0;
+    lensAnim?.cancel();
+    if (!reducedMotion()) {
+      lensAnim = box.querySelector(`.lens-view[data-lens="${l.id}"]`).animate(
+        [{ opacity: 0, transform: 'translateY(6px)' }, { opacity: 1, transform: 'none' }],
+        { duration: DUR.panel, easing: 'cubic-bezier(0.2, 0.7, 0.2, 1)' });
+    }
+  }
+  lensShown = l.id;
   requestAnimationFrame(() => { try { l.render(ctx); } catch (err) { console.error(err); } });
 }
 
@@ -722,6 +738,7 @@ function wireControls() {
 
   $('ward').innerHTML += M.wards.map((w) => `<option value="${w.ward}">${+w.ward} · ${esc(w.name)}</option>`).join('');
   $('ward').addEventListener('change', (e) => toMap(() => setWard(e.target.value)));
+  enhanceSelect($('ward'), { search: true, searchLabel: 'Search wards', placeholder: 'Search wards…' });
 
   search = initSearch($('search'), $('search-list'), {
     source: () => searchSource,
@@ -770,7 +787,7 @@ function wireShell() {
   });
   // close pop-up panels on an outside click
   document.addEventListener('click', (e) => {
-    if (!e.target.closest('.pop-panel, .tool, .info-btn, .popover')) for (const [b, p] of MENUS) if (!$(p).hidden) { $(p).hidden = true; $(b).setAttribute('aria-expanded', 'false'); }
+    if (!e.target.closest('.pop-panel, .tool, .info-btn, .popover, .ll-select-pop')) for (const [b, p] of MENUS) if (!$(p).hidden) { $(p).hidden = true; $(b).setAttribute('aria-expanded', 'false'); }
     document.querySelectorAll('details.menu[open]').forEach((d) => { if (!d.contains(e.target) || e.target.closest('.menu-item')) d.open = false; });
   });
   // Escape: close the innermost thing first (menu → panel → selection → ward), never moving the map.
@@ -807,12 +824,40 @@ function wireShell() {
     if (document.body.dataset.layer !== 'work') { themeStale = true; return; }
     themeStale = false; Atlas.restyle(); render();
   };
-  for (const b of toggles) b.addEventListener('click', () => {
-    const next = isDark() ? 'light' : 'dark';
+  // The switch itself: a circular reveal of the new theme from the button that was pressed (View Transitions),
+  // or a short colour cross-fade where that isn't supported. A second press mid-reveal skips the running one
+  // to its end and starts the next from there, so rapid toggling never queues or leaves mixed colours.
+  let themeVT = null, fadeTimer = 0;
+  const commit = (next) => {
     try { localStorage.setItem('lease-lens-theme', next); } catch { /* ignore */ }
     applyTheme(next);
     restyle();
-  });
+  };
+  const switchTheme = (btn) => {
+    const next = isDark() ? 'light' : 'dark';
+    const root = document.documentElement;
+    if (matchMedia('(prefers-reduced-motion: reduce)').matches) { commit(next); return; }
+    if (!document.startViewTransition) {
+      clearTimeout(fadeTimer);
+      root.classList.add('theme-fade');
+      commit(next);
+      fadeTimer = setTimeout(() => root.classList.remove('theme-fade'), 500);
+      return;
+    }
+    themeVT?.skipTransition();
+    const b = btn.getBoundingClientRect();
+    const x = b.left + b.width / 2, y = b.top + b.height / 2;
+    const r = Math.hypot(Math.max(x, innerWidth - x), Math.max(y, innerHeight - y));
+    root.classList.add('theme-vt');
+    const vt = document.startViewTransition(() => commit(next));
+    themeVT = vt;
+    vt.ready.then(() => {
+      root.animate({ clipPath: [`circle(0px at ${x}px ${y}px)`, `circle(${r}px at ${x}px ${y}px)`] },
+        { duration: 450, easing: 'cubic-bezier(0.45, 0, 0.2, 1)', pseudoElement: '::view-transition-new(root)' });
+    }).catch(() => {});
+    vt.finished.finally(() => { if (themeVT === vt) { themeVT = null; root.classList.remove('theme-vt'); } });
+  };
+  for (const b of toggles) b.addEventListener('click', () => switchTheme(b));
   matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { applyTheme(document.documentElement.dataset.theme); restyle(); });
 
   // Entering from the homepage: a short crossfade where the browser supports it. The hero drawing and the
@@ -845,7 +890,8 @@ function watchResize() {
       const s = `${$('stage').clientWidth}x${$('stage').clientHeight}`;
       if (s === last || $('app').hidden) return;
       last = s;
-      if (state.depth === 'map' && state.lens) renderLens(context());
+      // the open analysis layer and an open history/nearby view in the place panel both follow the new width
+      if (state.depth === 'map' && (state.lens || (state.selected && state.placeTab !== 'summary'))) renderChrome();
       else if (state.depth === 'xray' || state.depth === 'compare') render();
     }, 150);
   }).observe($('stage'));

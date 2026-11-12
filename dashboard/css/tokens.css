@@ -97,11 +97,11 @@
   --text-lg: 18px;    /* lead paragraphs */
   --text-xl: 22px;    /* panel headings */
   --text-2xl: 32px;   /* page headings */
-  --text-hero: clamp(44px, 5.3vw, 84px);
+  --text-hero: clamp(40px, 4.1vw, 68px);   /* tuned with the hero's width and tracking (home.css) */
   --weight-regular: 400; --weight-medium: 500; --weight-semibold: 600; --weight-bold: 700;
   --leading-tight: 1.05; --leading-snug: 1.25; --leading-body: 1.55;
   /* tracking: only large display text is tightened (optical kerning); small text keeps the default */
-  --tracking-display: -0.035em; --tracking-heading: -0.015em; --tracking-label: 0.01em;
+  --tracking-hero: -0.04em; --tracking-display: -0.03em; --tracking-heading: -0.015em; --tracking-body: 0; --tracking-label: 0.01em; --tracking-caps: 0.06em;
 
   /* ---- spacing scale (every margin, gap and padding uses one of these) ------------------- */
   --space-1: 4px; --space-2: 8px; --space-3: 12px; --space-4: 16px;
@@ -127,9 +127,33 @@
   --shadow-float: 0 1px 2px rgba(23, 23, 23, 0.06), 0 6px 20px rgba(23, 23, 23, 0.07); /* panels over the map */
   --insight: 330px;
 
-  /* ---- motion (see js/motion.js) ---------------------------------------------------------------- */
-  --dur-micro: 160ms; --dur-panel: 260ms;
-  --ease-out: cubic-bezier(0.2, 0.7, 0.2, 1);
+  /* ---- motion (see js/motion.js) ----------------------------------------------------------------
+     Durations scale with distance and complexity: feedback is near-instant, things that travel take longer.
+       hover 120  press 140  popover 200  panel 260  chart 360  theme 450  (map flights: 350–700, motion.js) */
+  --dur-hover: 120ms; --dur-press: 140ms; --dur-micro: 160ms; --dur-pop: 200ms; --dur-panel: 260ms; --dur-chart: 360ms; --dur-theme: 450ms;
+  --ease-out: cubic-bezier(0.2, 0.7, 0.2, 1);      /* arrivals: fast start, gentle settle */
+  --ease-in: cubic-bezier(0.4, 0, 1, 1);           /* departures */
+  --ease-in-out: cubic-bezier(0.45, 0, 0.2, 1);    /* things that move from one place to another */
+
+  /* ---- focus: one ring everywhere ----------------------------------------------------------------- */
+  --focus-ring: 2px solid var(--focus);
+  --focus-offset: 2px;
+
+  /* ---- the round ⓘ control: one size everywhere (workspace.css) --------------------------------------
+     A 16 px circle (secondary to the text it explains) inside a 24 px button (WCAG 2.2 target size),
+     with a 44 px invisible hit area for touch. */
+  --info-size: 16px;
+  --info-box: 24px;
+  --info-hit: 44px;
+
+  /* ---- layers: the only z-index values for things that float over the page ---------------------------- */
+  --z-tooltip: 5000;    /* chart tooltips (never interactive) */
+  --z-popover: 6000;    /* ⓘ popovers and dropdown menus: above the map, its controls and the depth views */
+  --z-dialog: 7000;     /* modal dialogs (methodology) */
+
+  /* ---- form controls ------------------------------------------------------------------------------------ */
+  --control-h: 40px;
+  --control-h-sm: 32px;
 
   /* ---- homepage ground: a quiet blueprint tone ------------------------------------------------ */
   --hero-ground: radial-gradient(120% 90% at 78% 40%, #F4F7FD 0%, #FFFFFF 62%);

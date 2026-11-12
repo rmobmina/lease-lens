@@ -4,9 +4,11 @@
 // same place for every building, two fingerprints can be compared at a glance.
 // All data work lives in ../fingerprint-model.js; this file only draws and handles input.
 
+import { enhanceSelect } from '../components/select.js';
 import { itemLabel } from '../model.js';
 import { itemStats, buildingProfile, sameScorePairs, contrastFor, scoreOptions, cityFindings, SCALE_MAX, UNCOMMON_SHARE } from '../fingerprint-model.js';
 import { tip, pct, fmt, esc, titleCase, formatDate, cssVar, anchorEvent } from '../ui.js';
+import { renderProfile } from './fp-profile.js';
 
 const $ = (id) => document.getElementById(id);
 const GAP = 3;
@@ -69,6 +71,7 @@ export function renderFingerprint(ctx, M, state) {
   const pa = a && buildingProfile(a, layout);
   const pb = b && buildingProfile(b, layout);
   $('fp-verdict').innerHTML = pa && pb ? verdict(pa, pb, mode) : 'Not enough buildings with this score to compare.';
+  renderProfile($('fp-profile'), pa, pb);
   drawBuilding($('fp-a-card'), pa, 'a', ctx, pm);
   drawBuilding($('fp-b-card'), pb, 'b', ctx, pm);
   renderTable(layout, pa, pb);
@@ -85,6 +88,7 @@ function wire(ctx) {
   if (wired) return;
   wired = true;
   $('fp-score').addEventListener('change', (e) => ctx.setFp({ score: +e.target.value, pairIndex: 0 }));
+  enhanceSelect($('fp-score'), { search: true, searchLabel: 'Search scores', placeholder: 'Find a score…' });
   $('fp-next').addEventListener('click', () => ctx.setFp((s) => ({ pairIndex: s.pairIndex + 1 })));
   $('fp-reset').addEventListener('click', () => ctx.setFp({ a: null, b: null, pairIndex: 0 }, '#/compare'));
   const pick = (input, slot) => {
