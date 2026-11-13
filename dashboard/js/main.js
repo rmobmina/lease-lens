@@ -23,8 +23,9 @@ import { renderChanges } from './sections/changes.js';
 import { renderMovers } from './sections/movers.js';
 import { renderPlace } from './sections/building.js';
 import { renderFingerprint } from './sections/fingerprint.js';
-import { renderXray, disposeXray, loadMassing } from './sections/xray.js';
+import { renderXray, disposeXray, loadMassing, holdStage, warmXray } from './sections/xray.js';
 import { initInfoPopovers } from './components/info-popover.js';
+import { enhanceSelect } from './components/select.js';
 import { createStory } from './story/controller.js';
 import { drawVisual } from './story/visuals.js';
 import { scoreDistribution } from './story/selectors.js';
@@ -62,9 +63,9 @@ const state = {
   mapShow: 'all',
   lens: null,            // active analysis layer id
   placeTab: 'summary',   // summary | nearby | history
-  problems: { group: 'all', showAll: false },
+  problems: { group: 'all', page: 0 },
   changes: { start: 'all' },
-  movers: { n: 10 },
+  movers: { dir: 'both' },
   fp: { score: 92, pairIndex: 0, a: null, b: null, shownA: null, shownB: null },
   xray: { rsn: null, evalUid: null, zone: null, mode: 'exterior', matchRsn: null },
 };
@@ -90,7 +91,7 @@ function context() {
     pm, ward: state.ward, selected: state.selected, show: state.mapShow,
     latest: pm.latest.filter(inWard), pairs: pm.pairs.filter((p) => inWard(p.b)),
     ch: choropleth(), highlight: app.highlight,
-    select, setWard, setFp, setPeriod, findBuilding,
+    select, setWard, setFp, setPeriod, findBuilding, searchAll: () => searchSource,
     registerShown: (slot, rsn) => { state.fp[slot === 'a' ? 'shownA' : 'shownB'] = rsn; },
   };
 }
@@ -475,20 +476,50 @@ function renderLensMenu() {
   const opt = (l) => `<label class="lens-opt"><input type="radio" name="lens" value="${l.id}" ${state.lens === l.id ? 'checked' : ''} /><span>${esc(l.label)}</span></label>`;
   $('lens-options').innerHTML = `<label class="lens-opt"><input type="radio" name="lens" value="" ${!state.lens ? 'checked' : ''} /><span>None</span></label>`
     + groups.map((g, i) => `<p class="lens-group">${esc(g.title)}${i === 0 ? ' <small>suggested at this zoom</small>' : ''}</p>${LENSES.filter((l) => l.scale === g.key).map(opt).join('')}`).join('');
-  $('lens-options').querySelectorAll('input').forEach((i) => i.addEventListener('change', () => setLens(i.value || null)));
+  $('lens-options').querySelectorAll('input').forEach((i) => {
+    i.addEventListener('change', () => setLens(i.value || null));
+    // a pick by pointer or Enter closes the menu (arrow keys only move through the options)
+    const done = () => { closeMenus(); $('lens-btn').focus({ preventScroll: true }); };
+    i.closest('label').addEventListener('click', (e) => { if (e.detail > 0) requestAnimationFrame(done); });
+    i.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); if (!i.checked) { i.checked = true; setLens(i.value || null); } done(); } });
+  });
   $('lens-btn').classList.toggle('is-on', !!state.lens);
 }
 
+// One analysis layer at a time. Switching layers replaces the drawer's content in place (it never stacks
+// another card): the new view rises in briefly from where the old one was, and a newer switch mid-way
+// cancels the running one.
+let lensShown = null, lensAnim = null;
 function renderLens(ctx) {
   const box = $('lens');
   const l = state.lens && lensById.get(state.lens);
+  const wasOpen = !box.hidden;
   box.hidden = !l;
-  if (!l) return;
+  if (!l) { lensShown = null; return; }
   $('lens-title').textContent = l.label;
   const ward = state.ward ? M.wardName.get(state.ward) : '';
   $('lens-scope').textContent = `${l.citywide ? 'All wards' : ward || 'All of Toronto'} · ${ctx.pm.P.label} system`;
   box.querySelectorAll('.lens-view').forEach((s) => (s.hidden = s.dataset.lens !== l.id));
-  requestAnimationFrame(() => { try { l.render(ctx); } catch (err) { console.error(err); } });
+  if (wasOpen && lensShown && lensShown !== l.id) {
+    box.scrollTop = 0;
+    lensAnim?.cancel();
+    if (!reducedMotion()) {
+      lensAnim = box.querySelector(`.lens-view[data-lens="${l.id}"]`).animate(
+        [{ opacity: 0, transform: 'translateY(6px)' }, { opacity: 1, transform: 'none' }],
+        { duration: DUR.panel, easing: 'cubic-bezier(0.2, 0.7, 0.2, 1)' });
+    }
+  }
+  lensShown = l.id;
+  requestAnimationFrame(() => {
+    try {
+      l.render(ctx);
+      // Each layer writes its finding after drawing its chart, so the chart's box can shrink after it was
+      // measured. If the drawing no longer fits its box, draw it once more at the settled size.
+      const view = box.querySelector(`.lens-view[data-lens="${l.id}"]`);
+      const chart = view?.querySelector('.chart'), svg = chart?.querySelector('svg');
+      if (svg && svg.getBoundingClientRect().bottom > chart.getBoundingClientRect().bottom + 1) l.render(ctx);
+    } catch (err) { console.error(err); }
+  });
 }
 
 function renderDistribution(ctx) {
@@ -505,15 +536,37 @@ function setLens(id, { focus = false } = {}) {
 }
 
 // ---- deeper levels ------------------------------------------------------------------------------------------------------
-// Going down from the map: remember exactly where the map is, then cross-fade into the level.
+// Going down from the map: remember exactly where the map is, then open the level out of the building
+// itself. The X-Ray grows from the building's point on the map while the map eases in behind it, and
+// it starts only once the X-Ray has drawn, so nothing pops in afterwards. Going back reverses it into
+// the same point. Any newer move cancels a running one; reduced motion swaps instantly.
+let revealFrom = null; // client point the next depth level opens out of
 function goDeep(hash) {
   commitView();
   lastExplore = exploreHash();
-  const run = () => { history.pushState({ fromMap: true }, '', hash); onRoute(); };
-  if (!document.startViewTransition || reducedMotion()) run();
-  else { document.documentElement.classList.add('vt-depth'); document.startViewTransition(run).finished.finally(() => document.documentElement.classList.remove('vt-depth')); }
+  revealFrom = reducedMotion() ? null : placeOrigin();
+  history.pushState({ fromMap: true }, '', hash);
+  onRoute();
 }
 
+const REVEAL = { open: 520, close: 340, ease: 'cubic-bezier(0.22, 0.8, 0.24, 1)', easeIn: 'cubic-bezier(0.45, 0, 0.7, 0.4)' };
+function circleAt(pt) {
+  const r = $('depth').getBoundingClientRect();
+  const x = Math.round(pt.x - r.left), y = Math.round(pt.y - r.top);
+  const R = Math.ceil(Math.hypot(Math.max(x, r.width - x), Math.max(y, r.height - y)));
+  return { small: `circle(14px at ${x}px ${y}px)`, big: `circle(${R}px at ${x}px ${y}px)`, origin: `${pt.x - $('map-wrap').getBoundingClientRect().left}px ${pt.y - $('map-wrap').getBoundingClientRect().top}px` };
+}
+function stopReveal() {
+  for (const el of [$('depth'), $('map-wrap')]) el.getAnimations().forEach((a) => { if (a.id === 'reveal') a.cancel(); });
+}
+function revealDepth(pt) {
+  const d = $('depth'), c = circleAt(pt);
+  d.style.visibility = '';
+  d.animate([{ clipPath: c.small, opacity: 0.35 }, { clipPath: c.big, opacity: 1 }], { duration: REVEAL.open, easing: REVEAL.ease, id: 'reveal' });
+  const m = $('map-wrap');
+  m.style.transformOrigin = c.origin;
+  m.animate([{ transform: 'scale(1)' }, { transform: 'scale(1.08)', opacity: 0.6 }], { duration: REVEAL.open, easing: REVEAL.ease, id: 'reveal' });
+}
 function backToMap() {
   if (history.state?.fromMap) { history.back(); return; }
   navigate(lastExplore ?? encodeExplore({ ward: state.ward, selected: state.selected, lens: state.lens, period: state.period, mapShow: state.mapShow }));
@@ -524,7 +577,14 @@ function openDepth(kind, page = null, after) {
   if (prev === 'xray' && kind !== 'xray') disposeXray();
   state.depth = kind; state.page = page;
   document.body.dataset.depth = kind;
+  if (page) document.body.dataset.page = page; else delete document.body.dataset.page;
+  stopReveal();
+  const from = revealFrom; revealFrom = null;
   $('depth').hidden = false;
+  $('depth').inert = false;
+  $('depth').classList.toggle('is-revealing', !!from); // no default fade: the reveal replaces it
+  if (from) { $('depth').style.visibility = 'hidden'; holdStage(REVEAL.open + 60); } // hold until the level has drawn; 3D waits for the motion
+  const reveal = () => { if (from && state.depth === kind) revealDepth(from); else $('depth').style.visibility = ''; };
   for (const id of ['map-wrap', 'rail-left', 'rail-right']) $(id).inert = true;
   if (document.body.classList.contains('story-detail')) $('rail-right').inert = false;
   const view = kind === 'page' ? page : kind;
@@ -541,9 +601,10 @@ function openDepth(kind, page = null, after) {
   if (M && (kind === 'xray' || kind === 'compare')) {
     requestAnimationFrame(() => {
       try { kind === 'xray' ? renderXray(context(), M, state.xray) : renderFingerprint(context(), M, state.fp); } catch (err) { console.error(err); }
+      reveal();
       if (after) requestAnimationFrame(after);
     });
-  } else if (after) requestAnimationFrame(after);
+  } else { reveal(); if (after) requestAnimationFrame(after); }
   // Going down a level moves focus to its heading (the story keeps focus in its own panel).
   if ((prev !== kind || prevPage !== page) && !story?.active()) {
     // after the view has rendered (the X-Ray shows either its empty state or the building)
@@ -556,12 +617,26 @@ function openDepth(kind, page = null, after) {
 
 function closeDepth() {
   if (state.depth === 'map') return;
-  if (state.depth === 'xray') disposeXray();
+  const was = state.depth;
   state.depth = 'map'; state.page = null;
   document.body.dataset.depth = 'map';
-  $('depth').hidden = true;
+  stopReveal();
   for (const id of ['map-wrap', 'rail-left', 'rail-right']) $(id).inert = false;
   requestAnimationFrame(Atlas.invalidate);
+  // focus goes back to the button that opened the level
+  if (!story?.active() && (was === 'xray' || was === 'compare')) requestAnimationFrame(() => { if (state.depth === 'map') $('place').querySelector('[data-act=inspect]')?.focus({ preventScroll: true }); });
+  const d = $('depth');
+  const done = () => { if (state.depth !== 'map') return; d.hidden = true; d.inert = false; if (was === 'xray') disposeXray(); };
+  // Back from a building's X-Ray or comparison: the level closes back into the building on the map.
+  const pt = !reducedMotion() && !story?.active() && (was === 'xray' || was === 'compare') && !d.hidden ? placeOrigin() : null;
+  if (!pt) { done(); return; }
+  d.inert = true;
+  const c = circleAt(pt);
+  const m = $('map-wrap');
+  m.style.transformOrigin = c.origin;
+  m.animate([{ transform: 'scale(1.08)', opacity: 0.6 }, { transform: 'scale(1)', opacity: 1 }], { duration: REVEAL.close, easing: REVEAL.ease, id: 'reveal' });
+  d.animate([{ clipPath: c.big, opacity: 1 }, { clipPath: c.small, opacity: 0 }], { duration: REVEAL.close, easing: REVEAL.easeIn, id: 'reveal' })
+    .finished.then(done, () => {});
 }
 
 // ---- interactions ---------------------------------------------------------------------------------------------------------
@@ -633,7 +708,7 @@ function syncControls() {
   check('map-show', state.mapShow);
   check('item-group', state.problems.group);
   check('change-start', state.changes.start);
-  check('movers-n', state.movers.n);
+  check('movers-dir', state.movers.dir);
   check('lens', state.lens);
   $('ward').value = state.ward;
 }
@@ -647,7 +722,8 @@ function renderMetaNotes() {
     (pre-2023 and 2023–current files, ${fmt.n(M.data.records.length)} evaluations in total).
     ${fmt.n(ex('pre').flagged + ex('cur').flagged)} records flagged in the data as created in error, empty of ratings, or duplicated were left out,
     along with ${fmt.n(ex('pre').noScore + ex('cur').noScore)} with no score. Nothing else was removed or changed. Buildings are matched by their City registration number (RSN).
-    Building shapes: City of Toronto <a href="https://open.toronto.ca/dataset/3d-massing/" target="_blank" rel="noopener">3D Massing</a>; ward boundaries: <a href="https://open.toronto.ca/dataset/city-wards/" target="_blank" rel="noopener">City Wards</a>; streets and shoreline: <a href="https://open.toronto.ca/dataset/toronto-centreline-tcl/" target="_blank" rel="noopener">Toronto Centreline</a>. All under the Open Government Licence – Toronto.`;
+    Building shapes: City of Toronto <a href="https://open.toronto.ca/dataset/3d-massing/" target="_blank" rel="noopener">3D Massing</a>; ward boundaries: <a href="https://open.toronto.ca/dataset/city-wards/" target="_blank" rel="noopener">City Wards</a>; streets and shoreline: <a href="https://open.toronto.ca/dataset/toronto-centreline-tcl/" target="_blank" rel="noopener">Toronto Centreline</a>.
+    Contains information licensed under the <a href="https://open.toronto.ca/open-data-license/" target="_blank" rel="noopener">Open Government Licence – Toronto</a>.`;
 }
 
 // Search covers every evaluated building: the chosen system first, then buildings only in the other one.
@@ -667,10 +743,11 @@ function wireControls() {
     render();
   });
   radios('map-show', (v) => { state.mapShow = v; if (!story?.active()) commitView(); render(); });
-  radios('item-group', (v) => { state.problems.group = v; state.problems.showAll = false; renderLens(context()); });
+  radios('item-group', (v) => { state.problems.group = v; state.problems.page = 0; renderLens(context()); });
   radios('change-start', (v) => { state.changes.start = v; renderLens(context()); });
-  radios('movers-n', (v) => { state.movers.n = +v; renderLens(context()); });
-  $('problem-more').addEventListener('click', () => { state.problems.showAll = !state.problems.showAll; renderLens(context()); });
+  radios('movers-dir', (v) => { state.movers.dir = v; renderLens(context()); });
+  $('problem-prev').addEventListener('click', () => { state.problems.page--; renderLens(context()); });
+  $('problem-next').addEventListener('click', () => { state.problems.page++; renderLens(context()); });
   $('lens-close').addEventListener('click', () => {
     setLens(null);
     (story?.active() ? document.querySelector('#story-panel [data-act=detail]') : $('lens-btn'))?.focus();
@@ -678,6 +755,7 @@ function wireControls() {
 
   $('ward').innerHTML += M.wards.map((w) => `<option value="${w.ward}">${+w.ward} · ${esc(w.name)}</option>`).join('');
   $('ward').addEventListener('change', (e) => toMap(() => setWard(e.target.value)));
+  enhanceSelect($('ward'), { search: true, searchLabel: 'Search wards', placeholder: 'Search wards…' });
 
   search = initSearch($('search'), $('search-list'), {
     source: () => searchSource,
@@ -726,7 +804,7 @@ function wireShell() {
   });
   // close pop-up panels on an outside click
   document.addEventListener('click', (e) => {
-    if (!e.target.closest('.pop-panel, .tool, .info-btn, .popover')) for (const [b, p] of MENUS) if (!$(p).hidden) { $(p).hidden = true; $(b).setAttribute('aria-expanded', 'false'); }
+    if (!e.target.closest('.pop-panel, .tool, .info-btn, .popover, .ll-select-pop')) for (const [b, p] of MENUS) if (!$(p).hidden) { $(p).hidden = true; $(b).setAttribute('aria-expanded', 'false'); }
     document.querySelectorAll('details.menu[open]').forEach((d) => { if (!d.contains(e.target) || e.target.closest('.menu-item')) d.open = false; });
   });
   // Escape: close the innermost thing first (menu → panel → selection → ward), never moving the map.
@@ -763,12 +841,40 @@ function wireShell() {
     if (document.body.dataset.layer !== 'work') { themeStale = true; return; }
     themeStale = false; Atlas.restyle(); render();
   };
-  for (const b of toggles) b.addEventListener('click', () => {
-    const next = isDark() ? 'light' : 'dark';
+  // The switch itself: a circular reveal of the new theme from the button that was pressed (View Transitions),
+  // or a short colour cross-fade where that isn't supported. A second press mid-reveal skips the running one
+  // to its end and starts the next from there, so rapid toggling never queues or leaves mixed colours.
+  let themeVT = null, fadeTimer = 0;
+  const commit = (next) => {
     try { localStorage.setItem('lease-lens-theme', next); } catch { /* ignore */ }
     applyTheme(next);
     restyle();
-  });
+  };
+  const switchTheme = (btn) => {
+    const next = isDark() ? 'light' : 'dark';
+    const root = document.documentElement;
+    if (matchMedia('(prefers-reduced-motion: reduce)').matches) { commit(next); return; }
+    if (!document.startViewTransition) {
+      clearTimeout(fadeTimer);
+      root.classList.add('theme-fade');
+      commit(next);
+      fadeTimer = setTimeout(() => root.classList.remove('theme-fade'), 500);
+      return;
+    }
+    themeVT?.skipTransition();
+    const b = btn.getBoundingClientRect();
+    const x = b.left + b.width / 2, y = b.top + b.height / 2;
+    const r = Math.hypot(Math.max(x, innerWidth - x), Math.max(y, innerHeight - y));
+    root.classList.add('theme-vt');
+    const vt = document.startViewTransition(() => commit(next));
+    themeVT = vt;
+    vt.ready.then(() => {
+      root.animate({ clipPath: [`circle(0px at ${x}px ${y}px)`, `circle(${r}px at ${x}px ${y}px)`] },
+        { duration: 450, easing: 'cubic-bezier(0.45, 0, 0.2, 1)', pseudoElement: '::view-transition-new(root)' });
+    }).catch(() => {});
+    vt.finished.finally(() => { if (themeVT === vt) { themeVT = null; root.classList.remove('theme-vt'); } });
+  };
+  for (const b of toggles) b.addEventListener('click', () => switchTheme(b));
   matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { applyTheme(document.documentElement.dataset.theme); restyle(); });
 
   // Entering from the homepage: a short crossfade where the browser supports it. The hero drawing and the
@@ -801,7 +907,8 @@ function watchResize() {
       const s = `${$('stage').clientWidth}x${$('stage').clientHeight}`;
       if (s === last || $('app').hidden) return;
       last = s;
-      if (state.depth === 'map' && state.lens) renderLens(context());
+      // the open analysis layer and an open history/nearby view in the place panel both follow the new width
+      if (state.depth === 'map' && (state.lens || (state.selected && state.placeTab !== 'summary'))) renderChrome();
       else if (state.depth === 'xray' || state.depth === 'compare') render();
     }, 150);
   }).observe($('stage'));
@@ -843,9 +950,9 @@ const app = {
       frame(via);
       setTimeout(() => {
         if (!live()) return;
-        const run = () => openDepth(depth, null, done);
-        if (!document.startViewTransition) run();
-        else { document.documentElement.classList.add('vt-depth'); document.startViewTransition(run).finished.finally(() => document.documentElement.classList.remove('vt-depth')); }
+        const r = via.kind === 'building' && recOf(via.rsn);
+        revealFrom = r?.lat != null ? Atlas.clientPointOf(r.lat, r.lon) : null;
+        openDepth(depth, null, done);
       }, 1150);
       return;
     }
@@ -880,5 +987,6 @@ const app = {
   renderMetaNotes();
   watchResize();
   document.body.dataset.ready = '1';
+  warmXray();
   if (state.layer === 'work') onRoute();
 })();

@@ -98,3 +98,37 @@ for (const [rsn, name] of Object.entries(CASES)) {
     }
   });
 }
+
+test('a usable corner fits the real plan: its corner point is inside and most of the room stack is too', async () => {
+  const { MIN_FIT } = await import('../dashboard/js/xray/cutaway.js');
+  for (const rsn of Object.keys(CASES)) {
+    const { plan, bodies } = planFor(entryOf(rsn));
+    for (const c of plan.corners.filter((x) => x.exposed)) {
+      assert.ok(bodies.some((m) => pointInPoly(c.K[0], c.K[1], m.rings)), `${rsn} ${c.key}: corner inside`);
+      assert.ok(c.fit >= MIN_FIT, `${rsn} ${c.key}: fit ${c.fit}`);
+    }
+  }
+});
+
+test('tapered and triangular plans get a corner that fits them', () => {
+  // a trapezoid (16 m wide tapering to 8 m over 26 m) and a right triangle (30 × 22 m)
+  for (const rings of [[[0, -8, 26, -4, 26, 4, 0, 8]], [[0, 0, 30, 0, 0, 22]]]) {
+    const bodies = [{ rings, base: 0, top: 18 }];
+    const F = wingFrames(rings)[0] ?? innerFrame(rings);
+    const plan = cutawayPlan({ F, bodies, storeys: 6, fh: 3 });
+    const home = plan.corners.find((c) => c.key === plan.home);
+    assert.ok(home.exposed && home.fit >= 0.8, `fit ${home.fit}`);
+    assert.ok(plan.corners.every((c) => !c.exposed || pointInPoly(c.K[0], c.K[1], rings)));
+  }
+});
+
+test('room floors are the footprint clipped to the room, not its rectangle', async () => {
+  const { _test: { clipToRect, polyArea } } = await import('../dashboard/js/xray/rooms.js');
+  // a right triangle over a 10 × 10 room: half the room is outside the building
+  const tri = [[0, 0], [10, 0], [0, 10]];
+  const floor = clipToRect(tri, 0, 10, 0, 10);
+  assert.equal(Math.abs(polyArea(floor)), 50);
+  // an L-shaped (concave) plan clipped to a room straddling its inner corner
+  const L = [[0, 0], [10, 0], [10, 4], [4, 4], [4, 10], [0, 10]];
+  assert.equal(Math.abs(polyArea(clipToRect(L, 2, 8, 2, 8))), 6 * 2 + 2 * 4);
+});

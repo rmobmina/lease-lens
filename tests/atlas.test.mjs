@@ -118,6 +118,8 @@ test('levels: zoom thresholds use hysteresis, so jitter at a boundary never flip
   // ward fill fades monotonically with zoom
   const f = [10, 11.5, 12, 12.5, 13, 13.5, 16].map(A.wardFillOpacity);
   for (let i = 1; i < f.length; i++) assert.ok(f[i] <= f[i - 1]);
+  assert.equal(A.wardFillOpacity(11), 1); // solid at the city view
+  assert.ok(A.wardFillOpacity(16) < 0.1); // a faint wash among buildings
 });
 
 test('clusters: every mapped building is counted exactly once, with its band', () => {
@@ -222,4 +224,17 @@ test('search: address prefix first, then word starts, then anywhere; both scorin
   // every evaluated building can be found by its full address
   const all = [...pm.latest, ...M.byPeriod.pre.latest.filter((r) => !pm.latestByRsn.has(r.rsn))];
   for (const r of all.slice(0, 300)) assert.ok(rankMatches(all, r.address, 50).some((x) => x.rsn === r.rsn), r.address);
+});
+
+test('address search: long street words, punctuation and case match the City forms', async () => {
+  const { rankMatches, normalizeAddress } = await import('../dashboard/js/atlas/search.js');
+  assert.equal(normalizeAddress('  1385 midland avenue '), '1385 MIDLAND AVE');
+  assert.equal(normalizeAddress('874 Lawrence Avenue East'), '874 LAWRENCE AVE E');
+  const recs = [{ address: '874 LAWRENCE AVE E' }, { address: '1385 MIDLAND AVE' }, { address: '30 DENARDA ST' }, { address: '1385 MIDLAND AVE E' }];
+  assert.deepEqual(rankMatches(recs, 'lawrence avenue east').map((r) => r.address), ['874 LAWRENCE AVE E']);
+  assert.deepEqual(rankMatches(recs, 'denarda street').map((r) => r.address), ['30 DENARDA ST']);
+  // the exact address ranks ahead of a longer one that starts the same way
+  assert.deepEqual(rankMatches(recs, '1385 midland ave').map((r) => r.address), ['1385 MIDLAND AVE', '1385 MIDLAND AVE E']);
+  assert.deepEqual(rankMatches(recs, 'no such road'), []);
+  assert.ok(recs.every((r) => Object.keys(r).length === 1), 'records are not modified');
 });

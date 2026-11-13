@@ -3,6 +3,11 @@
 // because numbers on the page are always computed from the data.
 
 export const INFO = {
+  // the analysis panel's "How to read this": the chart's own method list follows (data-info-from)
+  'lens-method': {
+    title: 'How to read this',
+    body: '',
+  },
   score: {
     title: 'What does this score mean?',
     body: '<p>RentSafeTO evaluations summarize multiple building conditions into one score. Individual item ratings may reveal additional details.</p><p>Inspectors look at common areas (lobbies, halls, stairwells, grounds, systems and records), not individual units.</p>',
@@ -38,14 +43,29 @@ export const INFO = {
     body: '<p>An item rated 0 or 1 on the current 0–3 scale, the two lowest marks. N/A items don’t apply and blanks were not recorded; neither is counted as a low mark or as a pass.</p>',
     more: { href: '#/about', label: 'About the data' },
   },
+  'xray-modes': {
+    title: 'What do the three views show?',
+    body: '<p><b>Exterior</b> shows the building’s sourced outer shape. <b>Cutaway</b> opens one corner to reveal illustrative rooms, one per inspection category. <b>Focus</b> frames a single category and dims the rest.</p><p>Colours show how inspectors rated a category, never where a problem is.</p>',
+  },
   'xray-controls': {
     title: 'Moving around the model',
-    body: '<p><b>Exterior</b> shows the building as sourced. <b>Cutaway</b> opens one corner to show illustrative rooms. <b>Focus</b> frames one inspection category.</p><p>Drag to orbit (the cutaway follows you to the street corner you face), right-drag or two fingers to pan, scroll to zoom, double-click to fly to a point. Choose a room, a label or a category in the list to focus it; Esc returns to the whole building. The camera always stays outside the building.</p>',
-    more: { href: '#/help', label: 'Help' },
+    body: '<p>Drag to orbit, right-drag or use two fingers to pan, and scroll to zoom. Double-click flies to a point. <b>Reset view</b> returns to the starting angle and Esc to the whole building. The camera always stays outside the building.</p>',
   },
   'xray-model': {
-    title: 'About this model',
-    body: '<p>Items are rated 0–3 (2023 – now), where 3 is the top mark; 0 or 1 counts as <b>rated poorly</b>. N/A items don’t apply and are never counted. A room’s floor tint shows its category’s status. It is not a certified safety-risk score.</p><p>The rooms in the cutaway are the same generic spaces for every building. They do not show the real floor plan, and an inspection result is never located in a particular room or unit. “How this works” under the model has the full method.</p>',
+    title: 'Is this the building’s actual interior?',
+    body: '<p>No. The outer shape and height come from the City’s 3D Massing data where the address matched reliably. The rooms inside are the same illustrative spaces for every building: not the floor plan, and a result is never placed in a particular room or unit.</p>',
+  },
+  'xray-ratings': {
+    title: 'How are poor ratings counted?',
+    body: '<p>Inspectors rate each item 0–3 (2023 – now) or 1–5 (2017 – 2023). LeaseLens counts the two lowest marks as <b>rated poorly</b>. A category’s share is its poorly rated items ÷ its applicable items. N/A and blank items are never counted, as a problem or as a pass.</p>',
+  },
+  'compare-match': {
+    title: 'How is the other building chosen?',
+    body: '<p>Only latest evaluations from the same scoring system are compared. Buildings with the same overall score come first; if there are none, the closest within 1, then 2 points. The list runs from the most different inspection profile to the least, within the selected ward when it has a match.</p>',
+  },
+  'history-systems': {
+    title: 'Why aren’t older scores compared?',
+    body: '<p>The City changed its scoring system in 2023. The newer system rates up to 50 items from 0 to 3; the older one rated about 20 items from 1 to 5. Because the items and scales differ, points are connected, and changes measured, only within one system.</p>',
   },
   'map-wards': {
     title: 'Reading the ward map',

@@ -114,6 +114,24 @@ export function buildingProfile(rec, layout) {
   };
 }
 
+// The paired profile (sections/fp-profile.js): one row per area for two buildings, on one shared scale.
+//   share   = items rated low ÷ items rated in that area (null if the area wasn't rated: never 0)
+//   domain  = one end of scale for both sides, picked so its midpoint is a round number too
+//   strong  = the (at most two) areas where the buildings differ most. An area is emphasised only if the
+//             low-rated counts differ, so equal rows are never made to look different.
+export const PROFILE_DOMAINS = [0.2, 0.4, 0.5, 0.6, 0.8, 1];
+export function pairedProfile(pa, pb) {
+  const side = (g) => ({ low: g.low, rated: g.rated, share: g.rated ? g.low / g.rated : null, items: g.items });
+  const rows = pa.groups.map((ga, i) => ({ key: ga.key, label: ga.label, a: side(ga), b: side(pb.groups[i]) }));
+  const max = Math.max(0, ...rows.flatMap((r) => [r.a.share ?? 0, r.b.share ?? 0]));
+  const domain = PROFILE_DOMAINS.find((d) => d >= max) ?? 1;
+  const gap = (r) => Math.abs((r.a.share ?? 0) - (r.b.share ?? 0));
+  const ranked = rows.filter((r) => r.a.low !== r.b.low && gap(r) > 0).sort((x, y) => gap(y) - gap(x) || x.key.localeCompare(y.key));
+  const strong = new Set(ranked.slice(0, 2).map((r) => r.key));
+  for (const r of rows) r.strong = strong.has(r.key);
+  return { rows, domain };
+}
+
 // How different two profiles are: sum of rating gaps on items both buildings had rated,
 // plus a bonus for low marks that only one of them has. Used only to pick telling examples.
 export function profileDistance(a, b, cats) {

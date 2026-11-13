@@ -3,6 +3,7 @@
 
 import { itemProblemRates } from '../model.js';
 import { tip, pct, fmt, esc, svgIn, cssVar, empty, setFinding } from '../ui.js';
+import { snapshot, play } from '../chart-motion.js';
 
 const TOP = 12;
 const MIN_RATED = 30; // items rated in fewer buildings than this are listed separately, not ranked
@@ -10,7 +11,8 @@ const MIN_RATED = 30; // items rated in fewer buildings than this are listed sep
 export function renderProblems(ctx, state) {
   const { latest, pm, ward } = ctx;
   const box = document.getElementById('problem-chart');
-  const more = document.getElementById('problem-more');
+  const pager = document.getElementById('problem-pager');
+  const before = snapshot(box);
   box.innerHTML = '';
 
   // The records/physical split only exists in the 2023+ item list.
@@ -26,23 +28,30 @@ export function renderProblems(ctx, state) {
   rows = rows.filter((d) => d.rated >= MIN_RATED)
     .filter((d) => group === 'all' || (group === 'record' ? d.record : !d.record))
     .sort((a, b) => b.share - a.share || b.poor - a.poor);
-  if (!rows.length) { empty(box, 'No inspection items with enough ratings for this selection.'); more.hidden = true; return; }
+  if (!rows.length) { empty(box, 'No inspection items with enough ratings for this selection.'); pager.hidden = true; return; }
 
-  const shown = state.showAll ? rows : rows.slice(0, TOP);
-  more.hidden = rows.length <= TOP;
-  more.textContent = state.showAll ? `Show top ${TOP} only` : `Show all ${rows.length} items`;
-  more.setAttribute('aria-expanded', String(!!state.showAll));
-
+  // As many rows as the panel has room for, a page at a time (the page never grows taller than the window).
+  // Every page uses the same scale, so bars compare across pages.
   const narrow = box.clientWidth < 640;
-  const rowH = narrow ? 44 : 30;
+  const rowH = narrow ? 40 : 30;
+  pager.hidden = false;                       // measured with the pager in place
+  const room = box.clientHeight > 120 ? box.clientHeight : 0;
+  const per = room ? Math.max(4, Math.floor((room - 36) / rowH)) : TOP;
+  const pages = Math.ceil(rows.length / per);
+  state.page = Math.min(Math.max(0, state.page ?? 0), pages - 1);
+  const shown = rows.slice(state.page * per, state.page * per + per);
+  pager.hidden = pages <= 1;
+  document.getElementById('problem-range').textContent = `${state.page * per + 1}–${state.page * per + shown.length} of ${rows.length} items`;
+  document.getElementById('problem-prev').disabled = state.page === 0;
+  document.getElementById('problem-next').disabled = state.page >= pages - 1;
   const H = shown.length * rowH + 36;
   const { svg, width } = svgIn(box, H, `Bar chart of the ${shown.length} most common problems, by share of buildings rated poorly.`);
   const labelW = narrow ? 0 : Math.min(270, width * 0.36);
   const valueW = 128;
   const x0 = labelW + (narrow ? 0 : 12);
-  const xMax = d3.max(shown, (d) => d.share);
+  const xMax = d3.max(rows, (d) => d.share);
   const x = d3.scaleLinear().domain([0, Math.max(0.05, xMax)]).nice().range([x0, width - valueW]);
-  const barH = Math.min(18, rowH - (narrow ? 26 : 12));
+  const barH = Math.min(18, rowH - (narrow ? 26 : 12));   // 14 px on the two-line rows
   const barColor = cssVar('--ink-2');
   // The guided story can highlight one group of items (ctx.highlight: a Set of item columns).
   const hl = ctx.highlight;
@@ -55,20 +64,21 @@ export function renderProblems(ctx, state) {
     .call(d3.axisBottom(x).ticks(5).tickFormat(d3.format('.0%')).tickSizeOuter(0));
 
   const g = svg.append('g').selectAll('g').data(shown).join('g')
+    .attr('data-k', (d) => d.col)
     .attr('transform', (d, i) => `translate(0,${i * rowH + 4})`);
-  const barY = narrow ? 20 : (rowH - barH) / 2 - 2;
+  const barY = narrow ? 18 : (rowH - barH) / 2 - 2;
   g.append('rect').attr('class', 'row-hit').attr('x', 0).attr('y', -2).attr('width', width).attr('height', rowH - 2).attr('rx', 4);
   g.append('text').attr('class', 'row-label')
-    .attr('x', narrow ? 0 : labelW).attr('y', narrow ? 14 : barY + barH / 2 + 4.5).attr('text-anchor', narrow ? 'start' : 'end')
+    .attr('x', narrow ? 0 : labelW).attr('y', narrow ? 13 : barY + barH / 2 + 4.5).attr('text-anchor', narrow ? 'start' : 'end')
     .text((d) => d.label)
     .append('tspan').attr('class', 'row-sub').text((d) => (d.record && group === 'all' ? '  · record/plan' : ''));
   // bar with a 4px rounded data end, square at the baseline
-  g.append('path').attr('fill', fillFor).attr('class', (d) => (hl && hl.has(d.col) ? 'is-highlight' : null))
+  g.append('path').attr('data-bar', '').attr('fill', fillFor).attr('class', (d) => (hl && hl.has(d.col) ? 'is-highlight' : null))
     .attr('d', (d) => {
       const w = Math.max(2, x(d.share) - x0), r = Math.min(4, w / 2), y0 = barY, h = barH;
       return `M${x0},${y0}h${w - r}a${r},${r} 0 0 1 ${r},${r}v${h - 2 * r}a${r},${r} 0 0 1 -${r},${r}h-${w - r}z`;
     });
-  g.append('text').attr('class', 'value').attr('x', (d) => x(d.share) + 8).attr('y', barY + barH / 2 + 4)
+  g.append('text').attr('class', 'value').attr('data-val', '').attr('x', (d) => x(d.share) + 8).attr('y', barY + barH / 2 + 4)
     .html((d) => `<tspan class="value-strong">${pct(d.share, 1)}</tspan> · ${fmt.n(d.poor)} bldgs`);
 
   g.attr('tabindex', 0).attr('class', 'row')
@@ -77,6 +87,7 @@ export function renderProblems(ctx, state) {
     .on('mousemove', (ev) => tip.move(ev)).on('mouseleave', () => tip.hide())
     .on('focus', function (ev, d) { const b = this.getBoundingClientRect(); tip.show(problemTip(d, latest.length), { clientX: b.left + 260, clientY: b.top + b.height }); })
     .on('blur', () => tip.hide());
+  play(before, box);
 
   // takeaway
   const anyPoor = latest.filter((r) => pm.cats.some((c) => r.ratings[c] != null && r.ratings[c] <= pm.P.poorMax)).length;

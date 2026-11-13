@@ -8,12 +8,38 @@
 // or a second press, returns focus to its button, flips and clamps to stay inside the viewport, and
 // is announced as a non-modal dialog named by its title. One popover is open at a time.
 //
+// Motion: it grows out of its button (transform-origin = the button's centre, on whichever side it
+// opened) and shrinks back into it. Opening another one, or the same one again, mid-animation picks up
+// from where the box visibly is: the running animation is cancelled, never queued.
+//
 // Content comes from content/info.js. A button may also name a hidden element with data-info-from:
 // that element's current text is shown (used where a view computes its own explanation).
 
 import { INFO } from '../content/info.js';
 
-let pop, current = null;
+let pop, current = null, anim = null;
+const reduced = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+// Grow from / shrink into the button. Reads the popover's current (possibly mid-animation) look first.
+function play(show) {
+  const from = anim ? getComputedStyle(pop) : null;
+  const start = from ? { opacity: from.opacity, transform: from.transform === 'none' ? 'none' : from.transform } : null;
+  anim?.cancel();
+  anim = null;
+  if (reduced()) { if (!show) pop.hidden = true; return; }
+  const up = pop.dataset.side === 'above' ? 1 : -1;
+  const shut = { opacity: 0, transform: `translateY(${up * 4}px) scale(0.96)` };
+  const open = { opacity: 1, transform: 'none' };
+  anim = pop.animate(show ? [start ?? shut, open] : [start ?? open, shut],
+    { duration: show ? 200 : 120, easing: show ? 'cubic-bezier(0.2, 0.7, 0.2, 1)' : 'cubic-bezier(0.4, 0, 1, 1)', fill: 'both' });
+  const a = anim;
+  a.onfinish = () => {
+    if (anim !== a) return;
+    anim = null;
+    a.cancel();
+    if (!show) pop.hidden = true;
+  };
+}
 
 function ensure() {
   if (pop) return pop;
@@ -34,8 +60,12 @@ function contentFor(btn) {
   const key = btn.dataset.info;
   const base = INFO[key] ?? { title: btn.getAttribute('aria-label') || 'About this', body: '' };
   const from = btn.dataset.infoFrom && document.getElementById(btn.dataset.infoFrom);
-  const extra = from && from.innerHTML.trim() ? `<p>${from.innerHTML}</p>` : '';
-  return { ...base, body: (base.body || '') + extra };
+  // (block content, such as a method list, keeps its own structure; a sentence becomes a paragraph)
+  const html = from?.innerHTML.trim() ?? '';
+  const extra = !html ? '' : /^<(ul|ol|div|p|table)/i.test(html) ? `<div class="popover-from">${html}</div>` : `<p>${html}</p>`;
+  // a chart's sentence of interpretation (setFinding) leads, then its method notes
+  const lead = btn.dataset.infoLead ? `<p class="popover-lead">${btn.dataset.infoLead}</p>` : '';
+  return { ...base, body: (base.body || '') + lead + extra };
 }
 
 export function open(btn) {
@@ -54,6 +84,7 @@ export function open(btn) {
   btn.setAttribute('aria-expanded', 'true');
   btn.setAttribute('aria-controls', pop.id);
   place();
+  play(true);
   pop.focus({ preventScroll: true });
 }
 
@@ -61,7 +92,7 @@ export function close(returnFocus) {
   if (!current) return;
   const btn = current;
   current = null;
-  pop.hidden = true;
+  play(false);
   btn.setAttribute('aria-expanded', 'false');
   if (returnFocus && btn.isConnected) btn.focus({ preventScroll: true });
 }
@@ -86,12 +117,15 @@ function place() {
   top = Math.max(8, Math.min(top, vh - p.height - 8));
   pop.style.left = `${Math.round(left)}px`;
   pop.style.top = `${Math.round(top)}px`;
+  // grow from the button's centre (in the popover's own coordinates)
+  const ox = Math.max(0, Math.min(p.width, b.left + b.width / 2 - left));
+  pop.style.transformOrigin = `${Math.round(ox)}px ${pop.dataset.side === 'above' ? '100%' : '0'}`;
 }
 
 export function initInfoPopovers() {
   ensure();
   // Every button gets the same state attributes, including ones added to the page later.
-  const prep = (root) => root.querySelectorAll?.('.info-btn[data-info]:not([aria-expanded])').forEach((b) => {
+  const prep = (root) => root.querySelectorAll?.('.info-btn[data-info]:not([aria-expanded]), .info-link[data-info]:not([aria-expanded])').forEach((b) => {
     b.setAttribute('aria-expanded', 'false');
     b.setAttribute('aria-haspopup', 'dialog');
   });
@@ -99,7 +133,7 @@ export function initInfoPopovers() {
   new MutationObserver((ms) => ms.forEach((m) => m.addedNodes.forEach((n) => n.nodeType === 1 && prep(n)))).observe(document.body, { childList: true, subtree: true });
 
   document.addEventListener('click', (e) => {
-    const btn = e.target.closest('.info-btn[data-info]');
+    const btn = e.target.closest('.info-btn[data-info], .info-link[data-info]');
     if (btn) { e.preventDefault(); e.stopPropagation(); open(btn); return; }
     if (current && !pop.contains(e.target)) close(false);
   });

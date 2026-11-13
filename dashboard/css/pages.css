@@ -1,0 +1,163 @@
+/* Fitted pages: Compare ("Same score, different story"), About and Help.
+   Same contract as the Building Explorer (building.css): on a laptop the page is fitted to the window and never
+   scrolls. Long content is swapped (tabs), collapsed (one disclosure open at a time) or moved to a dialog, never
+   stacked. Below --bx-min-h of height, or on narrow screens, the view scrolls as a whole instead of clipping.
+   Every value comes from tokens.css; hierarchy is carried by type and space, borders only where they divide. */
+
+/* ---- the shell: the depth level is a flex column, the view fills what the bar leaves ------------------------ */
+body[data-depth="compare"]:not(.is-story) .depth,
+body[data-depth="page"] .depth { overflow: hidden; display: flex; flex-direction: column; }
+body[data-depth="compare"]:not(.is-story) .depth-body,
+body[data-depth="page"] .depth-body { flex: 1; min-height: 0; display: flex; }
+body:not(.is-story) .fp-view:not([hidden]),
+.depth .page-view:not([hidden]) { flex: 1; min-height: 0; min-width: 0; display: flex; padding: var(--space-5) var(--space-6); overflow: auto; }
+.depth .page-view:not([hidden]) > .page { flex: 1; width: 100%; height: 100%; min-height: var(--bx-min-h); margin: 0 auto; padding: 0; }
+
+/* ---- Compare ------------------------------------------------------------------------------------------------ */
+body:not(.is-story) .fp-view > .fp-wrap { flex: 1; width: 100%; max-width: 1360px; height: 100%; min-height: var(--bx-min-h); margin: 0 auto; display: flex; flex-direction: column; }
+body:not(.is-story) .fp-intro { flex: none; max-width: none; margin: 0; }
+body:not(.is-story) .fp-intro h1 { font-size: clamp(26px, 2.1vw, 32px); line-height: var(--leading-tight); }
+body:not(.is-story) .fp-intro .lede { margin-top: var(--space-1); font-size: var(--text-base); line-height: var(--leading-body); color: var(--ink-2); max-width: none; }
+body:not(.is-story) .fp-main:not([hidden]) { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+body:not(.is-story) .fp-controls { flex: none; margin-top: var(--space-4); padding: 0 0 var(--space-3); border-top: 0; }
+body:not(.is-story) .fp-verdict { flex: none; margin: 0; max-width: 78ch; font-size: var(--text-base); line-height: var(--leading-body); }
+.fp-nav { margin-top: var(--space-3); }
+.fp-nav .bx-method-btn + .bx-method-btn { margin-left: 0; }
+.fp-panels { flex: 1; min-height: 0; display: grid; grid-template: minmax(0, 1fr) / minmax(0, 1fr); margin-top: var(--space-4); }
+.fp-panel { grid-area: 1 / 1; min-height: 0; min-width: 0; display: flex; flex-direction: column; }
+.fp-panel[hidden] { display: none; }
+
+/* By category: the profile table, its open category listing the low-rated items in two columns */
+body:not(.is-story) .fp-profile { margin: 0; }
+body:not(.is-story) .fp-profile .pf-list { display: flex; flex-wrap: wrap; gap: var(--space-1) var(--space-4); }
+body:not(.is-story) .fp-profile .pf-list li { margin: 0; }
+body:not(.is-story) .fp-profile .pf-items-a .pf-list { justify-content: flex-end; }
+.pf-more { color: var(--muted); font-size: var(--text-sm); }
+body:not(.is-story) .fp-profile .pf-items > td { padding: var(--space-2) var(--space-4); }
+body:not(.is-story) .fp-profile .pf-h { padding-bottom: var(--space-2); }
+body:not(.is-story) .fp-profile .pf-name { font-size: var(--text-lg); }
+body:not(.is-story) .fp-profile .pf-score b { font-size: 26px; }
+body:not(.is-story) .fp-profile .pf-cell { height: var(--pf-h, 40px); }
+
+/* Every item: two buildings side by side; in each, the grid and, beside it, the low marks and notes */
+body:not(.is-story) .fp-legend { flex: none; margin: 0 0 var(--space-3); }
+body:not(.is-story) .fp-pair { flex: 1; min-height: 0; grid-template-rows: minmax(0, 1fr); }
+body:not(.is-story) .fp-building { min-height: 0; display: flex; flex-direction: column; padding-top: 0; }
+body:not(.is-story) .fp-head { flex: none; }
+body:not(.is-story) .fp-head .fp-score { margin: var(--space-1) 0 var(--space-3); }
+body:not(.is-story) .fp-head .fp-score-num { font-size: 28px; }
+.fp-body { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) minmax(180px, 38%); gap: var(--space-4); }
+body:not(.is-story) .fp-chart { min-height: 0; height: 100%; }
+.fp-side { min-height: 0; overflow: hidden; }
+.fp-side .card-sub { margin: 0; }
+.fp-side .fp-low-list li { grid-template-columns: 20px minmax(0, 1fr); padding: 2px 0; font-size: var(--text-sm); }
+.fp-side .fp-low-city { display: none; }
+.fp-low-more { display: block !important; padding-top: var(--space-1) !important; font-size: var(--text-sm); color: var(--muted); }
+.fp-side .fp-note-list { margin-top: var(--space-2); font-size: var(--text-sm); }
+
+/* All of Toronto: the city grid takes the height, its two notes sit below it */
+body:not(.is-story) .fp-city { flex: 1; min-height: 0; display: flex; flex-direction: column; margin: 0; padding: 0; border: 0; }
+body:not(.is-story) .fp-city .fp-h2 { flex: none; font-size: var(--text-lg); }
+body:not(.is-story) .fp-city-sub { flex: none; max-width: none; }
+body:not(.is-story) .fp-city-chart { flex: 1; min-height: 0; margin-top: var(--space-3); }
+body:not(.is-story) .fp-city-notes { flex: none; margin: var(--space-3) 0 0; font-size: var(--text-sm); color: var(--ink-2); }
+
+/* dialogs: the table and the method */
+.fp-dialog .fp-table { margin: 0; }
+.fp-dialog table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; font-size: var(--text-sm); }
+.fp-dialog th, .fp-dialog td { text-align: left; padding: var(--space-1) var(--space-2) var(--space-1) 0; border-bottom: var(--border); vertical-align: top; }
+.fp-dialog thead th { position: sticky; top: 0; background: var(--surface); font-size: var(--text-xs); color: var(--muted); font-weight: var(--weight-semibold); }
+
+/* the guided story keeps its own arrangement of this page (story.css): no tabs, both panels as it chooses */
+body.is-story .fp-nav, body.is-story #fp-panel-city { display: none; }
+body.is-story #fp-panel-profile, body.is-story #fp-panel-items { display: block !important; }
+body.is-story .fp-panels { display: block; }
+body.is-story .fp-body { display: block; }
+body.is-story .fp-side { display: none; }
+
+/* ---- About: intro and the three ways in on the left, the detail on the right ------------------------------------ */
+.depth .page.about { max-width: 1200px; display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr); gap: var(--space-7); align-items: start; align-content: start; padding-top: var(--space-4); }
+.about-main { display: flex; flex-direction: column; gap: var(--space-6); min-width: 0; }
+.page.about .eyebrow { margin: 0 0 var(--space-2); font-size: var(--text-sm); font-weight: var(--weight-medium); color: var(--accent); }
+.page.about h1 { font-size: clamp(30px, 2.6vw, 38px); line-height: 1.12; }
+.page.about .about-intro .lede { margin-top: var(--space-4); font-size: var(--text-md); line-height: 1.62; max-width: 36em; }
+.page.about .section-label { margin: 0; font-family: var(--font-ui); font-size: var(--text-sm); font-weight: var(--weight-semibold); letter-spacing: var(--tracking-label); color: var(--muted); }
+.page.about .about-block { margin: 0; }
+.page.about .steps-row { grid-template-columns: 1fr; gap: 0; margin-top: var(--space-2); }
+.page.about .steps-row li { grid-template-columns: 2.25em minmax(0, 1fr) auto; grid-template-areas: "n t a" "n s a"; column-gap: var(--space-3); row-gap: 2px; align-items: baseline;
+  padding: var(--space-3) 0; border-top: var(--border); }
+.page.about .steps-row li:last-child { border-bottom: var(--border); }
+.page.about .steps-row li::before { grid-area: n; }
+.page.about .steps-row b { grid-area: t; font-size: var(--text-md); }
+.page.about .steps-row span { grid-area: s; font-size: var(--text-base); line-height: var(--leading-body); color: var(--ink-2); }
+.page.about .steps-row a { grid-area: a; align-self: center; margin: 0; font-size: var(--text-sm); white-space: nowrap; }
+/* the project credit: a quiet editorial colophon under the main column */
+.about-credit { padding-top: var(--space-4); border-top: var(--border); }
+.about-credit p { max-width: 40em; }
+.about-credit p { margin: 0; font-size: var(--text-sm); line-height: var(--leading-body); color: var(--ink-2); }
+.about-credit b { font-weight: var(--weight-semibold); color: var(--ink); }
+.page.about .about-foot { margin-top: var(--space-1); font-size: var(--text-sm); color: var(--muted); }
+.about-more { min-width: 0; }
+.page.about .disclosures { margin-top: var(--space-2); }
+.page.about .disclosure > summary { padding: var(--space-3) 0; font-size: var(--text-md); }
+.page.about .disclosure-body { padding-bottom: var(--space-4); }
+.about-list { margin: 0; padding: 0; list-style: none; display: grid; gap: var(--space-2); }
+.page.about .about-list li { margin: 0; padding-left: var(--space-4); position: relative; font-size: var(--text-base); line-height: var(--leading-body); max-width: 40em; }
+.about-list li::before { content: ""; position: absolute; left: 2px; top: 0.68em; width: 5px; height: 5px; border-radius: 50%; background: var(--muted); }
+.page.about .about-small { margin-top: var(--space-2); font-size: var(--text-sm); line-height: var(--leading-body); }
+.page.about .about-small:first-child { margin-top: 0; }
+.page.about .truth-table { margin-top: var(--space-3); font-size: var(--text-sm); }
+.page.about .truth-table th, .page.about .truth-table td { padding: var(--space-1) var(--space-2) var(--space-1) 0; line-height: 1.4; }
+
+/* ---- Help: six short answers in a grid -------------------------------------------------------------------------- */
+.depth .page.help { max-width: 1200px; display: flex; flex-direction: column; justify-content: center; gap: var(--space-6); }
+.page.help h1 { font-size: clamp(30px, 2.8vw, 40px); }
+.page.help .lede { margin-top: var(--space-2); font-size: var(--text-md); }
+.help-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-6) var(--space-6); }
+.help-grid section { padding-top: var(--space-3); border-top: var(--border-width-strong) solid var(--accent); }
+.page.help .help-grid h2 { margin: 0; font-size: var(--text-lg); }
+.page.help .help-grid p { margin-top: var(--space-2); font-size: var(--text-base); line-height: var(--leading-body); }
+.page.help .help-grid b { color: var(--ink); }
+
+/* ---- short windows: tighter rhythm before anything would overflow ------------------------------------------------ */
+@media (max-height: 800px) {
+  /* the intro sentence is context, not a control: on short windows the title alone leads (its ⓘ explains) */
+  body:not(.is-story) .fp-intro .lede { display: none; }
+  body:not(.is-story) .fp-profile .pf-cell { height: var(--pf-h, 32px); }
+  body:not(.is-story) .fp-profile .pf-score { margin-top: 0; }
+  body:not(.is-story) .fp-profile .pf-score b { font-size: 22px; }
+  body:not(.is-story) .fp-profile .pf-name { margin-top: 0; }
+  /* the verdict above already gives each building's count; the header keeps name and score */
+  body:not(.is-story) .fp-profile .pf-tag { display: none; }
+  /* once a category is open, "select an area to see its items" has done its job */
+  body:not(.is-story) .fp-profile .pf:has(.pf-items:not([hidden])) .pf-cap { display: none; }
+  body:not(.is-story) .fp-profile .pf-cap { padding-top: var(--space-2); font-size: var(--text-xs); }
+  body:not(.is-story) .fp-verdict { font-size: var(--text-base); }
+  body:not(.is-story) .fp-view:not([hidden]), .depth .page-view:not([hidden]) { padding: var(--space-4) var(--space-5); }
+  body:not(.is-story) .fp-controls { margin-top: var(--space-3); padding-bottom: var(--space-2); }
+  .fp-panels { margin-top: var(--space-3); }
+  .page.about .steps-row li { padding: var(--space-2) 0; }
+  .page.about .disclosure > summary { padding: var(--space-2) 0; }
+  .about-main { gap: var(--space-4); }
+  .help-grid { gap: var(--space-5) var(--space-6); }
+}
+
+/* ---- tablets and phones: one column, and the page scrolls as a whole ---------------------------------------------- */
+@media (max-width: 900px) {
+  body[data-depth="compare"]:not(.is-story) .depth, body[data-depth="page"] .depth { overflow-y: auto; display: block; }
+  body[data-depth="compare"]:not(.is-story) .depth-body, body[data-depth="page"] .depth-body { display: block; }
+  body:not(.is-story) .fp-view:not([hidden]), .depth .page-view:not([hidden]) { display: block; overflow: visible; padding: var(--space-4) var(--space-4) var(--space-6); }
+  body:not(.is-story) .fp-view > .fp-wrap, .depth .page-view:not([hidden]) > .page { height: auto; min-height: 0; }
+  .fp-body { grid-template-columns: 1fr; }
+  .fp-side { overflow: visible; }
+  .depth .page.about { grid-template-columns: 1fr; gap: var(--space-6); }
+  .help-grid { grid-template-columns: 1fr; gap: var(--space-5); }
+  /* the three tabs keep their row; Table and Method drop to the line below */
+  .fp-nav { flex-wrap: wrap; row-gap: 0; }
+  .fp-nav .xr-tabs { flex: 1 0 100%; gap: var(--space-4); }
+  .fp-nav .bx-method-btn:first-of-type { margin-left: 0; }
+}
+@media (min-width: 901px) and (max-width: 1100px) {
+  .help-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-4) var(--space-5); }
+  .page.help .help-grid p { font-size: var(--text-sm); }
+}

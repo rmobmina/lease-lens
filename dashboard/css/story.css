@@ -82,7 +82,17 @@ body.is-story .fp-view { display: flex; align-items: center; }
 body.is-story .fp-wrap { width: 100%; max-width: 1120px; margin: 0 auto; }
 body.is-story .fp-pair { grid-template-columns: repeat(2, minmax(0, 1fr)); } /* side by side at every size */
 body.is-story .fp-verdict, body.is-story .fp-lows, body.is-story .fp-notes, body.is-story .fp-controls, body.is-story .fp-table,
-body.is-story .fp-city, body.is-story .fp-method-block, body.is-story .fp-intro { display: none; }
+body.is-story .fp-city, body.is-story .fp-method-block, body.is-story .fp-intro, body.is-story .fp-items-title { display: none; }
+/* the chapter shows the paired profile; "Show every item" swaps it for the two full item grids */
+body.is-story:not(.story-items) .fp-pair, body.is-story:not(.story-items) .fp-legend { display: none; }
+body.is-story.story-items .fp-profile { display: none; }
+body.is-story .fp-profile { margin: 0; }
+body.is-story .fp-view { align-items: safe center; }
+@media (max-width: 760px) {
+  /* the caption already states both totals; the chart keeps names, scores and the five rows */
+  body.is-story .pf-total, body.is-story .pf-cap, body.is-story .pf-tag { display: none; }
+  body.is-story .pf-h { padding-bottom: var(--space-2); }
+}
 
 /* ---- the one detail view: an analysis layer, above the stage, scrolling inside itself ---------------- */
 body.story-detail .rail-right { z-index: 1050; top: var(--gut); bottom: var(--gut); }
@@ -116,11 +126,11 @@ body.story-detail .lens { max-height: 100%; }
   body.is-story .rail-left { display: none; }
   body.is-story .leaflet-bottom { bottom: var(--cap-h, 240px); }
   body.is-story .xr-grid { grid-template-columns: minmax(0, 1fr); }
-  body.is-story .xr-side, body.is-story .xr-foot, body.is-story .xr-toolbar-2 { display: none; }
+  body.is-story .xr-side, body.is-story .xr-foot, body.is-story .xr-cam { display: none; }
   /* the comparison: two summaries side by side; the item grids are too fine for a phone stage */
   body.is-story .fp-pair { gap: 0 var(--space-4); }
   body.is-story .fp-building + .fp-building { padding-left: var(--space-4); }
-  body.is-story .fp-chart, body.is-story .fp-legend { display: none; }
+  body.is-story.story-items .fp-chart, body.is-story.story-items .fp-legend { display: none; }
   .story-steps { grid-template-columns: 1fr; gap: var(--space-3); }
   .story-step-n { font-size: 28px; }
 }

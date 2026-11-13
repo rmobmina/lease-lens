@@ -24,7 +24,8 @@ function box(el, title) {
   const W = Math.max(280, Math.min(el.clientWidth, 1040));
   // a container without its own height (the analysis drawer) gets a proportional chart
   const room = el.clientHeight > 160 ? el.clientHeight - head.offsetHeight - 12 : Math.round(W * 0.5);
-  const H = Math.max(200, Math.min(room, Math.round(W * 0.62)));
+  // never taller than the room it has (a short panel gets a shorter chart, not one that spills out)
+  const H = el.clientHeight > 160 ? Math.min(room, Math.round(W * 0.62)) : Math.max(200, Math.min(room, Math.round(W * 0.62)));
   return { W, H };
 }
 
@@ -32,7 +33,7 @@ function box(el, title) {
 function distribution(el, D) {
   const { bins, median, q1, q3, n } = D.dist;
   const { W, H } = box(el, `Latest score of each evaluated building, ${D.dist.label ?? '2023 – present system'} (${fmt.n(n)} buildings)`);
-  const m = { top: 40, right: 12, bottom: 36, left: 44 };
+  const m = { top: 40, right: 12, bottom: 46, left: 44 };
   const lo = Math.min(50, d3.min(bins, (d) => d.score));
   const x = d3.scaleBand().domain(d3.range(lo, 101)).range([m.left, W - m.right]).paddingInner(0.18);
   const y = d3.scaleLinear().domain([0, d3.max(bins, (d) => d.n)]).nice().range([H - m.bottom, m.top]);
@@ -46,7 +47,7 @@ function distribution(el, D) {
   svg.append('g').attr('class', 'axis').attr('transform', `translate(${m.left},0)`).call(d3.axisLeft(y).ticks(4).tickSizeOuter(0));
   svg.append('g').attr('class', 'axis').attr('transform', `translate(0,${H - m.bottom})`)
     .call(d3.axisBottom(x).tickValues(x.domain().filter((s) => s % 10 === 0)).tickSizeOuter(0));
-  svg.append('text').attr('class', 'axis-title').attr('x', W - m.right).attr('y', H - 4).attr('text-anchor', 'end').text('Latest score (out of 100)');
+  svg.append('text').attr('class', 'axis-title').attr('x', W - m.right).attr('y', H - 6).attr('text-anchor', 'end').text('Latest score (out of 100)');
   svg.append('g').selectAll('rect').data(bins.filter((d) => d.score >= lo)).join('rect')
     .attr('x', (d) => x(d.score)).attr('width', x.bandwidth()).attr('y', (d) => y(d.n)).attr('height', (d) => y(0) - y(d.n))
     .attr('fill', (d) => (d.score === median ? cssVar('--accent') : cssVar('--chart-neutral')))

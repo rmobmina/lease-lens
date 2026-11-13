@@ -17,7 +17,14 @@
 // Rooms neither cast nor receive shadows: the notch is open on two sides only, and sunlit-but-shadowless
 // interiors read like an architectural section drawing instead of a dark hole.
 
-import { SLAB, facadeInNotch } from './cutaway.js';
+import { SLAB, facadeInNotch, toLocal, toWorld } from './cutaway.js';
+import { pointInPoly } from './footprint.js';
+
+// Footprint-aware: the stack is laid out in a rectangle at the corner, but every part of it is fitted to
+// the real outline before it is drawn. Floors are the footprint polygon clipped to each room; walls,
+// rails, pipes and ducts are trimmed where an angled, tapered or curved façade cuts across them; compact
+// fittings that would stand outside the shell are left out; the selection outline follows the clipped
+// floor. So a triangular or curved plan gets a triangular or curved room, not a box poking out.
 
 export function buildCutaway(THREE, plan, corner, bodies, mat) {
   const own = [];
@@ -31,6 +38,12 @@ export function buildCutaway(THREE, plan, corner, bodies, mat) {
   group.matrix.makeBasis(aH, new THREE.Vector3(0, 1, 0), bH).setPosition(corner.K[0], 0, -corner.K[1]);
 
   const { W, D, fh } = plan;
+  // the bodies the stack sits in, as corner-local polygons (a, b)
+  const solid = bodies.filter((m) => m.base <= plan.yb + 0.5 && m.top >= plan.yt - 0.5);
+  const host = solid.length ? solid : bodies;
+  const inPlan = (a, b) => { const [x, y] = toWorld(corner, a, b); return host.some((m) => pointInPoly(x, y, m.rings)); };
+  const localRings = host.map((m) => { const r = m.rings[0], out = []; for (let i = 0; i < r.length; i += 2) out.push(toLocal(corner, r[i], r[i + 1])); return out; });
+  const floorOf = (a0, a1, b0, b1) => localRings.map((r) => clipToRect(r, a0, a1, b0, b1)).filter((p) => p.length >= 3 && Math.abs(polyArea(p)) > 0.05);
   const zf = -corner.mb, z0 = zf + 0.3;            // façade outer face, and its inner face
   const h = fh - SLAB;                              // floor to ceiling
   const items = new Map();                          // "material|zone|geometry" -> transforms
@@ -43,6 +56,7 @@ export function buildCutaway(THREE, plan, corner, bodies, mat) {
   // cylinders: axis 'x', 'y' or 'z'
   const rod = (name, zone, axis, x, y, z, len, r) => put(name, zone, 'cyl', x, y, z, r * 2, len, r * 2, axis === 'y' ? null : axis === 'x' ? [0, 0, Math.PI / 2] : [Math.PI / 2, 0, 0]);
 
+  const floors = [];
   const slots = plan.slots.map((s) => {
     const yf = plan.yb + s.storey * fh;
     const x0 = s.x0 ?? -corner.ma, x1 = s.x1;
@@ -59,7 +73,7 @@ export function buildCutaway(THREE, plan, corner, bodies, mat) {
   function shell(zone, x0, x1, yf, first, last) {
     box('room', zone, x0, x1, yf, yf + h, D, D + 0.24);
     box('roomEnd', zone, x1, x1 + (last ? 0.26 : 0.16), yf, yf + h, zf, D + 0.24);
-    box('floorTint', zone, x0 + (first ? 0.3 : 0), x1, yf, yf + 0.03, z0, D);
+    floors.push({ zone, yf, polys: floorOf(x0 + (first ? 0.3 : 0), x1, z0, D) });
     box('trim', zone, x0, x1, yf, yf + 0.1, D - 0.025, D);
   }
 
@@ -182,8 +196,55 @@ export function buildCutaway(THREE, plan, corner, bodies, mat) {
     }
   }
 
+  // ---- fit to the real footprint ---------------------------------------------------------------------------
+  // Long pieces (walls, rails, pipes, ducts, runners) are trimmed to the longest stretch inside the outline;
+  // compact pieces are kept only if their whole plan lies inside it.
+  const INSET = 0.04;
+  const insideRect = (cx, cz, hx, hz) => [[-1, -1], [1, -1], [1, 1], [-1, 1], [0, 0]]
+    .every(([i, j]) => inPlan(cx + i * Math.max(0, hx - INSET), cz + j * Math.max(0, hz - INSET)));
+  function fit(t) {
+    const rz = t.rot?.[2] ?? 0, rx = t.rot?.[0] ?? 0;
+    const alongX = Math.abs(Math.abs(rz) - Math.PI / 2) < 1e-6;      // a rod laid along x
+    const alongZ = Math.abs(Math.abs(rx) - Math.PI / 2) < 1e-6;      // a rod laid along z
+    let hx = (alongX ? t.sy : t.sx) / 2, hz = (alongZ ? t.sy : t.sz) / 2;
+    if (rz && !alongX) hx = (t.sx * Math.abs(Math.cos(rz))) / 2;     // a sloped rail
+    if (insideRect(t.x, t.z, hx, hz)) return t;
+    const long = Math.max(hx, hz), short = Math.min(hx, hz);
+    if (rz && !alongX || long < 0.6 || long < short * 3) return null;  // compact: leave it out
+    // trim along the long axis to the longest inside run
+    const onX = hx >= hz, c0 = onX ? t.x : t.z, step = 0.1;
+    const ok = (u) => (onX ? insideRect(u, t.z, step / 2, hz) : insideRect(t.x, u, hx, step / 2));
+    let best = null, run = null;
+    for (let u = c0 - long + step / 2; u <= c0 + long; u += step) {
+      if (ok(u)) { run = run ? [run[0], u] : [u, u]; if (!best || run[1] - run[0] > best[1] - best[0]) best = [...run]; } else run = null;
+    }
+    if (!best) return null;
+    const lo = Math.max(c0 - long, best[0] - step / 2), hi = Math.min(c0 + long, best[1] + step / 2);
+    if (hi - lo < 0.3) return null;
+    const n = { ...t };
+    if (onX) { n.x = (lo + hi) / 2; if (alongX) n.sy = hi - lo; else n.sx = hi - lo; }
+    else { n.z = (lo + hi) / 2; if (alongZ) n.sy = hi - lo; else n.sz = hi - lo; }
+    return n;
+  }
+  for (const [k, list] of items) {
+    const kept = list.map(fit).filter(Boolean);
+    if (kept.length) items.set(k, kept); else items.delete(k);
+  }
+
   // ---- meshes ---------------------------------------------------------------------------------------------
   const pickables = [];
+  // floors: the real outline clipped to each room (a thin tint just above the slab)
+  for (const f of floors) {
+    for (const poly of f.polys) {
+      const g = keep(new THREE.ShapeGeometry(new THREE.Shape(poly.map(([a, b]) => new THREE.Vector2(a, -b)))));
+      const m = new THREE.Mesh(g, mat('floorTint', f.zone));
+      m.rotation.x = -Math.PI / 2;
+      m.position.y = f.yf + 0.03;
+      m.userData = { zone: f.zone };
+      pickables.push(m);
+      group.add(m);
+    }
+  }
   const tmpQ = new THREE.Quaternion(), tmpE = new THREE.Euler();
   for (const [k, list] of items) {
     const [name, zone, geo] = k.split('|');
@@ -203,9 +264,20 @@ export function buildCutaway(THREE, plan, corner, bodies, mat) {
   // meets the real façade
   const frames = {};
   for (const s of slots) {
-    const g = keep(new THREE.EdgesGeometry(new THREE.BoxGeometry(s.x1 - s.x0, s.h, s.D - s.zf)));
+    s.polys = floorOf(s.x0, s.x1, s.zf, s.D);
+    if (!s.polys.length) s.polys = [[[s.x0, s.zf], [s.x1, s.zf], [s.x1, s.D], [s.x0, s.D]]];
+    const pos = [];
+    for (const p of s.polys) {
+      for (let i = 0; i < p.length; i++) {
+        const [a0, b0] = p[i], [a1, b1] = p[(i + 1) % p.length];
+        if (Math.hypot(a1 - a0, b1 - b0) < 0.02) continue;
+        pos.push(a0, s.yf, b0, a1, s.yf, b1, a0, s.yf + s.h, b0, a1, s.yf + s.h, b1);
+        if (turn(p, i) > 0.35) pos.push(a0, s.yf, b0, a0, s.yf + s.h, b0);   // verticals at real corners only
+      }
+    }
+    const g = keep(new THREE.BufferGeometry());
+    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
     const l = new THREE.LineSegments(g, mat('slotEdge', s.zone));
-    l.position.set((s.x0 + s.x1) / 2, s.yf + s.h / 2, (s.zf + s.D) / 2);
     l.raycast = () => {};
     l.renderOrder = 3;
     group.add(l);
@@ -232,9 +304,13 @@ export function buildCutaway(THREE, plan, corner, bodies, mat) {
   group.updateMatrixWorld(true);
   const toW = (x, y, z) => new THREE.Vector3(x, y, z).applyMatrix4(group.matrix);
   for (const s of slots) {
-    s.anchor = toW((s.x0 + s.x1) / 2, s.yf + s.h * 0.62, s.zf + 0.4);
+    // the label sits near the open front of the room, or at the floor's centre where the façade cuts in
+    const mid = (s.x0 + s.x1) / 2;
+    const [ca, cb] = centroid(s.polys.reduce((a, p) => (Math.abs(polyArea(p)) > Math.abs(polyArea(a)) ? p : a)));
+    const front = inPlan(mid, s.zf + 0.6) ? [mid, s.zf + 0.6] : [ca, cb];
+    s.anchor = toW(front[0], s.yf + s.h * 0.62, front[1]);
     s.box = new THREE.Box3();
-    for (const x of [s.x0, s.x1]) for (const y of [s.yf, s.yf + s.h]) for (const z of [s.zf, s.D]) s.box.expandByPoint(toW(x, y, z));
+    for (const p of s.polys) for (const [a, b] of p) for (const y of [s.yf, s.yf + s.h]) s.box.expandByPoint(toW(a, y, b));
   }
   const stack = new THREE.Box3();
   for (const s of slots) stack.union(s.box);
@@ -246,3 +322,48 @@ export function buildCutaway(THREE, plan, corner, bodies, mat) {
     dispose() { own.forEach((g) => g.dispose()); group.traverse((o) => { if (o.isInstancedMesh) o.dispose(); }); },
   };
 }
+
+// Sutherland–Hodgman: a (possibly concave) ring clipped to an axis-aligned rectangle.
+function clipToRect(ring, a0, a1, b0, b1) {
+  let out = ring;
+  for (const [inside, cross] of [
+    [(p) => p[0] >= a0, (p, q) => [a0, p[1] + ((q[1] - p[1]) * (a0 - p[0])) / (q[0] - p[0])]],
+    [(p) => p[0] <= a1, (p, q) => [a1, p[1] + ((q[1] - p[1]) * (a1 - p[0])) / (q[0] - p[0])]],
+    [(p) => p[1] >= b0, (p, q) => [p[0] + ((q[0] - p[0]) * (b0 - p[1])) / (q[1] - p[1]), b0]],
+    [(p) => p[1] <= b1, (p, q) => [p[0] + ((q[0] - p[0]) * (b1 - p[1])) / (q[1] - p[1]), b1]],
+  ]) {
+    const src = out;
+    out = [];
+    for (let i = 0; i < src.length; i++) {
+      const p = src[i], q = src[(i + 1) % src.length];
+      const pi = inside(p), qi = inside(q);
+      if (pi) out.push(p);
+      if (pi !== qi) out.push(cross(p, q));
+    }
+    if (!out.length) return out;
+  }
+  return out;
+}
+function polyArea(p) {
+  let a = 0;
+  for (let i = 0; i < p.length; i++) { const [x0, y0] = p[i], [x1, y1] = p[(i + 1) % p.length]; a += x0 * y1 - x1 * y0; }
+  return a / 2;
+}
+function centroid(p) {
+  let A = 0, cx = 0, cy = 0;
+  for (let i = 0; i < p.length; i++) {
+    const [x0, y0] = p[i], [x1, y1] = p[(i + 1) % p.length], c = x0 * y1 - x1 * y0;
+    A += c; cx += (x0 + x1) * c; cy += (y0 + y1) * c;
+  }
+  return Math.abs(A) < 1e-9 ? p[0] : [cx / (3 * A), cy / (3 * A)];
+}
+// turning angle at vertex i (radians)
+function turn(p, i) {
+  const a = p[(i - 1 + p.length) % p.length], b = p[i], c = p[(i + 1) % p.length];
+  const d1 = Math.atan2(b[1] - a[1], b[0] - a[0]), d2 = Math.atan2(c[1] - b[1], c[0] - b[0]);
+  let d = Math.abs(d2 - d1);
+  if (d > Math.PI) d = 2 * Math.PI - d;
+  return d;
+}
+
+export const _test = { clipToRect, polyArea };

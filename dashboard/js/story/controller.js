@@ -62,7 +62,7 @@ export function createStory(app) {
     clearAnnotation();
     Object.assign(app.state, saved.state);
     saved = null;
-    document.body.classList.remove('is-story', 'story-detail', 'story-zone');
+    document.body.classList.remove('is-story', 'story-detail', 'story-zone', 'story-items');
     panel.hidden = true;
     panel.innerHTML = '';
     app.highlight = null;
@@ -85,7 +85,7 @@ export function createStory(app) {
     const c = CHAPTERS[index];
     clearAnnotation();
     done = new Set();
-    document.body.classList.remove('story-zone');
+    document.body.classList.remove('story-zone', 'story-items');
     Object.assign(app.state, structuredClone(saved.state));
     Object.assign(app.state, { period: 'cur', ward: '', selected: null, mapShow: 'all', lens: null, placeTab: 'summary' });
     c.apply?.(app.state, d);
@@ -110,7 +110,7 @@ export function createStory(app) {
       <div class="sc-foot">
         <div class="sc-act">
           ${step ? `<button type="button" class="sc-action" data-act="step" data-id="${step.id}">${step.label} <span aria-hidden="true">→</span></button>` : ''}
-          ${c.detail ? `<button type="button" class="sc-detail" data-act="detail" aria-expanded="${app.state.lens === c.detail.lens}">${c.detail.label}</button>` : ''}
+          ${c.detail ? `<button type="button" class="sc-detail" data-act="detail" aria-expanded="${detailOpen(c)}">${c.detail.label}</button>` : ''}
         </div>
         <div class="sc-nav">
           <button type="button" class="btn sc-back" data-act="back" aria-label="Previous chapter" ${index === 0 ? 'disabled' : ''}><span aria-hidden="true">←</span></button>
@@ -143,9 +143,13 @@ export function createStory(app) {
     });
   }
 
+  // A detail is either one analysis layer (detail.lens) or a closer view of the chapter's own visual
+  // (detail.toggle: a body class, e.g. the comparison's full item grids).
+  const detailOpen = (c) => (c.detail.toggle ? document.body.classList.contains(c.detail.toggle) : app.state.lens === c.detail.lens);
   function toggleDetail(c) {
-    app.openDetail(app.state.lens === c.detail.lens ? null : c.detail.lens);
-    panel.querySelector('[data-act=detail]')?.setAttribute('aria-expanded', String(app.state.lens === c.detail.lens));
+    if (c.detail.toggle) document.body.classList.toggle(c.detail.toggle);
+    else app.openDetail(app.state.lens === c.detail.lens ? null : c.detail.lens);
+    panel.querySelector('[data-act=detail]')?.setAttribute('aria-expanded', String(detailOpen(c)));
   }
 
   // Final action: leave the story (state restored) and hand over the map with the address search focused.
@@ -180,6 +184,7 @@ export function createStory(app) {
 
   document.addEventListener('keydown', (e) => {
     if (!active() || e.altKey || e.ctrlKey || e.metaKey) return;
+    if (e.key === 'Escape' && document.body.classList.contains('story-items')) { e.preventDefault(); document.body.classList.remove('story-items'); panel.querySelector('[data-act=detail]')?.setAttribute('aria-expanded', 'false'); panel.querySelector('[data-act=detail]')?.focus(); return; }
     if (e.key === 'Escape' && app.state.lens) { e.preventDefault(); app.openDetail(null); panel.querySelector('[data-act=detail]')?.focus(); return; }
     if (!['ArrowLeft', 'ArrowRight'].includes(e.key)) return;
     if (e.target.closest('input, select, textarea, [contenteditable], .leaflet-container, .xr-stage, .popover, [role=listbox], .lens')) return;

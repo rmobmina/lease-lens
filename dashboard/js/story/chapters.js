@@ -44,7 +44,7 @@ export const CHAPTERS = [
   },
   {
     id: 'problems', depth: 'story', visual: 'categories',
-    apply: (s) => { s.problems = { group: 'all', showAll: false }; },
+    apply: (s) => { s.problems = { group: 'all', page: 0 }; },
     highlight: (D) => new Set(D.cats.zones[0].items),
     title: () => 'What the score hides',
     text: (D) => {
@@ -77,6 +77,7 @@ export const CHAPTERS = [
       const n = (x) => (x.lows.length ? `${x.lows.length} item${x.lows.length === 1 ? '' : 's'} rated low` : 'none rated low');
       return `${D.pair.sameWard ? `Two buildings in ${esc(a.rec.wardName)}` : 'Two buildings'}, both scored ${D.pair.score}. ${addr(a.rec)} had ${n(a)}; ${addr(b.rec)} had ${n(b)}.`;
     },
+    detail: { toggle: 'story-items', label: 'Show every item' },
   },
   {
     id: 'history', depth: 'story', visual: 'history',

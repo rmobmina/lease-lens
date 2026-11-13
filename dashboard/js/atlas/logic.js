@@ -25,13 +25,15 @@ export function levelFor(z, prev = 'city') {
   return z >= ZOOM.buildingIn ? 'building' : z >= ZOOM.areaIn ? 'area' : 'city';
 }
 
-// Ward fill fades continuously with zoom (strong at city scale, a faint wash once buildings show),
-// so the hand-over from wards to buildings reads as one change of scale rather than a swap.
+// Ward fill fades continuously with zoom: solid at the city view (where wards are the whole message),
+// then a slow, smooth fade as you zoom in, down to a faint wash once single buildings show, so the
+// hand-over from wards to buildings reads as one change of scale rather than a swap.
+export const WARD_FADE = { from: 11, to: 15, hi: 1, lo: 0.08 };
 export function wardFillOpacity(z) {
-  const hi = 0.82, lo = 0.1;
-  if (z <= 11.5) return hi;
-  if (z >= 13.5) return lo;
-  return hi + (lo - hi) * ((z - 11.5) / 2);
+  const { from, to, hi, lo } = WARD_FADE;
+  const t = Math.min(1, Math.max(0, (z - from) / (to - from)));
+  const s = t * t * (3 - 2 * t); // smoothstep: gentle at both ends
+  return hi + (lo - hi) * s;
 }
 
 // ---- ward choropleth -------------------------------------------------------------------------------

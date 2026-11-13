@@ -1,7 +1,30 @@
 // Small presentation helpers shared by the dashboard sections.
 // Reuses the explorer's tooltip, number formats and deterministic hash (window.LLC from explorer/js/charts.js).
 
-export const { fmt, tip, hash } = LLC;
+export const { fmt, hash } = LLC;
+
+// The explorer's tooltip, with one rule for the analysis panel: a tooltip for a mark inside the panel sits beside
+// the panel (over the map), level with the mark, so it never covers the chart it explains. Elsewhere it follows
+// the pointer, flipping near an edge and staying inside the window (explorer/js/charts.js).
+const baseTip = LLC.tip;
+function besidePanel(ev) {
+  const el = baseTip.el;
+  if (!el || el.hidden || window.innerWidth <= 760) return;
+  const panel = document.querySelector('.rail .lens:not([hidden])');
+  if (!panel) return;
+  const p = panel.getBoundingClientRect();
+  if (ev.clientX < p.left || ev.clientX > p.right || ev.clientY < p.top || ev.clientY > p.bottom) return;
+  const w = el.offsetWidth, h = el.offsetHeight;
+  if (p.left - w - 12 < 8) return;            // no room beside it: keep the pointer placement
+  el.style.left = `${p.left - w - 12}px`;
+  el.style.top = `${Math.max(8, Math.min(ev.clientY - h / 2, window.innerHeight - h - 8))}px`;
+}
+export const tip = {
+  get el() { return baseTip.el; },
+  show(html, ev) { baseTip.show(html, ev); besidePanel(ev); },
+  move(ev) { baseTip.move(ev); besidePanel(ev); },
+  hide() { baseTip.hide(); },
+};
 export const pct = (v, digits = 0) => (v == null || !isFinite(v) ? '–' : `${(v * 100).toFixed(digits)}%`);
 export const signed = (v) => (v > 0 ? `+${v}` : v < 0 ? `−${Math.abs(v)}` : '0');
 export const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
@@ -37,22 +60,38 @@ export function buildingTip(r, extra = '') {
 
 // Responsive SVG: width follows the container, drawn in CSS pixels.
 export function svgIn(container, height, label) {
-  const width = Math.max(300, container.clientWidth - (parseFloat(getComputedStyle(container).paddingLeft) || 0) * 2);
+  const width = Math.max(260, container.clientWidth - (parseFloat(getComputedStyle(container).paddingLeft) || 0) * 2);
   const svg = d3.select(container).append('svg')
     .attr('viewBox', `0 0 ${width} ${height}`).attr('width', width).attr('height', height)
     .attr('role', 'img').attr('aria-label', label);
   return { svg, width, height };
 }
 
+// A chart's height is the height of the box it is drawn in (the analysis panel sizes that box with CSS), capped at
+// `max`; it is never taller, so nothing below the chart (the finding, a pager) can end up on top of it. A box
+// with no height of its own (a page that scrolls) gets `fallback`.
+export const chartHeight = (box, { max = 600, fallback = 300 } = {}) => (box.clientHeight > 40 ? Math.min(max, box.clientHeight) : fallback);
+
 export const legendKey = (color, label, kind = '') => `<span class="key"><span class="swatch ${kind}" style="background:${color}"></span>${label}</span>`;
 export const cssVar = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 
-// "Key finding" block: one big number, a caption that says what it measures, one sentence of context.
+// The one finding of an analysis layer (level 1): the number and what it measures, nothing more.
+// The sentence of interpretation (level 2) goes to the top of that layer's "How to read this" disclosure,
+// next to the method (level 3), so the default view is title, chart and one finding.
 export function setFinding(id, f) {
   const node = document.getElementById(id);
   if (!node) return;
-  node.innerHTML = f ? `<p class="finding-label">Key finding</p><p class="finding-value">${f.value}</p>
-    <p class="finding-caption">${f.caption}</p><p class="finding-text">${f.text}</p>` : '';
+  node.innerHTML = f ? `<p class="finding-value">${f.value}</p><p class="finding-caption">${f.caption}</p>` : '';
+  const scope = node.closest('.lens-view, section');
+  // the analysis panel: the sentence opens its "How to read this" popover
+  const link = scope?.querySelector('.lens-method .info-link');
+  if (link) { if (f?.text) link.dataset.infoLead = f.text.replace(/\s+/g, ' ').trim(); else delete link.dataset.infoLead; }
+  const det = scope?.querySelector('details.method');
+  if (!det) return;
+  let lead = det.querySelector('.method-lead');
+  if (!lead) { lead = document.createElement('p'); lead.className = 'method-lead'; det.querySelector('summary').after(lead); }
+  lead.innerHTML = f?.text ?? '';
+  lead.hidden = !f?.text;
 }
 
 export function empty(container, msg) {
