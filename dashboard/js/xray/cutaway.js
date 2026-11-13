@@ -60,8 +60,29 @@ export function slotsFor(levels, W) {
 
 // F: main wing frame; bodies: [{rings, base, top}] (data frame); storeys, fh: storeyLayout values;
 // base: the main body's base height; prefer: { su, sv } of the corner the default view faces.
+//
+// A corner is usable ("exposed") only when the notch fits the real plan there: its corner point lies
+// inside the building, the façade is within reach on both sides, and most of the room stack's plan
+// rectangle is inside the footprint (`fit`). Angled, tapered or curved façades lower the fit; the rooms
+// are clipped to the footprint anyway (rooms.js), but a poorly fitting corner would show mostly empty
+// floor. On narrow or irregular plans the frame is shrunk toward the building's bulk until a corner fits.
+export const MIN_FIT = 0.8;
 export function cutawayPlan({ F, bodies, storeys, fh, base = 0, prefer = { su: 1, sv: 1 } }) {
-  const { W, D, levels } = notchSize(F, storeys);
+  let best = null;
+  for (const s of [1, 0.85, 0.7, 0.55, 0.4]) {
+    for (const t of [1, 0.8, 0.6]) {
+      const plan = planFor({ F: s === 1 ? F : { ...F, A: F.A * s, B: F.B * s }, bodies, storeys, fh, base, prefer, shrink: t });
+      const home = plan.corners.find((c) => c.key === plan.home);
+      if (home.exposed) return plan;
+      if (!best || home.fit > best.home.fit) best = { plan, home };
+    }
+  }
+  return best.plan;
+}
+
+function planFor({ F, bodies, storeys, fh, base, prefer, shrink }) {
+  const size = notchSize(F, storeys);
+  const W = size.W * shrink, D = size.D * Math.min(1, shrink + 0.15), levels = size.levels;
   const yb = base, yt = base + levels * fh - SLAB;
   const solid = bodies.filter((m) => m.base <= yb + 0.5 && m.top >= yt - 0.5);
   const inside = (x, y) => (solid.length ? solid : bodies).some((m) => pointInPoly(x, y, m.rings));
@@ -78,13 +99,25 @@ export function cutawayPlan({ F, bodies, storeys, fh, base = 0, prefer = { su: 1
       }
       return Infinity;
     }));
+    const kIn = inside(K[0], K[1]);
     const ma = reach([0.3, D * 0.5, D - 0.3], 'a');
     const mb = reach([0.3, W * 0.5, W - 0.3], 'b');
-    corners.push({ key: `${su},${sv}`, su, sv, K, aHat, bHat, ma: Math.min(ma, MAX_REACH), mb: Math.min(mb, MAX_REACH), exposed: ma <= MAX_REACH && mb <= MAX_REACH });
+    const c = { key: `${su},${sv}`, su, sv, K, aHat, bHat, ma: Math.min(ma, MAX_REACH), mb: Math.min(mb, MAX_REACH) };
+    // share of the room stack's plan (inside the façade wall) that is really inside the building
+    let n = 0, hit = 0;
+    for (let a = -c.ma + 0.35; a <= W; a += 0.5) for (let b = -c.mb + 0.35; b <= D; b += 0.5) {
+      n++;
+      if (inside(...at(a, b))) hit++;
+    }
+    c.fit = kIn && n ? hit / n : 0;
+    c.exposed = kIn && ma <= MAX_REACH && mb <= MAX_REACH && c.fit >= MIN_FIT;
+    corners.push(c);
   }
   const pick = corners.find((c) => c.su === prefer.su && c.sv === prefer.sv);
-  const home = pick?.exposed ? pick : corners.find((c) => c.exposed) ?? pick;
-  return { W, D, levels, yb, yt, fh, slots: slotsFor(levels, W), corners, home: home.key };
+  // the corner the default view faces, if it fits well; otherwise the best-fitting usable corner
+  const usable = corners.filter((c) => c.exposed).sort((a, b) => b.fit - a.fit);
+  const home = pick.exposed && pick.fit >= usable[0].fit - 0.08 ? pick : usable[0] ?? [...corners].sort((a, b) => b.fit - a.fit)[0];
+  return { W, D, levels, yb, yt, fh, slots: slotsFor(levels, W), corners, home: home.key, frame: F };
 }
 
 // World (data-frame) position of a corner-local point.

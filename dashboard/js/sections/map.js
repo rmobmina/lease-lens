@@ -8,12 +8,37 @@ import { SMALL_WARD } from '../atlas/logic.js';
 import { pct, fmt, esc, setFinding } from '../ui.js';
 import { snapshot, play } from '../chart-motion.js';
 
-export function renderWards(ctx) {
+// The ranking fills the panel a page at a time (rows stay readable and easy to select); a selected ward
+// brings its page into view. The map beside it shows every ward at once.
+let wardPage = 0, pagedWard = null, pagerWired = false, lastCtx = null;
+const WARD_ROW = 26;
+
+export function renderWards(ctx, settled = false) {
   const { pm, ward } = ctx;
-  const rows = wardLowShares(pm.latest, pm);
+  lastCtx = ctx;
+  const all = wardLowShares(pm.latest, pm);
+  const el0 = document.getElementById('ward-chart');
+  const pager = document.getElementById('ward-pager');
+  pager.hidden = false;                       // measured with the pager in place, hidden again if one page holds all
+  const room = el0.clientHeight > 100 ? el0.clientHeight : 0;
+  const per = room ? Math.max(6, Math.floor(room / WARD_ROW)) : all.length;
+  const pages = Math.ceil(all.length / per);
+  if (ward && ward !== pagedWard) { const i = all.findIndex((d) => d.ward === ward); if (i >= 0) wardPage = Math.floor(i / per); }
+  pagedWard = ward;
+  wardPage = Math.min(Math.max(0, wardPage), pages - 1);
+  const rows = all.slice(wardPage * per, wardPage * per + per);
+  pager.hidden = pages <= 1;
+  document.getElementById('ward-range').textContent = `${wardPage * per + 1}–${wardPage * per + rows.length} of ${all.length} wards`;
+  document.getElementById('ward-prev').disabled = wardPage === 0;
+  document.getElementById('ward-next').disabled = wardPage >= pages - 1;
+  if (!pagerWired) {
+    pagerWired = true;
+    document.getElementById('ward-prev').addEventListener('click', () => { wardPage--; renderWards(lastCtx); });
+    document.getElementById('ward-next').addEventListener('click', () => { wardPage++; renderWards(lastCtx); });
+  }
   const city = pm.latest.filter((r) => r.score <= pm.t10).length / pm.latest.length;
-  const max = Math.max(city, d3.max(rows, (d) => d.share)) * 1.05;
-  const el = document.getElementById('ward-chart');
+  const max = Math.max(city, d3.max(all, (d) => d.share)) * 1.05;
+  const el = el0;
   const before = snapshot(el);
   el.innerHTML = rows.map((d) => `
     <button type="button" class="ward-row ${d.ward === ward ? 'active' : ''}" data-ward="${d.ward}" data-k="${d.ward}" aria-pressed="${d.ward === ward}"
@@ -32,15 +57,15 @@ export function renderWards(ctx) {
   // Key finding
   const low = pm.latest.filter((r) => r.score <= pm.t10);
   if (ward) {
-    const d = rows.find((x) => x.ward === ward);
+    const d = all.find((x) => x.ward === ward);
     setFinding('q1-takeaway', d && {
       value: pct(d.share),
       caption: `of buildings in ${esc(d.name)} are in Toronto's lowest-scoring 10%`,
-      text: `That's ${d.low10} of ${d.n} buildings, compared with ${pct(city)} citywide. This ward ranks ${rows.indexOf(d) + 1} of ${rows.length}.`,
+      text: `That's ${d.low10} of ${d.n} buildings, compared with ${pct(city)} citywide. This ward ranks ${all.indexOf(d) + 1} of ${all.length}.`,
     });
   } else {
     // The headline only uses wards with enough buildings for the share to be stable (the map marks the rest).
-    const top3 = rows.filter((d) => d.n >= SMALL_WARD).slice(0, 3);
+    const top3 = all.filter((d) => d.n >= SMALL_WARD).slice(0, 3);
     const top3Low = d3.sum(top3, (d) => d.low10), top3N = d3.sum(top3, (d) => d.n);
     setFinding('q1-takeaway', {
       value: `${(top3[0].share / city).toFixed(1)}×`,
@@ -59,4 +84,6 @@ export function renderWards(ctx) {
     <li>Wards are assigned by the City in the RentSafeTO records (25-ward model). The vertical tick marks the citywide share. Wards with fewer than ${SMALL_WARD} evaluated buildings are listed, but left out of the key finding, because a few buildings move their share a lot.</li>
     <li>${fmt.n(noCoord)} building${noCoord === 1 ? ' has' : 's have'} no coordinates and can't be mapped, but still count in its ward. ${fmt.n(derived)} position${derived === 1 ? ' was' : 's were'} estimated from the dataset's X/Y grid columns because latitude/longitude were blank.</li>
   </ul>`;
+  // the finding above the list is written after it was measured; if it took room, measure once more
+  if (!settled && room && el.scrollHeight > el.clientHeight + 1) renderWards(ctx, true);
 }

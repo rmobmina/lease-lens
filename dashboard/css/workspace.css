@@ -145,7 +145,7 @@ body[data-layer="work"] { background: var(--surface-2); }
 .page.about .disclosure-body p, .page.about .disclosure-body li { font-size: var(--text-base); }
 .page.about #data-note { font-size: var(--text-base); }
 .page.about .truth-table { margin-top: var(--space-4); font-size: var(--text-sm); }
-.about-foot { margin-top: var(--space-6) !important; font-size: var(--text-sm); color: var(--muted) !important; }
+
 
 @media (max-width: 760px) {
   .depth-body .page.about { padding: var(--space-5) var(--space-4) var(--space-7); }

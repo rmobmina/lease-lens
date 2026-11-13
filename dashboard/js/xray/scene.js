@@ -323,13 +323,16 @@ export function createXrayScene(container, { onSelect, onHover, onContextLost, p
     }
     const slot = state.cut?.slots.find((s) => s.zone === zone);
     if (!slot) return frameHome(true, 'azimuth');
-    // the room itself, a little of the storeys above and below, looking straight into its long open side
+    // the room itself with a margin of building around it (half a storey above and below, a bay to each
+    // side), looking into its long open side a little from above, so the floor's real outline reads
     const bx = slot.box.clone();
-    bx.min.y = Math.max(-0.4, bx.min.y - b.fh * 0.55);
-    bx.max.y += b.fh * 0.55;
+    bx.min.y = Math.max(-0.4, bx.min.y - b.fh * 0.6);
+    bx.max.y += b.fh * 0.6;
+    const pad = Math.min(3, Math.max(1.2, bx.getSize(new THREE.Vector3()).length() * 0.12));
+    bx.expandByVector(new THREE.Vector3(pad, 0, pad));
     const c = state.cut.corner;
     const ox = -(c.aHat[0] * 0.3 + c.bHat[0]), oz = c.aHat[1] * 0.3 + c.bHat[1];
-    fitTo(boxPoints(bx), Math.atan2(ox, oz), THREE.MathUtils.degToRad(78), 800);
+    fitTo(boxPoints(bx), Math.atan2(ox, oz), THREE.MathUtils.degToRad(74), 800);
   }
   controls.addEventListener('start', () => { state.atHome = false; state.dragging = true; });
   controls.addEventListener('end', () => { state.dragging = false; });
@@ -587,7 +590,7 @@ export function createXrayScene(container, { onSelect, onHover, onContextLost, p
         if (visible && zone !== 'exterior' && occluded(p)) visible = false;
       }
       items.push({
-        key: zone, x, y, visible, title: l.title, sub: l.sub, status: l.status, hot, selected: sel,
+        key: zone, x, y, visible, title: sel && l.name ? l.name : l.title, sub: l.sub,  // the selected callout has room for the panel's full name status: l.status, hot, selected: sel,
         dim: !!state.selected && !sel, compact: !sel && !hot,
       });
     }
@@ -595,9 +598,12 @@ export function createXrayScene(container, { onSelect, onHover, onContextLost, p
   }
   function setLabels(labels) { state.labels = labels; requestRender(); }
   // projected extent of the visible model, 0..1 of the canvas (y down)
+  // (in Focus on a room, the room is the subject: its label goes beside the room, not beside a building
+  // that fills the whole canvas, where it would be pushed back over the model)
   function projectedExtent() {
     let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
-    for (const p of modelPoints(state.mode)) {
+    const room = state.mode === 'focus' && state.cut?.slots.find((s) => s.zone === state.selected);
+    for (const p of room ? boxPoints(room.box) : modelPoints(state.mode)) {
       v.set(p[0], p[1], p[2]).project(camera);
       const sx = v.x * 0.5 + 0.5, sy = -v.y * 0.5 + 0.5;
       x0 = Math.min(x0, sx); x1 = Math.max(x1, sx); y0 = Math.min(y0, sy); y1 = Math.max(y1, sy);

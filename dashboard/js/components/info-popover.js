@@ -60,8 +60,12 @@ function contentFor(btn) {
   const key = btn.dataset.info;
   const base = INFO[key] ?? { title: btn.getAttribute('aria-label') || 'About this', body: '' };
   const from = btn.dataset.infoFrom && document.getElementById(btn.dataset.infoFrom);
-  const extra = from && from.innerHTML.trim() ? `<p>${from.innerHTML}</p>` : '';
-  return { ...base, body: (base.body || '') + extra };
+  // (block content, such as a method list, keeps its own structure; a sentence becomes a paragraph)
+  const html = from?.innerHTML.trim() ?? '';
+  const extra = !html ? '' : /^<(ul|ol|div|p|table)/i.test(html) ? `<div class="popover-from">${html}</div>` : `<p>${html}</p>`;
+  // a chart's sentence of interpretation (setFinding) leads, then its method notes
+  const lead = btn.dataset.infoLead ? `<p class="popover-lead">${btn.dataset.infoLead}</p>` : '';
+  return { ...base, body: (base.body || '') + lead + extra };
 }
 
 export function open(btn) {
@@ -121,7 +125,7 @@ function place() {
 export function initInfoPopovers() {
   ensure();
   // Every button gets the same state attributes, including ones added to the page later.
-  const prep = (root) => root.querySelectorAll?.('.info-btn[data-info]:not([aria-expanded])').forEach((b) => {
+  const prep = (root) => root.querySelectorAll?.('.info-btn[data-info]:not([aria-expanded]), .info-link[data-info]:not([aria-expanded])').forEach((b) => {
     b.setAttribute('aria-expanded', 'false');
     b.setAttribute('aria-haspopup', 'dialog');
   });
@@ -129,7 +133,7 @@ export function initInfoPopovers() {
   new MutationObserver((ms) => ms.forEach((m) => m.addedNodes.forEach((n) => n.nodeType === 1 && prep(n)))).observe(document.body, { childList: true, subtree: true });
 
   document.addEventListener('click', (e) => {
-    const btn = e.target.closest('.info-btn[data-info]');
+    const btn = e.target.closest('.info-btn[data-info], .info-link[data-info]');
     if (btn) { e.preventDefault(); e.stopPropagation(); open(btn); return; }
     if (current && !pop.contains(e.target)) close(false);
   });

@@ -5,10 +5,11 @@
 // All data work lives in ../fingerprint-model.js; this file only draws and handles input.
 
 import { enhanceSelect } from '../components/select.js';
+import { initSearch } from '../atlas/search.js';
 import { itemLabel } from '../model.js';
 import { itemStats, buildingProfile, sameScorePairs, contrastFor, scoreOptions, cityFindings, SCALE_MAX, UNCOMMON_SHARE } from '../fingerprint-model.js';
 import { tip, pct, fmt, esc, titleCase, formatDate, cssVar, anchorEvent } from '../ui.js';
-import { renderProfile } from './fp-profile.js';
+import { renderProfile, refitProfile } from './fp-profile.js';
 
 const $ = (id) => document.getElementById(id);
 const GAP = 3;
@@ -18,13 +19,21 @@ const reduceMotion = () => matchMedia('(prefers-reduced-motion: reduce)').matche
 let layoutCache = { key: null, layout: null };
 const prevFill = { a: new Map(), b: new Map() }; // last colours drawn, so a change of building animates
 let wired = false;
+// One view at a time (By category · Every item · All of Toronto), swapped in place so the page fits the
+// window. Charts measure the panel they are drawn in, so the shown panel is redrawn when it changes.
+const TABS = ['profile', 'items', 'city'];
+let tab = 'profile';
+let last = null;
+let shown = null; // the pair on screen, for the address suggestions
 
 const ratingColor = (v) => cssVar(`--fp-${v}`);
 const ratingText = (v) => `${v} of ${SCALE_MAX}`;
 
 export function renderFingerprint(ctx, M, state) {
   const { pm } = ctx;
+  last = [ctx, M, state];
   wire(ctx);
+  syncTabs();
   const off = pm.era !== 'cur';
   $('fp-unavailable').hidden = !off;
   $('fp-main').hidden = off;
@@ -53,14 +62,18 @@ export function renderFingerprint(ctx, M, state) {
   }
 
   // ---- controls --------------------------------------------------------------
+  // The score menu always shows the score on screen: the pair's score, or building A's when the reader chose
+  // their own buildings (choosing a score from it goes back to matched pairs at that score).
+  const shownScore = mode === 'custom' && a ? a.score : state.score;
+  const opts = options.some((o) => o.score === shownScore) ? options : [...options, { score: shownScore, n: 1 }].sort((x, y) => x.score - y.score);
   const sel = $('fp-score');
-  sel.innerHTML = options.map((o) => `<option value="${o.score}" ${o.score === state.score ? 'selected' : ''}>${o.score} (${fmt.n(o.n)} buildings)</option>`).join('');
-  sel.disabled = mode === 'custom';
+  sel.innerHTML = opts.map((o) => `<option value="${o.score}" ${o.score === shownScore ? 'selected' : ''}>${o.score} (${fmt.n(o.n)} building${o.n === 1 ? '' : 's'})</option>`).join('');
+  shown = { a, b, pool, pm };
   $('fp-next').hidden = mode === 'custom' || pairs.length < 2;
   $('fp-next').textContent = pairs.length > 1 ? `Show another pair (${(state.pairIndex % pairs.length) + 1} of ${pairs.length})` : '';
   $('fp-reset').hidden = mode !== 'custom';
-  $('fp-a').placeholder = a ? titleCase(a.address) : 'Search an address…';
-  $('fp-b').placeholder = b ? titleCase(b.address) : 'Search an address…';
+  $('fp-a').placeholder = a ? titleCase(a.address) : 'Start typing an address…';
+  $('fp-b').placeholder = b ? titleCase(b.address) : 'Start typing an address…';
 
   // ---- intro numbers (computed, not typed) -------------------------------------
   const scores = pm.latest.map((r) => r.score).sort(d3.ascending);
@@ -72,45 +85,106 @@ export function renderFingerprint(ctx, M, state) {
   const pb = b && buildingProfile(b, layout);
   $('fp-verdict').innerHTML = pa && pb ? verdict(pa, pb, mode) : 'Not enough buildings with this score to compare.';
   renderProfile($('fp-profile'), pa, pb);
-  drawBuilding($('fp-a-card'), pa, 'a', ctx, pm);
-  drawBuilding($('fp-b-card'), pb, 'b', ctx, pm);
+  // the guided story shows the item grids without the tabs
+  const story = document.body.classList.contains('is-story');
+  if (tab === 'items' || story) {
+    drawBuilding($('fp-a-card'), pa, 'a', ctx, pm);
+    drawBuilding($('fp-b-card'), pb, 'b', ctx, pm);
+  }
   renderTable(layout, pa, pb);
 
   // ---- Toronto overview -------------------------------------------------------------
-  const cityLayout = ctx.ward ? { groups: layout.groups, stats: itemStats(ctx.latest, pm.cats, itemLabel).stats } : layout;
-  drawCity($('fp-city-chart'), cityLayout, ctx.latest.length);
-  renderCityNotes(cityLayout, ctx);
+  if (tab === 'city' && !story) {
+    const cityLayout = ctx.ward ? { groups: layout.groups, stats: itemStats(ctx.latest, pm.cats, itemLabel).stats } : layout;
+    renderCityNotes(cityLayout, ctx);
+    drawCity($('fp-city-chart'), cityLayout, ctx.latest.length);
+  }
   renderMethod(pm, layout);
+}
+
+function syncTabs() {
+  for (const t of TABS) {
+    const btn = $(`fp-tab-${t}`), on = t === tab;
+    btn.setAttribute('aria-selected', String(on));
+    btn.tabIndex = on ? 0 : -1;
+    $(`fp-panel-${t}`).hidden = !on;
+  }
+}
+function showTab(t, focus = false) {
+  if (t === tab) return;
+  tab = t;
+  syncTabs();
+  if (focus) $(`fp-tab-${t}`).focus();
+  const panel = $(`fp-panel-${t}`);
+  if (!reduceMotion()) panel.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 160, easing: 'ease-out' });
+  if (last) renderFingerprint(...last);
 }
 
 // ---- input --------------------------------------------------------------------------
 function wire(ctx) {
   if (wired) return;
   wired = true;
-  $('fp-score').addEventListener('change', (e) => ctx.setFp({ score: +e.target.value, pairIndex: 0 }));
+  $('fp-score').addEventListener('change', (e) => ctx.setFp({ score: +e.target.value, pairIndex: 0, a: null, b: null }));
   enhanceSelect($('fp-score'), { search: true, searchLabel: 'Search scores', placeholder: 'Find a score…' });
   $('fp-next').addEventListener('click', () => ctx.setFp((s) => ({ pairIndex: s.pairIndex + 1 })));
   $('fp-reset').addEventListener('click', () => ctx.setFp({ a: null, b: null, pairIndex: 0 }, '#/compare'));
-  const pick = (input, slot) => {
-    const go = () => {
-      const r = ctx.findBuilding(input.value);
-      if (!r) return;
-      input.value = '';
-      ctx.setFp((s) => (slot === 'a' ? { a: r.rsn, b: null } : { a: s.a ?? s.shownA, b: r.rsn }));
-    };
-    input.addEventListener('change', go);
-    input.addEventListener('keydown', (e) => { if (e.key === 'Enter') go(); });
+  // Building A / B: address search over the buildings evaluated under the scoring system on screen (scores
+  // from the two systems are never compared). Empty, a field suggests buildings with the same score as the
+  // other building; each option says whether its score matches.
+  const pick = (slot) => {
+    const other = slot === 'a' ? 'b' : 'a';
+    const sameAs = (r) => shown?.[other] && r.score === shown[other].score && r.rsn !== shown[other].rsn;
+    initSearch($(`fp-${slot}`), $(`fp-${slot}-list`), {
+      source: () => shown?.pm.latest ?? [],
+      describe: (r) => `${esc(r.wardName)} · score <b class="tnum">${r.score}</b>${shown?.[other] ? (r.score === shown[other].score ? ' · same score' : ` · ${r.score > shown[other].score ? '+' : '−'}${Math.abs(r.score - shown[other].score)} vs ${slot === 'a' ? 'B' : 'A'}`) : ''}`,
+      suggest: () => {
+        if (!shown?.[other]) return null;
+        const pool = shown.pm.latest.filter(sameAs);
+        return { label: `Also scored ${shown[other].score}`, records: d3.shuffle(pool.slice()).slice(0, 6) };
+      },
+      noMatch: (text) => {
+        const elsewhere = ctx.searchAll?.().some((r) => r.era !== shown?.pm.era && r.address.includes(text.toUpperCase()));
+        return elsewhere
+          ? 'Only evaluated under the other scoring system. Scores from the two systems aren’t compared; switch systems to see it.'
+          : 'No evaluated building matches that address.';
+      },
+      onPick: (r) => ctx.setFp((s) => (slot === 'a'
+        // a new A gets a same-score partner, unless the reader chose a B with that score themselves
+        ? { a: r.rsn, b: s.b && s.b !== r.rsn && shown?.b?.rsn === s.b && shown.b.score === r.score ? s.b : null }
+        : { a: s.a ?? shown?.a?.rsn, b: r.rsn })),
+    });
   };
-  pick($('fp-a'), 'a');
-  pick($('fp-b'), 'b');
+  pick('a');
+  pick('b');
   $('fp-goto-cur').addEventListener('click', () => ctx.setPeriod('cur'));
+  // tabs: click, and arrow keys / Home / End between them (the APG tabs pattern, automatic activation)
+  for (const t of TABS) $(`fp-tab-${t}`).addEventListener('click', () => showTab(t));
+  $('fp-tab-profile').parentElement.addEventListener('keydown', (e) => {
+    const i = TABS.indexOf(tab);
+    const next = { ArrowRight: i + 1, ArrowLeft: i - 1, Home: 0, End: TABS.length - 1 }[e.key];
+    if (next == null) return;
+    e.preventDefault();
+    showTab(TABS[(next + TABS.length) % TABS.length], true);
+  });
+  // the full table and the method open on request, in dialogs
+  for (const [btn, dlg] of [['fp-table-open', 'fp-table-dialog'], ['fp-method-open', 'fp-method-dialog']]) {
+    const d = $(dlg);
+    $(btn).addEventListener('click', () => d.showModal());
+    d.querySelector('[data-close]').addEventListener('click', () => d.close());
+    d.addEventListener('click', (e) => { if (e.target === d) d.close(); });
+    d.addEventListener('close', () => $(btn).focus());
+  }
+  // charts follow the panel's size
+  let raf = 0;
+  new ResizeObserver(() => { cancelAnimationFrame(raf); raf = requestAnimationFrame(() => { if (!last || $('fp-main').closest('[hidden]')) return; if (tab === 'profile') refitProfile($('fp-profile')); else renderFingerprint(...last); }); })
+    .observe($('fp-panel-items').parentElement);
 }
 
 // ---- annotations ------------------------------------------------------------------------
 function verdict(pa, pb, mode) {
   const name = (p) => `<b>${esc(titleCase(p.rec.address))}</b>`;
   const same = pa.rec.score === pb.rec.score;
-  const lead = same ? `Both buildings scored <b>${pa.rec.score}</b>.` : `These scored <b>${pa.rec.score}</b> and <b>${pb.rec.score}</b>.`;
+  const lead = same ? `Both buildings scored <b>${pa.rec.score}</b>.` : `Different scores: <b>${pa.rec.score}</b> and <b>${pb.rec.score}</b>, so this isn’t a same-score comparison.`;
   const desc = (p) => {
     if (!p.low.length) return `${name(p)} had no item rated 0 or 1`;
     const g = d3.greatest(p.groups, (x) => x.low);
@@ -152,18 +226,23 @@ function drawBuilding(card, p, slot, ctx, pm) {
     <p class="fp-score"><span class="fp-score-num">${r.score}</span><span class="fp-score-of">/100</span>
       <span class="fp-score-sub">${p.low.length ? `<b>${p.low.length}</b> of ${p.rated} items rated 0 or 1` : `none of ${p.rated} items rated 0 or 1`}</span></p>`;
 
-  const width = Math.max(260, chart.clientWidth);
-  const cell = Math.max(16, Math.min(28, Math.floor((width + GAP) / PER_ROW - GAP)));
-  const perRow = Math.max(1, Math.floor((width + GAP) / (cell + GAP)));
-  const titleH = 22, groupGap = 14;
-  let y = 0;
-  const rows = p.groups.map((g) => {
-    const top = y;
-    const lines = Math.ceil(g.items.length / perRow) || 1;
-    y += titleH + lines * (cell + GAP) + groupGap;
-    return { g, top };
-  });
-  const height = y - groupGap + 2;
+  const width = Math.max(220, chart.clientWidth);
+  // the largest cell that fits the width and, when the chart is given a height (the fitted page), that too
+  const room = !document.body.classList.contains('is-story') && chart.clientHeight > 80 ? chart.clientHeight : Infinity;
+  const titleH = 22, groupGap = 12;
+  const layoutFor = (cell) => {
+    const perRow = Math.max(1, Math.floor((width + GAP) / (cell + GAP)));
+    let y = 0;
+    const rows = p.groups.map((g) => {
+      const top = y;
+      y += titleH + (Math.ceil(g.items.length / perRow) || 1) * (cell + GAP) + groupGap;
+      return { g, top };
+    });
+    return { cell, perRow, rows, height: y - groupGap + 2 };
+  };
+  let L = layoutFor(Math.max(14, Math.min(28, Math.floor((width + GAP) / PER_ROW - GAP))));
+  while (L.height > room && L.cell > 12) L = layoutFor(L.cell - 1);
+  const { cell, perRow, rows, height } = L;
   const svg = d3.select(chart).append('svg').attr('viewBox', `0 0 ${width} ${height}`).attr('width', width).attr('height', height)
     .attr('role', 'img').attr('aria-label', `Inspection fingerprint for ${titleCase(r.address)}: ${p.rated} items rated, ${p.low.length} rated 0 or 1. ${p.groups.map((g) => `${g.label}: ${g.low} of ${g.rated} rated 0 or 1`).join('. ')}. Full list in the table below.`);
 
@@ -203,7 +282,26 @@ function drawBuilding(card, p, slot, ctx, pm) {
         <span class="fp-low-city">${pct(i.stat.lowShare)} of buildings</span></li>`).join('')}</ul>`
     : '';
   notes.innerHTML = `<ul class="fp-note-list">${notesFor(p, pm).map((n) => `<li>${n}</li>`).join('')}</ul>`;
+  fitSide(card.querySelector('.fp-side'));
   ctx.registerShown?.(slot, r.rsn);
+}
+
+// The side column holds the low-mark list and the notes in the room beside the grid. When there is not
+// room for all of it, the list is cut and says how many more there are (the grid still shows every one,
+// with its digit), and notes after the first are left to the table.
+function fitSide(side) {
+  if (!side || !side.clientHeight || document.body.classList.contains('is-story')) return;
+  const over = () => side.scrollHeight > side.clientHeight + 1;
+  const notes = [...side.querySelectorAll('.fp-note-list li')];
+  while (over() && notes.length > 1) notes.pop().remove();
+  const items = [...side.querySelectorAll('.fp-low-list li')];
+  if (!over() || !items.length) return;
+  const more = document.createElement('li');
+  more.className = 'fp-low-more';
+  side.querySelector('.fp-low-list').append(more);
+  let hidden = 0;
+  while (over() && items.length > 1) { items.pop().remove(); hidden++; more.textContent = `+${hidden} more, marked in the grid`; }
+  if (!hidden) more.remove();
 }
 
 function cellTip(it, r, pm) {
@@ -272,7 +370,7 @@ function drawCity(box, layout, n) {
   if (wide) {
     const usable = width - groupGap * (layout.groups.length - 1);
     cell = Math.max(8, Math.floor((usable + GAP) / items.length - GAP));
-    colH = 120;
+    colH = box.clientHeight > 120 ? Math.max(90, Math.min(260, box.clientHeight - 34 - 10)) : 120;
     let x = 0, last = null;
     pos = items.map((d) => { if (last && d.g !== last) x += groupGap; last = d.g; const p = { ...d, x, y: 34 }; x += cell + GAP; return p; });
     height = 34 + colH + 8;

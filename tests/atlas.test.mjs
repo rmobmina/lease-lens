@@ -225,3 +225,16 @@ test('search: address prefix first, then word starts, then anywhere; both scorin
   const all = [...pm.latest, ...M.byPeriod.pre.latest.filter((r) => !pm.latestByRsn.has(r.rsn))];
   for (const r of all.slice(0, 300)) assert.ok(rankMatches(all, r.address, 50).some((x) => x.rsn === r.rsn), r.address);
 });
+
+test('address search: long street words, punctuation and case match the City forms', async () => {
+  const { rankMatches, normalizeAddress } = await import('../dashboard/js/atlas/search.js');
+  assert.equal(normalizeAddress('  1385 midland avenue '), '1385 MIDLAND AVE');
+  assert.equal(normalizeAddress('874 Lawrence Avenue East'), '874 LAWRENCE AVE E');
+  const recs = [{ address: '874 LAWRENCE AVE E' }, { address: '1385 MIDLAND AVE' }, { address: '30 DENARDA ST' }, { address: '1385 MIDLAND AVE E' }];
+  assert.deepEqual(rankMatches(recs, 'lawrence avenue east').map((r) => r.address), ['874 LAWRENCE AVE E']);
+  assert.deepEqual(rankMatches(recs, 'denarda street').map((r) => r.address), ['30 DENARDA ST']);
+  // the exact address ranks ahead of a longer one that starts the same way
+  assert.deepEqual(rankMatches(recs, '1385 midland ave').map((r) => r.address), ['1385 MIDLAND AVE', '1385 MIDLAND AVE E']);
+  assert.deepEqual(rankMatches(recs, 'no such road'), []);
+  assert.ok(recs.every((r) => Object.keys(r).length === 1), 'records are not modified');
+});

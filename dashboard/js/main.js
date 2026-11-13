@@ -63,9 +63,9 @@ const state = {
   mapShow: 'all',
   lens: null,            // active analysis layer id
   placeTab: 'summary',   // summary | nearby | history
-  problems: { group: 'all', showAll: false },
+  problems: { group: 'all', page: 0 },
   changes: { start: 'all' },
-  movers: { n: 10 },
+  movers: { dir: 'both' },
   fp: { score: 92, pairIndex: 0, a: null, b: null, shownA: null, shownB: null },
   xray: { rsn: null, evalUid: null, zone: null, mode: 'exterior', matchRsn: null },
 };
@@ -91,7 +91,7 @@ function context() {
     pm, ward: state.ward, selected: state.selected, show: state.mapShow,
     latest: pm.latest.filter(inWard), pairs: pm.pairs.filter((p) => inWard(p.b)),
     ch: choropleth(), highlight: app.highlight,
-    select, setWard, setFp, setPeriod, findBuilding,
+    select, setWard, setFp, setPeriod, findBuilding, searchAll: () => searchSource,
     registerShown: (slot, rsn) => { state.fp[slot === 'a' ? 'shownA' : 'shownB'] = rsn; },
   };
 }
@@ -476,7 +476,13 @@ function renderLensMenu() {
   const opt = (l) => `<label class="lens-opt"><input type="radio" name="lens" value="${l.id}" ${state.lens === l.id ? 'checked' : ''} /><span>${esc(l.label)}</span></label>`;
   $('lens-options').innerHTML = `<label class="lens-opt"><input type="radio" name="lens" value="" ${!state.lens ? 'checked' : ''} /><span>None</span></label>`
     + groups.map((g, i) => `<p class="lens-group">${esc(g.title)}${i === 0 ? ' <small>suggested at this zoom</small>' : ''}</p>${LENSES.filter((l) => l.scale === g.key).map(opt).join('')}`).join('');
-  $('lens-options').querySelectorAll('input').forEach((i) => i.addEventListener('change', () => setLens(i.value || null)));
+  $('lens-options').querySelectorAll('input').forEach((i) => {
+    i.addEventListener('change', () => setLens(i.value || null));
+    // a pick by pointer or Enter closes the menu (arrow keys only move through the options)
+    const done = () => { closeMenus(); $('lens-btn').focus({ preventScroll: true }); };
+    i.closest('label').addEventListener('click', (e) => { if (e.detail > 0) requestAnimationFrame(done); });
+    i.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); if (!i.checked) { i.checked = true; setLens(i.value || null); } done(); } });
+  });
   $('lens-btn').classList.toggle('is-on', !!state.lens);
 }
 
@@ -504,7 +510,16 @@ function renderLens(ctx) {
     }
   }
   lensShown = l.id;
-  requestAnimationFrame(() => { try { l.render(ctx); } catch (err) { console.error(err); } });
+  requestAnimationFrame(() => {
+    try {
+      l.render(ctx);
+      // Each layer writes its finding after drawing its chart, so the chart's box can shrink after it was
+      // measured. If the drawing no longer fits its box, draw it once more at the settled size.
+      const view = box.querySelector(`.lens-view[data-lens="${l.id}"]`);
+      const chart = view?.querySelector('.chart'), svg = chart?.querySelector('svg');
+      if (svg && svg.getBoundingClientRect().bottom > chart.getBoundingClientRect().bottom + 1) l.render(ctx);
+    } catch (err) { console.error(err); }
+  });
 }
 
 function renderDistribution(ctx) {
@@ -562,6 +577,7 @@ function openDepth(kind, page = null, after) {
   if (prev === 'xray' && kind !== 'xray') disposeXray();
   state.depth = kind; state.page = page;
   document.body.dataset.depth = kind;
+  if (page) document.body.dataset.page = page; else delete document.body.dataset.page;
   stopReveal();
   const from = revealFrom; revealFrom = null;
   $('depth').hidden = false;
@@ -692,7 +708,7 @@ function syncControls() {
   check('map-show', state.mapShow);
   check('item-group', state.problems.group);
   check('change-start', state.changes.start);
-  check('movers-n', state.movers.n);
+  check('movers-dir', state.movers.dir);
   check('lens', state.lens);
   $('ward').value = state.ward;
 }
@@ -727,10 +743,11 @@ function wireControls() {
     render();
   });
   radios('map-show', (v) => { state.mapShow = v; if (!story?.active()) commitView(); render(); });
-  radios('item-group', (v) => { state.problems.group = v; state.problems.showAll = false; renderLens(context()); });
+  radios('item-group', (v) => { state.problems.group = v; state.problems.page = 0; renderLens(context()); });
   radios('change-start', (v) => { state.changes.start = v; renderLens(context()); });
-  radios('movers-n', (v) => { state.movers.n = +v; renderLens(context()); });
-  $('problem-more').addEventListener('click', () => { state.problems.showAll = !state.problems.showAll; renderLens(context()); });
+  radios('movers-dir', (v) => { state.movers.dir = v; renderLens(context()); });
+  $('problem-prev').addEventListener('click', () => { state.problems.page--; renderLens(context()); });
+  $('problem-next').addEventListener('click', () => { state.problems.page++; renderLens(context()); });
   $('lens-close').addEventListener('click', () => {
     setLens(null);
     (story?.active() ? document.querySelector('#story-panel [data-act=detail]') : $('lens-btn'))?.focus();

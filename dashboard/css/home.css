@@ -20,7 +20,7 @@ body[data-layer="home"] { background: var(--atlas-bg); }
    score."), set tight like a display face should be, with a clear channel between the words and the city. */
 .hero { position: relative; display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); column-gap: clamp(var(--space-6), 4vw, var(--space-8)); min-height: 0; outline: none; }
 .hero-copy { align-self: center; padding: 0 0 var(--space-8) clamp(var(--space-5), 4.4vw, var(--space-8)); max-width: 620px; position: relative; z-index: 2; }
-.hero-title { font-family: var(--font-display); font-weight: var(--weight-bold); font-size: var(--text-hero); line-height: 1.02;
+.hero-title { font-family: var(--font-display); font-weight: var(--weight-bold); font-size: var(--text-hero); line-height: var(--leading-tight);
   letter-spacing: var(--tracking-hero); font-kerning: normal; font-feature-settings: "kern" 1; font-optical-sizing: auto; color: var(--ink); text-wrap: balance; }
 /* deliberate line breaks on wide screens; natural, balanced wrapping where the column is narrow */
 .hero-title span { display: block; white-space: nowrap; }
@@ -56,8 +56,9 @@ body[data-layer="home"] { background: var(--atlas-bg); }
 @media (max-width: 1080px) {
   .hero { grid-template-columns: 1fr; grid-template-rows: auto minmax(0, 1fr); }
   .hero-copy { padding: var(--space-7) var(--space-6) 0; max-width: 680px; }
-  :root { --text-hero: clamp(36px, 6.4vw, 60px); }
-  .atlas-stage { min-height: 0; height: 52vh; }
+  :root { --text-hero: clamp(36px, 5.6vw, 56px); }
+  .home { height: calc(100svh - var(--header-h)); }   /* the drawing takes whatever the copy leaves */
+  .atlas-stage { min-height: 240px; height: auto; }
   .site-foot { padding: var(--space-4) var(--space-6); }
 }
 
@@ -69,6 +70,7 @@ body[data-layer="home"] { background: var(--atlas-bg); }
   .hero-sub { margin-top: var(--space-4); font-size: var(--text-md); }
   .hero-actions { margin-top: var(--space-5); }
   .hero-actions .btn { flex: 1 1 auto; justify-content: center; }
+  .home { height: auto; }
   .atlas-stage { height: 42vh; min-height: 260px; }
   .site-foot { padding: var(--space-3) var(--space-4) var(--space-4); align-items: flex-start; }
 }

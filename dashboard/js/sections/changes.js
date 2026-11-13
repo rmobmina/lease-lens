@@ -3,7 +3,7 @@
 // Histogram = how large those changes were.
 
 import { changeSummary } from '../model.js';
-import { tip, pct, fmt, signed, svgIn, cssVar, empty, setFinding } from '../ui.js';
+import { tip, pct, fmt, signed, svgIn, cssVar, empty, setFinding, chartHeight } from '../ui.js';
 import { snapshot, play } from '../chart-motion.js';
 
 const CLIP = 30; // changes beyond ±30 are grouped into the end bars (labelled)
@@ -33,7 +33,7 @@ export function renderChanges(ctx, state) {
     </div>`;
 
   // histogram of change values
-  const H = Math.max(240, Math.min(600, box.clientHeight - 8 || 300));
+  const H = chartHeight(box);
   const { svg, width } = svgIn(box, H, `Histogram of score changes between consecutive evaluations, ${fmt.n(s.n)} re-inspections.`);
   const m = { top: 28, right: 16, bottom: 46, left: 52 };
   const clamp = (v) => Math.max(-CLIP, Math.min(CLIP, v));
@@ -45,8 +45,9 @@ export function renderChanges(ctx, state) {
 
   svg.append('g').attr('class', 'grid').attr('transform', `translate(${m.left},0)`)
     .call(d3.axisLeft(y).ticks(5).tickSize(-(width - m.left - m.right)).tickFormat(''));
-  svg.append('g').attr('class', 'axis').attr('transform', `translate(${m.left},0)`).call(d3.axisLeft(y).ticks(5).tickSizeOuter(0).tickFormat(d3.format('~s')));
-  const tickVals = [-30, -20, -10, 0, 10, 20, 30];
+  svg.append('g').attr('class', 'axis').attr('transform', `translate(${m.left},0)`).call(d3.axisLeft(y).ticks(5).tickSizeOuter(0).tickFormat((v) => (v ? d3.format('~s')(v) : '')));  // the baseline needs no 0, which would meet the first x label
+  // seven labels where they have room, three where they don't (each label needs ~44 px)
+  const tickVals = (width - m.left - m.right) / 7 >= 44 ? [-30, -20, -10, 0, 10, 20, 30] : [-30, 0, 30];
   svg.append('g').attr('class', 'axis').attr('transform', `translate(0,${H - m.bottom})`)
     .call(d3.axisBottom(x).tickValues(tickVals).tickSizeOuter(0).tickFormat((k) => (k === -CLIP ? `≤ −${CLIP}` : k === CLIP ? `≥ +${CLIP}` : signed(k))));
   svg.append('text').attr('class', 'axis-title').attr('x', (m.left + width - m.right) / 2).attr('y', H - 8).attr('text-anchor', 'middle').text('Change in score at re-inspection (points)');

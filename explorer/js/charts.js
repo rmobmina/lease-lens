@@ -39,8 +39,11 @@ const tip = {
     if (!this.el || this.el.hidden) return;
     const w = this.el.offsetWidth, h = this.el.offsetHeight;
     let x = ev.clientX + 14, y = ev.clientY + 14;
+    // beside the pointer, flipped to the other side near an edge, then kept inside the window either way
     if (x + w > window.innerWidth - 8) x = ev.clientX - w - 14;
     if (y + h > window.innerHeight - 8) y = ev.clientY - h - 14;
+    x = Math.max(8, Math.min(x, window.innerWidth - w - 8));
+    y = Math.max(8, Math.min(y, window.innerHeight - h - 8));
     this.el.style.left = x + 'px';
     this.el.style.top = y + 'px';
   },

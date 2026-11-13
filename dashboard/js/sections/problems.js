@@ -11,7 +11,7 @@ const MIN_RATED = 30; // items rated in fewer buildings than this are listed sep
 export function renderProblems(ctx, state) {
   const { latest, pm, ward } = ctx;
   const box = document.getElementById('problem-chart');
-  const more = document.getElementById('problem-more');
+  const pager = document.getElementById('problem-pager');
   const before = snapshot(box);
   box.innerHTML = '';
 
@@ -28,23 +28,30 @@ export function renderProblems(ctx, state) {
   rows = rows.filter((d) => d.rated >= MIN_RATED)
     .filter((d) => group === 'all' || (group === 'record' ? d.record : !d.record))
     .sort((a, b) => b.share - a.share || b.poor - a.poor);
-  if (!rows.length) { empty(box, 'No inspection items with enough ratings for this selection.'); more.hidden = true; return; }
+  if (!rows.length) { empty(box, 'No inspection items with enough ratings for this selection.'); pager.hidden = true; return; }
 
-  const shown = state.showAll ? rows : rows.slice(0, TOP);
-  more.hidden = rows.length <= TOP;
-  more.textContent = state.showAll ? `Show top ${TOP} only` : `Show all ${rows.length} items`;
-  more.setAttribute('aria-expanded', String(!!state.showAll));
-
+  // As many rows as the panel has room for, a page at a time (the page never grows taller than the window).
+  // Every page uses the same scale, so bars compare across pages.
   const narrow = box.clientWidth < 640;
-  const rowH = narrow ? 44 : 30;
+  const rowH = narrow ? 40 : 30;
+  pager.hidden = false;                       // measured with the pager in place
+  const room = box.clientHeight > 120 ? box.clientHeight : 0;
+  const per = room ? Math.max(4, Math.floor((room - 36) / rowH)) : TOP;
+  const pages = Math.ceil(rows.length / per);
+  state.page = Math.min(Math.max(0, state.page ?? 0), pages - 1);
+  const shown = rows.slice(state.page * per, state.page * per + per);
+  pager.hidden = pages <= 1;
+  document.getElementById('problem-range').textContent = `${state.page * per + 1}–${state.page * per + shown.length} of ${rows.length} items`;
+  document.getElementById('problem-prev').disabled = state.page === 0;
+  document.getElementById('problem-next').disabled = state.page >= pages - 1;
   const H = shown.length * rowH + 36;
   const { svg, width } = svgIn(box, H, `Bar chart of the ${shown.length} most common problems, by share of buildings rated poorly.`);
   const labelW = narrow ? 0 : Math.min(270, width * 0.36);
   const valueW = 128;
   const x0 = labelW + (narrow ? 0 : 12);
-  const xMax = d3.max(shown, (d) => d.share);
+  const xMax = d3.max(rows, (d) => d.share);
   const x = d3.scaleLinear().domain([0, Math.max(0.05, xMax)]).nice().range([x0, width - valueW]);
-  const barH = Math.min(18, rowH - (narrow ? 26 : 12));
+  const barH = Math.min(18, rowH - (narrow ? 26 : 12));   // 14 px on the two-line rows
   const barColor = cssVar('--ink-2');
   // The guided story can highlight one group of items (ctx.highlight: a Set of item columns).
   const hl = ctx.highlight;
@@ -59,10 +66,10 @@ export function renderProblems(ctx, state) {
   const g = svg.append('g').selectAll('g').data(shown).join('g')
     .attr('data-k', (d) => d.col)
     .attr('transform', (d, i) => `translate(0,${i * rowH + 4})`);
-  const barY = narrow ? 20 : (rowH - barH) / 2 - 2;
+  const barY = narrow ? 18 : (rowH - barH) / 2 - 2;
   g.append('rect').attr('class', 'row-hit').attr('x', 0).attr('y', -2).attr('width', width).attr('height', rowH - 2).attr('rx', 4);
   g.append('text').attr('class', 'row-label')
-    .attr('x', narrow ? 0 : labelW).attr('y', narrow ? 14 : barY + barH / 2 + 4.5).attr('text-anchor', narrow ? 'start' : 'end')
+    .attr('x', narrow ? 0 : labelW).attr('y', narrow ? 13 : barY + barH / 2 + 4.5).attr('text-anchor', narrow ? 'start' : 'end')
     .text((d) => d.label)
     .append('tspan').attr('class', 'row-sub').text((d) => (d.record && group === 'all' ? '  · record/plan' : ''));
   // bar with a 4px rounded data end, square at the baseline

@@ -44,7 +44,7 @@ export const CHAPTERS = [
   },
   {
     id: 'problems', depth: 'story', visual: 'categories',
-    apply: (s) => { s.problems = { group: 'all', showAll: false }; },
+    apply: (s) => { s.problems = { group: 'all', page: 0 }; },
     highlight: (D) => new Set(D.cats.zones[0].items),
     title: () => 'What the score hides',
     text: (D) => {

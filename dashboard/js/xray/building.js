@@ -55,7 +55,13 @@ export function buildBuilding(THREE, entry, mat) {
 
   // wings of each body (L-, T- and U-shaped plans get one corridor per wing); the main wing carries the
   // stair, the elevator core and the rooftop plant, and orients the site
-  const wingsOf = new Map(bodies.map((m) => { const w = wingFrames(m.rings); return [m, w.length ? w : [innerFrame(m.rings)]]; }));
+  // (narrow or courtyard plans: narrower wings before the unfitted fallback frame, whose centre can lie
+  // outside the building)
+  const wingsOf = new Map(bodies.map((m) => {
+    let w = wingFrames(m.rings);
+    if (!w.length) { const F0 = innerFrame(m.rings); w = F0.fitted ? [F0] : wingFrames(m.rings, { minSide: 3.5 }); if (!w.length) w = [F0]; }
+    return [m, w];
+  }));
   const F = wingsOf.get(main)[0];
   const sideDir = F.vy <= 0 ? 1 : -1;
   const sx = F.vx * sideDir, sy = F.vy * sideDir;                 // toward the street-facing (southern) side

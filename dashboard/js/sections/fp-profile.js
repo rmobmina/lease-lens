@@ -97,8 +97,10 @@ export function renderProfile(box, pa, pb) {
         ? `<ul class="pf-list">${lows.map((it) => `<li><span class="pf-chip r${it.rating}" aria-hidden="true">${it.rating}</span>${esc(it.stat.label)}</li>`).join('')}</ul>`
         : `<p class="pf-none">${g.rated ? `No item rated low (${g.rated} rated)` : 'Not rated'}</p>`;
     };
-    tr.nextElementSibling.querySelector('.pf-items-a').innerHTML = list(r.a);
-    tr.nextElementSibling.querySelector('.pf-items-b').innerHTML = list(r.b);
+    for (const [side, g] of [['a', r.a], ['b', r.b]]) {
+      const td = tr.nextElementSibling.querySelector(`.pf-items-${side}`);
+      td.innerHTML = td.dataset.full = list(g);   // the full list, restored before each fit
+    }
   });
   syncOpen(table);
 }
@@ -113,4 +115,50 @@ function syncOpen(table) {
     items.hidden = !on;
     if (on && !was && !reduced()) items.animate([{ opacity: 0, transform: 'translateY(-4px)' }, { opacity: 1, transform: 'none' }], { duration: 220, easing: 'cubic-bezier(0.2, 0.7, 0.2, 1)' });
   });
+  // fitted once every row has its final state (an earlier row may still have been open above)
+  fitRows(table);
+  const open = table.querySelector('.pf-items:not([hidden])');
+  if (open) fitOpen(open);
+}
+
+// The comparison is the page's main visual: its category rows share the panel's free height (up to 64 px a
+// row, bars thickening with them) instead of leaving a blank band under a short chart.
+function fitRows(table) {
+  const panel = table.closest('.fp-panel');
+  table.style.removeProperty('--pf-h');
+  if (!panel || !panel.clientHeight || document.body.classList.contains('is-story')) return;
+  const rows = table.querySelectorAll('.pf-row');
+  const cell = rows[0]?.querySelector('.pf-cell');
+  if (!cell) return;
+  const pad = parseFloat(getComputedStyle(panel).paddingBottom) || 0;
+  const free = panel.getBoundingClientRect().bottom - pad - table.getBoundingClientRect().bottom - 2;
+  if (free < rows.length) return;
+  table.style.setProperty('--pf-h', `${Math.min(64, cell.offsetHeight + Math.floor(free / rows.length))}px`);
+}
+
+// after a resize: the rows are fitted again to the new panel
+export function refitProfile(box) {
+  const table = box?.querySelector('table');
+  if (table) syncOpen(table);
+}
+
+// On the fitted page the open category must not push the page past the window. If its two lists don't fit
+// the panel, the longer one gives up its last items first and says how many it holds back; every item is
+// still in "Every item" and the table. (The guided story lays this page out itself and is left alone.)
+function fitOpen(items) {
+  const panel = items.closest('.fp-panel');
+  if (!panel || !panel.clientHeight || document.body.classList.contains('is-story')) return;
+  const over = () => panel.scrollHeight > panel.clientHeight + 1;
+  for (const td of items.querySelectorAll('[data-full]')) td.innerHTML = td.dataset.full;
+  const lists = [...items.querySelectorAll('.pf-list')];
+  const shown = (l) => [...l.querySelectorAll('li:not(.pf-more)')];
+  while (over()) {
+    const l = lists.filter((x) => shown(x).length > 1).sort((a, b) => shown(b).length - shown(a).length)[0];
+    if (!l) break;
+    shown(l).at(-1).remove();
+    let more = l.querySelector('.pf-more');
+    if (!more) { more = document.createElement('li'); more.className = 'pf-more'; l.append(more); }
+    more.dataset.n = String(+(more.dataset.n ?? 0) + 1);
+    more.textContent = `+${more.dataset.n} more in Every item`;
+  }
 }

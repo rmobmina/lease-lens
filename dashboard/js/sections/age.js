@@ -3,10 +3,9 @@
 // which shows the shape of the relationship without assuming it is a straight line.
 
 import { pearson, decadeMedians } from '../model.js';
-import { tip, hash, titleCase, buildingTip, svgIn, legendKey, cssVar, fmt, empty, setFinding } from '../ui.js';
+import { tip, hash, titleCase, buildingTip, svgIn, legendKey, cssVar, fmt, empty, setFinding, chartHeight } from '../ui.js';
 
 // Fill the available panel height (desktop), with sensible limits.
-const fitHeight = (box, min, max) => Math.max(min, Math.min(max, box.clientHeight - 24 || min));
 
 export function renderAge(ctx) {
   const { latest, ward, selected, pm } = ctx;
@@ -20,7 +19,7 @@ export function renderAge(ctx) {
   const meds = decadeMedians(pts, minN);
   const r = pearson(pts, (d) => d.yearBuilt, (d) => d.score);
 
-  const H = fitHeight(box, 300, 560);
+  const H = chartHeight(box, { max: 560 });
   const { svg, width } = svgIn(box, H, `Scatterplot of building year built against latest evaluation score for ${fmt.n(pts.length)} buildings, with median score per decade.`);
   const m = { top: 14, right: 20, bottom: 46, left: 46 };
   const early = pts.filter((d) => d.yearBuilt < 1900);

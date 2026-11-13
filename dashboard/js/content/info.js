@@ -3,6 +3,11 @@
 // because numbers on the page are always computed from the data.
 
 export const INFO = {
+  // the analysis panel's "How to read this": the chart's own method list follows (data-info-from)
+  'lens-method': {
+    title: 'How to read this',
+    body: '',
+  },
   score: {
     title: 'What does this score mean?',
     body: '<p>RentSafeTO evaluations summarize multiple building conditions into one score. Individual item ratings may reveal additional details.</p><p>Inspectors look at common areas (lobbies, halls, stairwells, grounds, systems and records), not individual units.</p>',
