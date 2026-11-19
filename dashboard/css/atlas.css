@@ -78,24 +78,36 @@ body[data-layer="home"] .skip-work, body[data-layer="work"] .skip-home { display
 .place-kicker { font-size: var(--text-sm); color: var(--muted); }
 .place h2 { font-family: var(--font-display); font-size: var(--text-xl); font-weight: var(--weight-bold); line-height: var(--leading-snug); letter-spacing: var(--tracking-heading); margin-top: var(--space-1); outline: none; }
 .place-close { flex: none; margin: calc(var(--space-1) * -1) calc(var(--space-2) * -1) 0 0; font-size: var(--text-xl); }
-.score-line { display: flex; align-items: baseline; flex-wrap: wrap; gap: var(--space-1) var(--space-3); margin-top: var(--space-3); }
-.score-num { font-family: var(--font-display); font-size: 44px; font-weight: var(--weight-bold); letter-spacing: var(--tracking-display); line-height: 1; font-variant-numeric: tabular-nums; }
-.score-of { color: var(--muted); font-size: var(--text-md); margin-left: calc(var(--space-3) * -1 + 2px); }
-.score-line .band { margin: 0; padding: 0; background: none; box-shadow: none; border-radius: 0; font-size: var(--text-sm); font-weight: var(--weight-medium); color: var(--ink-2); display: inline-flex; align-items: center; gap: var(--space-1); }
-.score-line .band::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--dot); margin-right: var(--space-1); }
-.score-line .band-low10::before { background: var(--low-10); }
-.score-line .band-low25::before { background: var(--low-25); }
-.place-date { font-size: var(--text-sm); color: var(--ink-2); margin-top: var(--space-2); display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-1) var(--space-3); }
-.place-date b { color: var(--ink); font-weight: var(--weight-semibold); font-variant-numeric: tabular-nums; }
-.place-sys { display: inline-flex; align-items: center; gap: var(--space-2); color: var(--muted); }
-.place-context { font-size: var(--text-sm); color: var(--ink-2); margin-top: var(--space-1); font-variant-numeric: tabular-nums; }
-.place-context b { color: var(--ink); font-weight: var(--weight-semibold); }
-.place-facts { color: var(--muted); }
-/* one primary action, two quieter ones beneath it */
+/* the building card: breadcrumb and close on one line, then ward, address and the score panel */
+.place-crumbs { min-width: 0; padding-top: 2px; }
+.place-crumbs + .place-close { margin-top: calc(var(--space-2) * -1); }
+.place-head:has(.place-crumbs) ~ .place-kicker { margin-top: var(--space-2); }
+body.has-building .title-card { display: none; }
+.place-score { margin-top: var(--space-3); padding: var(--space-3); background: var(--surface-muted); border-radius: var(--radius-sm); }
+.score-line { display: flex; align-items: baseline; gap: 2px; }
+.score-num { font-family: var(--font-display); font-size: 44px; font-weight: var(--weight-bold); letter-spacing: var(--tracking-display); line-height: 1; font-variant-numeric: tabular-nums; color: var(--home-ink); }
+.score-of { color: var(--muted); font-size: var(--text-md); }
+.place-score .band { margin: var(--space-2) 0 0; padding: 0; background: none; box-shadow: none; border-radius: 0; font-size: var(--text-sm); font-weight: var(--weight-medium); color: var(--ink-2); display: flex; align-items: center; gap: var(--space-2); }
+.place-score .band::before { content: ""; flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--dot); }
+.place-score .band-low10::before { background: var(--low-10); }
+.place-score .band-low25::before { background: var(--low-25); }
+.place-findings { margin-top: var(--space-3); display: grid; gap: 2px; font-size: var(--text-sm); color: var(--ink-2); font-variant-numeric: tabular-nums; }
+.place-findings b { color: var(--ink); font-weight: var(--weight-semibold); }
+.place-findings .place-facts { color: var(--muted); margin-top: 2px; }
+.place-date { font-size: var(--text-sm); color: var(--ink-2); }
+.place-context { font-size: var(--text-sm); color: var(--ink-2); }
+.place-sys { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-2); font-size: var(--text-sm); color: var(--muted); margin-top: var(--space-1); }
+
+/* actions: one divider, the primary action full width, two equal outlined ones below (stacked when narrow) */
 .place-actions { display: grid; gap: var(--space-2); margin-top: var(--space-4); }
+.place-findings + .place-actions { padding-top: var(--space-4); border-top: var(--border-width) solid var(--border-color); }
 .place-actions .btn-primary { height: 40px; width: 100%; }
-.place-sec { display: flex; gap: var(--space-1); margin-left: calc(var(--space-2) * -1); }
-.place-sec .btn { height: 32px; font-size: var(--text-base); }
+.place-sec { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 9.5em), 1fr)); gap: var(--space-2); }
+.place-sec .btn { height: auto; min-height: 36px; padding: var(--space-2) var(--space-3); white-space: normal; text-align: center; line-height: 1.2; }
+.place-sec-btn { background: var(--surface); color: var(--home-ink); border-color: var(--border-color); }
+.place-sec-btn:hover { background: var(--surface-muted); border-color: var(--home-ink); }
+.place-sec-btn[aria-pressed="true"] { background: var(--surface-muted); border-color: var(--home-ink); box-shadow: inset 0 0 0 1px var(--home-ink); }
+.place-actions .btn:focus-visible { outline: var(--focus-ring); outline-offset: 2px; }
 .place-more { margin-top: var(--space-4); padding-top: var(--space-3); border-top: var(--border); }
 .place-h3 { font-size: var(--text-base); font-weight: var(--weight-semibold); margin-top: var(--space-4); }
 .place-more > .place-h3:first-child { margin-top: 0; }
@@ -126,9 +138,10 @@ body[data-layer="home"] .skip-work, body[data-layer="work"] .skip-home { display
 @keyframes bar-grow { from { transform: scaleX(0); } }
 /* compact card (History / Compare nearby): name, one score line and the actions; the chosen view
    takes the details' room and the legend steps aside, so the panel never scrolls */
-.place.is-compact .place-context, .place.is-compact .place-date { display: none; }
-.place.is-compact .score-line { margin-top: var(--space-2); }
+.place.is-compact .place-findings { display: none; }
+.place.is-compact .place-score { margin-top: var(--space-2); padding: var(--space-2) var(--space-3); }
 .place.is-compact .score-num { font-size: 32px; }
+.place.is-compact .place-actions { padding-top: 0; border-top: 0; }
 .place.is-compact .place-actions { margin-top: var(--space-3); gap: var(--space-1); }
 .place.is-compact .place-more { margin-top: var(--space-3); }
 body:has(.place.is-compact:not([hidden])) .legend-card, body:has(.ward-more:not([hidden])) .legend-card { display: none; }
@@ -165,6 +178,8 @@ body:has(.place.is-compact:not([hidden])) .legend-card, body:has(.ward-more:not(
 @media (min-width: 761px) {
   .rail-right > .pop-panel { position: absolute; top: calc(var(--control-h-sm) + var(--space-2)); right: 0; z-index: 20;
     max-height: calc(100% - var(--control-h-sm) - var(--space-2)); overflow-y: auto; overscroll-behavior: contain; box-shadow: var(--shadow-pop); }
+  /* with an analysis showing, the open Analysis menu sits just left of its card, so both stay in view */
+  body.has-lens .rail-right > #lens-menu { right: calc(100% + var(--space-3)); width: 260px; }
 }
 .lens-pick { border: 0; padding: 0; margin: 0; }
 .lens-pick legend { display: flex; align-items: center; gap: var(--space-1); font-weight: var(--weight-semibold); font-size: var(--text-base); padding: 0; margin-bottom: var(--space-1); }
@@ -179,6 +194,7 @@ body:has(.place.is-compact:not([hidden])) .legend-card, body:has(.ward-more:not(
 .lens { width: 100%; flex: 0 1 auto; min-height: 0; overflow-y: auto; padding: 0 var(--space-4) var(--space-4) !important; animation: rail-in-r 0.24s cubic-bezier(0.2, 0.7, 0.2, 1); }
 .lens-head { display: flex; justify-content: space-between; gap: var(--space-2); align-items: flex-start; position: sticky; top: 0; z-index: 2; background: var(--surface); padding: var(--space-3) 0 var(--space-2); margin-bottom: var(--space-1); border-bottom: var(--border-width) solid var(--border-color); }
 .lens-scope { font-size: var(--text-sm); color: var(--muted); }
+
 .lens-title { font-family: var(--font-display); font-size: var(--text-xl); font-weight: var(--weight-bold); line-height: var(--leading-snug); letter-spacing: var(--tracking-heading); outline: none; }
 .lens-view { padding-top: var(--space-1); }
 .lens .view-intro { font-size: var(--text-base); margin: 0 0 var(--space-2); display: block; max-width: none; }
@@ -231,11 +247,17 @@ body.has-lens .leaflet-bottom.leaflet-right { right: min(456px, calc(40% + 16px)
 .leaflet-tooltip.ward-label { background: none; border: 0; box-shadow: none; padding: 0; font: 600 calc(13.5px * var(--text-scale))/1.25 var(--font-ui); color: var(--ink); text-align: center;
   text-shadow: 0 0 4px var(--surface), 0 0 4px var(--surface), 0 0 2px var(--surface); }
 .leaflet-tooltip.ward-label::before { display: none; }
+.leaflet-tooltip.ward-label { animation: ward-label-in 0.22s var(--ease-out); }
+@keyframes ward-label-in { from { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .leaflet-tooltip.ward-label { animation: none; } }
+:root[data-motion="reduce"] .leaflet-tooltip.ward-label { animation: none; }
 .ward-label small { display: block; font-weight: var(--weight-medium); font-size: var(--text-xs); color: var(--ink-2); }
 .leaflet-tooltip.sel-label { background: var(--accent); color: var(--accent-ink); border: 0; border-radius: var(--radius-sm); font: 600 calc(12.5px * var(--text-scale))/1.3 var(--font-ui); padding: var(--space-1) var(--space-2); box-shadow: var(--shadow-float); white-space: nowrap; }
 .leaflet-tooltip.sel-label::before { border-top-color: var(--accent); }
 .sel-label b { margin-left: var(--space-1); font-variant-numeric: tabular-nums; }
 .sel-ring { animation: sel-in 0.3s ease-out; transform-box: fill-box; transform-origin: center; }
+.leaflet-selection-pane { transition: opacity 0.25s ease-out; }
+.leaflet-container.is-flying .leaflet-selection-pane { opacity: 0; transition: none; }
 @keyframes sel-in { from { opacity: 0; transform: scale(1.6); } }
 
 /* ---- depth: the levels below the map ------------------------------------------------------------------------ */

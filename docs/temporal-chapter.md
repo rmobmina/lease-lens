@@ -11,11 +11,11 @@ Process-book entry for the LeaseLens temporal view (Prototype V1, option A: func
 | `story/temporal.html` | Chapter markup + all website copy |
 | `story/js/temporal-data.js` | Transformation only: records → one change row per building, summaries, audit, validation |
 | `story/js/temporal-chart.js` | Rendering and interaction only |
-| `story/css/temporal.css` | Reading typography + direction colours (layered on `explorer/style.css`) |
+| `story/css/temporal.css` | Reading typography + direction colours (layered on `story/css/base.css`) |
 | `scripts/validate_temporal.py` | Independent stdlib re-derivation of every quoted number |
 | `docs/img/temporal-*.png` | Screenshots for the process book |
 
-Reused without modification: `explorer/js/data.js` (`LL.loadAll` cleaning, RSN matching, flags), `explorer/js/charts.js` (tooltip, number formats, deterministic hash), and `explorer/style.css` (colour tokens, tooltip, axis and gridline styles, dark mode).
+Reused without modification: `shared/js/data.js` (`LL.loadAll` cleaning, RSN matching, flags), `shared/js/charts.js` (tooltip, number formats, deterministic hash), and `explorer/style.css` (colour tokens, tooltip, axis and gridline styles, dark mode).
 
 ---
 

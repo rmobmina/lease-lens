@@ -1,4 +1,4 @@
-/* Temporal chapter. Loaded AFTER ../explorer/style.css, which supplies the shared colour tokens,
+/* Temporal chapter. Loaded AFTER base.css, which supplies the shared colour tokens,
    tooltip, axis and gridline styles. This file only adds reading typography and the
    direction-of-change colours (validated for colour-vision deficiency in light and dark). */
 :root {

@@ -1,4 +1,4 @@
-// Loads the real RentSafeTO CSVs through the SAME loader the website uses (explorer/js/data.js),
+// Loads the real RentSafeTO CSVs through the SAME loader the website uses (shared/js/data.js),
 // so the tests check exactly the records the pages draw. No demo data.
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
@@ -12,9 +12,9 @@ let cache;
 export async function loadData() {
   if (cache) return cache;
   globalThis.window = globalThis;
-  // explorer/js/data.js asks for '../data/<file>.csv' relative to the page; resolve it from dashboard/.
+  // shared/js/data.js asks for '../data/<file>.csv' relative to the page; resolve it from dashboard/.
   globalThis.d3 = { ...d3, text: (file) => readFile(path.resolve(root, 'dashboard', file), 'utf8') };
-  vm.runInThisContext(await readFile(path.join(root, 'explorer/js/data.js'), 'utf8'), { filename: 'explorer/js/data.js' });
+  vm.runInThisContext(await readFile(path.join(root, 'shared/js/data.js'), 'utf8'), { filename: 'shared/js/data.js' });
   cache = await globalThis.LL.loadAll();
   return cache;
 }

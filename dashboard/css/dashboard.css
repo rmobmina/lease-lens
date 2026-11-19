@@ -272,18 +272,6 @@ svg g.row.selected .row-hit { fill: var(--accent-soft); }
 .fp-key-na { background: none; border: var(--border-width) dashed var(--border-control); }
 .fp-key-ring { outline: 1.5px solid var(--ink); outline-offset: 2px; margin: 0 var(--space-1); }
 
-.fp-pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 var(--space-6); }
-.fp-building { min-width: 0; padding-top: var(--space-1); }
-.fp-building + .fp-building { border-left: var(--border-width) solid var(--border-color); padding-left: var(--space-6); }
-.fp-name { font-family: var(--font-display); font-size: var(--text-xl); font-weight: var(--weight-bold); letter-spacing: var(--tracking-heading); line-height: var(--leading-snug); margin-top: 2px; }
-.fp-name a { color: var(--ink); text-decoration: none; }
-.fp-name a:hover { text-decoration: underline; }
-.fp-meta { font-size: var(--text-base); color: var(--muted); margin-top: 2px; }
-.fp-score { display: flex; align-items: baseline; gap: var(--space-1); flex-wrap: wrap; margin: var(--space-2) 0 var(--space-3); }
-.fp-score-num { font-family: var(--font-display); font-size: 44px; font-weight: var(--weight-bold); letter-spacing: var(--tracking-display); line-height: 1; font-variant-numeric: tabular-nums; }
-.fp-score-of { font-size: var(--text-md); color: var(--muted); }
-.fp-score-sub { font-size: var(--text-base); color: var(--ink-2); margin-left: var(--space-3); }
-.fp-chart { min-height: 120px; }
 
 /* ---- paired inspection profile (fp-profile.js): A grows left, B grows right, one scale ------------------- */
 .fp-profile { --val-w: 4.6em; margin: var(--space-5) 0 var(--space-6); }
@@ -342,7 +330,6 @@ svg g.row.selected .row-hit { fill: var(--accent-soft); }
 .pf-axis-b .pf-axis-in { margin: 0 var(--val-w) 0 var(--space-4); }
 .pf-axis-in span { width: 0; display: flex; justify-content: center; white-space: nowrap; }
 .fp-items-title { margin: var(--space-6) 0 var(--space-3); }
-body:not(.story-items) .fp-profile:not([hidden]) ~ .fp-pair .fp-score { display: none; }
 @media (max-width: 760px) {
   .fp-profile { --val-w: 3.6em; }
   .pf-h-mid { width: 34%; }
@@ -369,17 +356,8 @@ svg .fp-bracket { stroke: var(--axis); }
 svg .fp-base { stroke: var(--ink-2); }
 svg .fp-city-title { font-size: var(--text-xs); }
 
-.fp-low-list { list-style: none; margin: var(--space-1) 0 0; padding: 0; }
-.fp-low-list li { display: grid; grid-template-columns: 20px minmax(0, 1fr) auto; gap: var(--space-2); align-items: center; padding: var(--space-1) var(--space-1); border-top: var(--border-width) solid var(--border-color); font-size: var(--text-base); border-radius: var(--radius-sm); }
-.fp-low-list li.is-hot { background: var(--accent-soft); }
 .fp-chip { display: grid; place-items: center; width: 18px; height: 18px; border-radius: var(--radius-sm); font-size: var(--text-xs); font-weight: var(--weight-bold); color: var(--fp-on-low); }
-.fp-low-name { font-weight: var(--weight-medium); }
-.fp-low-city { font-size: var(--text-sm); color: var(--muted); font-variant-numeric: tabular-nums; }
 .fp-ring { display: inline-block; width: 10px; height: 10px; border: var(--border-width) solid var(--ink); border-radius: var(--radius-sm); margin: 0 var(--space-1); vertical-align: -1px; }
-.fp-note-list { margin: var(--space-3) 0 0; padding: 0 0 0 var(--space-4); font-size: var(--text-base); color: var(--ink-2); }
-.fp-note-list li + li { margin-top: var(--space-1); }
-.fp-note-list li:first-child { color: var(--ink); }
-.fp-note-list .fp-ring { margin-left: 0; }
 
 .fp-table { margin: var(--space-5) 0 0; font-size: var(--text-base); }
 .fp-table summary { cursor: pointer; color: var(--accent); font-weight: var(--weight-medium); width: fit-content; }
@@ -404,8 +382,6 @@ svg .fp-city-title { font-size: var(--text-xs); }
   .fp-field-score { grid-column: 1 / -1; max-width: 240px; }
 }
 @media (max-width: 1100px) {
-  .fp-pair { grid-template-columns: 1fr; }
-  .fp-building + .fp-building { border-left: 0; padding-left: 0; border-top: var(--border-width) solid var(--border-color); margin-top: var(--space-5); padding-top: var(--space-5); }
 }
 @media (max-width: 720px) {
   .fp-controls { grid-template-columns: 1fr; }
