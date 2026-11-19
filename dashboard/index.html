@@ -4,8 +4,16 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>LeaseLens</title>
-  <!-- Apply the saved theme before anything paints, so a reload never flashes the other theme. -->
-  <script>try { var t = localStorage.getItem('lease-lens-theme'); if (t === 'dark' || t === 'light') document.documentElement.dataset.theme = t; } catch (e) {}</script>
+  <!-- Apply the saved Display settings before anything paints, so a reload never flashes the defaults
+       (the same rules as apply() in js/display-settings.js). -->
+  <script>try { var d = document.documentElement, s = JSON.parse(localStorage.getItem('lease-lens-display') || 'null') || { theme: localStorage.getItem('lease-lens-theme') };
+    if (s.theme === 'dark' || s.theme === 'light') d.dataset.theme = s.theme;
+    if (s.text === '115' || s.text === '130') d.dataset.text = s.text;
+    if (s.contrast === 'high') d.dataset.contrast = 'high';
+    if (s.motion === 'reduce') d.dataset.motion = 'reduce';
+    if (s.font === 'legible') { d.dataset.font = 'legible'; var l = document.createElement('link'); l.id = 'font-legible'; l.rel = 'stylesheet';
+      l.href = 'https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400&display=swap'; document.head.appendChild(l); }
+  } catch (e) {}</script>
   <meta name="description" content="Look beyond RentSafeTO ratings to explore building conditions, inspection history, and patterns across Toronto. An independent student project using City of Toronto Open Data." />
   <link rel="icon" type="image/png" sizes="32x32" href="assets/brand/icon-32.png" />
   <link rel="icon" type="image/png" sizes="192x192" href="assets/brand/icon-192.png" />
@@ -38,7 +46,7 @@
   <a class="skip-link skip-work" href="#search">Skip to address search</a>
   <a class="skip-link skip-work" href="#place">Skip to selection details</a>
 
-  <!-- One header on every route: the same wordmark, navigation, theme toggle and height. -->
+  <!-- One header on every route: the same wordmark, navigation, Display settings and height. -->
   <header class="site-bar" id="site-bar">
     <a class="wordmark" href="#/" aria-label="LeaseLens home">
       <img class="logo logo-light" src="assets/brand/lockup.png" alt="" width="140" height="40" />
@@ -55,13 +63,54 @@
       <a href="#/story" data-route="story">Story</a>
       <a href="#/about" data-route="about">About</a>
     </nav>
-    <button type="button" class="theme-toggle" data-theme-toggle aria-label="Switch to dark mode">
-      <span class="tt-icon" aria-hidden="true">
-        <svg class="tt-moon" viewBox="0 0 24 24"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z"/></svg>
-        <svg class="tt-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4.2"/><path d="M12 2.5v2.2M12 19.3v2.2M2.5 12h2.2M19.3 12h2.2M5.3 5.3l1.6 1.6M17.1 17.1l1.6 1.6M5.3 18.7l1.6-1.6M17.1 6.9l1.6-1.6"/></svg>
-      </span>
-      <span class="tt-label">Dark</span>
-    </button>
+    <!-- Display settings: theme, text size, contrast, typeface, motion (js/display-settings.js, main.js) -->
+    <div class="display">
+      <button type="button" class="theme-toggle display-btn" id="display-btn" aria-expanded="false" aria-controls="display-panel" aria-haspopup="dialog">
+        <span class="tt-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24"><path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2.2"/><circle cx="9" cy="17" r="2.2"/></svg>
+        </span>
+        <span class="tt-label">Display</span>
+      </button>
+      <div class="display-panel" id="display-panel" role="dialog" aria-labelledby="display-title" hidden>
+        <div class="display-head">
+          <h2 id="display-title">Display settings</h2>
+          <button type="button" class="icon-button" id="display-close" aria-label="Close display settings" title="Close">×</button>
+        </div>
+        <form class="display-form" id="display-form">
+          <fieldset class="seg seg-full seg-3">
+            <legend>Theme</legend>
+            <label><input type="radio" name="theme" value="system" /><span>System</span></label>
+            <label><input type="radio" name="theme" value="light" /><span>Light</span></label>
+            <label><input type="radio" name="theme" value="dark" /><span>Dark</span></label>
+          </fieldset>
+          <fieldset class="seg seg-full seg-3">
+            <legend>Text size</legend>
+            <label><input type="radio" name="text" value="100" /><span>100%</span></label>
+            <label><input type="radio" name="text" value="115" /><span>115%</span></label>
+            <label><input type="radio" name="text" value="130" /><span>130%</span></label>
+          </fieldset>
+          <fieldset class="seg seg-full">
+            <legend>Contrast</legend>
+            <label><input type="radio" name="contrast" value="standard" /><span>Standard</span></label>
+            <label><input type="radio" name="contrast" value="high" /><span>High</span></label>
+          </fieldset>
+          <fieldset class="seg seg-full">
+            <legend>Font</legend>
+            <label><input type="radio" name="font" value="brand" /><span>Standard</span></label>
+            <label><input type="radio" name="font" value="legible" /><span>Easy to read</span></label>
+          </fieldset>
+          <fieldset class="seg seg-full">
+            <legend>Motion</legend>
+            <label><input type="radio" name="motion" value="system" /><span>System</span></label>
+            <label><input type="radio" name="motion" value="reduce" /><span>Reduced</span></label>
+          </fieldset>
+          <div class="display-foot">
+            <p class="display-note">Saved in this browser. Charts are designed to be read without relying on colour alone.</p>
+            <button type="button" class="link-btn" id="display-reset">Reset</button>
+          </div>
+        </form>
+      </div>
+    </div>
     <button type="button" class="menu-button" id="menu-button" aria-expanded="false" aria-controls="atlas-nav">Menu</button>
   </header>
 

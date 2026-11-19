@@ -72,29 +72,56 @@ test('paired profile: the scale end is the smallest round value that fits, acros
   assert.ok(checked >= 10, `checked ${checked} pairs`);
 });
 
-// The inline <head> script that applies the saved theme before the first paint (no flash on reload).
+// The inline <head> script that applies the saved Display settings before the first paint (no flash on reload).
 async function themeScript() {
   const html = await readFile(new URL('../dashboard/index.html', import.meta.url), 'utf8');
   const head = html.slice(0, html.indexOf('</head>'));
-  const m = /<script>([^<]*lease-lens-theme[^<]*)<\/script>/.exec(head);
-  assert.ok(m, 'the theme script is inline in <head>');
+  const m = /<script>([^<]*lease-lens-display[^<]*)<\/script>/.exec(head);
+  assert.ok(m, 'the Display settings script is inline in <head>');
   assert.ok(head.indexOf(m[0]) < head.indexOf('rel="stylesheet" href="css/tokens.css"'), 'it runs before the stylesheets');
   return m[1];
 }
-const runTheme = (src, storage) => {
-  const documentElement = { dataset: {} };
-  vm.runInNewContext(src, { localStorage: storage, document: { documentElement } });
-  return documentElement.dataset.theme;
+const runStartup = (src, storage) => {
+  const documentElement = { dataset: {} }, added = [];
+  const document = { documentElement, createElement: () => ({}), head: { appendChild: (el) => added.push(el) } };
+  vm.runInNewContext(src, { localStorage: storage, document });
+  return { ...documentElement.dataset, fontLinks: added.length };
 };
+const runTheme = (src, storage) => runStartup(src, storage).theme;
 
 test('theme start-up: a saved choice is applied before paint; anything else falls back to the system setting', async () => {
   const src = await themeScript();
+  // the old light/dark toggle's saved choice still applies
   const store = (v) => ({ getItem: (k) => (k === 'lease-lens-theme' ? v : null) });
   assert.equal(runTheme(src, store('dark')), 'dark');
   assert.equal(runTheme(src, store('light')), 'light');
   assert.equal(runTheme(src, store(null)), undefined, 'no choice: follow prefers-color-scheme');
   assert.equal(runTheme(src, store('purple')), undefined, 'unknown values are ignored');
   assert.equal(runTheme(src, { getItem: () => { throw new Error('blocked'); } }), undefined, 'blocked storage never breaks the page');
+});
+
+test('Display settings start-up: every saved setting is applied before paint, and only known values', async () => {
+  const src = await themeScript();
+  const store = (o) => ({ getItem: (k) => (k === 'lease-lens-display' ? JSON.stringify(o) : null) });
+  const all = runStartup(src, store({ theme: 'dark', text: '130', contrast: 'high', font: 'legible', motion: 'reduce' }));
+  assert.deepEqual({ ...all }, { theme: 'dark', text: '130', contrast: 'high', font: 'legible', motion: 'reduce', fontLinks: 1 });
+  const none = runStartup(src, store({ theme: 'system', text: '100', contrast: 'standard', font: 'brand', motion: 'system' }));
+  assert.deepEqual({ ...none }, { fontLinks: 0 }, 'defaults set nothing, so the system preferences apply');
+  const junk = runStartup(src, store({ theme: 'purple', text: '400', contrast: 'max', font: 'comic', motion: 'fast' }));
+  assert.deepEqual({ ...junk }, { fontLinks: 0 }, 'unknown values are ignored');
+  // the module keeps the same rules
+  const D = await import('../dashboard/js/display-settings.js');
+  assert.deepEqual(D.clean({ theme: 'dark', text: '400', motion: 'reduce' }), { ...D.DEFAULTS, theme: 'dark', motion: 'reduce' });
+});
+
+test('Display settings: every text size in the stylesheets follows the text-size setting', async () => {
+  // small interface and chart text must scale; only display sizes of 20 px and up may stay fixed
+  for (const f of ['tokens', 'dashboard', 'atlas', 'building', 'workspace', 'pages', 'story', 'home']) {
+    const css = await readFile(new URL(`../dashboard/css/${f}.css`, import.meta.url), 'utf8');
+    for (const m of css.matchAll(/font(?:-size)?:\s*(?:\d{3}\s+)?(\d+(?:\.\d+)?)px/g)) {
+      assert.ok(Number(m[1]) >= 20, `${f}.css: a fixed ${m[1]}px text size won't follow the text-size setting: "${m[0]}"`);
+    }
+  }
 });
 
 test('every ⓘ button has an accessible name and an explanation to open', async () => {

@@ -16,9 +16,10 @@
 // that element's current text is shown (used where a view computes its own explanation).
 
 import { INFO } from '../content/info.js';
+import { reducedMotion } from '../motion.js';
 
 let pop, current = null, anim = null;
-const reduced = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
+const reduced = reducedMotion;
 
 // Grow from / shrink into the button. Reads the popover's current (possibly mid-animation) look first.
 function play(show) {

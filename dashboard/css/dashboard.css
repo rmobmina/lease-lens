@@ -6,7 +6,7 @@
 /* ---- base ------------------------------------------------------------- */
 * { box-sizing: border-box; }
 html, body { height: 100%; }
-body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.5 var(--font-ui); -webkit-font-smoothing: antialiased; font-variant-numeric: lining-nums; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: calc(15px * var(--text-scale))/1.5 var(--font-ui); -webkit-font-smoothing: antialiased; font-variant-numeric: lining-nums; }
 a { color: var(--accent); text-underline-offset: 2px; }
 h1, h2, h3, p { margin: 0; }
 h1, h2, h3 { line-height: 1.2; }
@@ -30,24 +30,31 @@ h1, h2, h3 { line-height: 1.2; }
 
 /* ---- app shell: see atlas.css (top bar, map, rails, depth) ---------------- */
 .filter-note { font-size: var(--text-sm); color: var(--muted); }
-/* Theme toggle. The label names the mode it switches TO; its width is fixed so "Dark"/"Light" never nudge
-   the header. The sun and moon share one box: the outgoing one turns away and shrinks while the incoming one
-   turns in (a quarter turn, once, never spinning). The page itself changes with a short reveal from the
-   button (main.js), or a plain colour cross-fade where View Transitions aren't supported. */
+/* Display settings: one header button (the old theme toggle's place and look) opening a small panel of
+   segmented choices (theme, text size, contrast, typeface, motion). The panel hangs from the button's right
+   edge, above the map and its controls. A theme change is revealed from the button (main.js). */
+.display { position: relative; flex: none; }
 .theme-toggle { flex: none; display: inline-flex; align-items: center; gap: var(--space-2); height: 36px; padding: 0 var(--space-3) 0 var(--space-2); font: inherit; font-size: var(--text-base); font-weight: var(--weight-semibold);
   color: var(--ink); background: var(--surface); border: var(--border-width) solid var(--border-control); border-radius: var(--radius-sm); cursor: pointer;
   transition: color var(--dur-hover) var(--ease-out), border-color var(--dur-hover) var(--ease-out), background-color var(--dur-hover) var(--ease-out); }
-.theme-toggle:hover { border-color: var(--accent); color: var(--accent); }
+.theme-toggle:hover, .theme-toggle[aria-expanded="true"] { border-color: var(--accent); color: var(--accent); }
 .theme-toggle:active { background: var(--surface-2); }
 .tt-icon { display: grid; width: 18px; height: 18px; flex: none; }
-.tt-icon svg { grid-area: 1 / 1; width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round;
-  transition: transform 360ms var(--ease-out), opacity 220ms var(--ease-out); transform-origin: 50% 50%; }
-.theme-toggle .tt-moon { fill: currentColor; stroke: none; }
-.theme-toggle .tt-label { min-width: 2.6em; text-align: left; }
-/* light mode shows the moon (switch to dark); dark mode shows the sun */
-.theme-toggle[data-mode="dark"] .tt-moon { opacity: 0; transform: rotate(-90deg) scale(0.5); }
-.theme-toggle:not([data-mode="dark"]) .tt-sun { opacity: 0; transform: rotate(90deg) scale(0.5); }
-@media (prefers-reduced-motion: reduce) { .tt-icon svg { transition: opacity 120ms linear; transform: none !important; } }
+.tt-icon svg { grid-area: 1 / 1; width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.display-btn .tt-icon circle { fill: var(--surface); }
+
+.display-panel { position: absolute; top: calc(100% + var(--space-2)); right: 0; z-index: var(--z-popover); width: min(340px, calc(100vw - 2 * var(--space-4)));
+  max-height: calc(100vh - var(--header-h) - var(--space-4)); overflow-y: auto; overscroll-behavior: contain;
+  background: var(--surface); color: var(--ink); border: var(--border); border-radius: var(--radius-md); box-shadow: var(--shadow-pop);
+  padding: var(--space-3) var(--space-4) var(--space-4); animation: display-in var(--dur-pop) var(--ease-out); }
+@keyframes display-in { from { opacity: 0; transform: translateY(-4px); } }
+.display-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); margin-bottom: var(--space-2); }
+.display-head h2 { font-size: var(--text-md); font-weight: var(--weight-bold); }
+.display-form { display: grid; gap: var(--space-3); }
+.display-form .seg span { padding: 0 var(--space-1); }
+.display-foot { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--space-3); padding-top: var(--space-2); border-top: var(--border); }
+.display-note { font-size: var(--text-xs); color: var(--muted); line-height: var(--leading-snug); }
+@media (prefers-reduced-motion: reduce) { .display-panel { animation: none; } }
 
 /* The theme change: a circular reveal from the toggle (View Transitions). Named elements are flattened into the
    one root snapshot while it runs, so the whole page changes together. */

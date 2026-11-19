@@ -217,7 +217,7 @@ body.has-lens .leaflet-bottom.leaflet-right { right: min(456px, calc(40% + 16px)
   background: conic-gradient(var(--low-10) 0turn calc(var(--p) * 1turn), var(--accent) calc(var(--p) * 1turn) 1turn);
   box-shadow: 0 0 0 1.5px var(--surface), 0 1px 4px rgba(0, 0, 0, 0.22); }
 .cl-disc::before { content: ""; position: absolute; inset: var(--ring); border-radius: 50%; background: var(--surface); }
-.cl-disc b { position: relative; font: 600 12px/1 var(--font-ui); color: var(--ink); font-variant-numeric: tabular-nums; }
+.cl-disc b { position: relative; font: 600 calc(12px * var(--text-scale))/1 var(--font-ui); color: var(--ink); font-variant-numeric: tabular-nums; }
 .cl .cl-disc { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); cursor: pointer; }
 .cl:hover .cl-disc { --ring: 5px; }
 .cl.is-out .cl-disc { opacity: 0.35; }
@@ -228,11 +228,11 @@ body.has-lens .leaflet-bottom.leaflet-right { right: min(456px, calc(40% + 16px)
 .cl:focus-visible .cl-disc { outline: 2px solid var(--focus); outline-offset: 3px; }
 
 /* labels: the selected ward and the selected building only, never every address */
-.leaflet-tooltip.ward-label { background: none; border: 0; box-shadow: none; padding: 0; font: 600 13.5px/1.25 var(--font-ui); color: var(--ink); text-align: center;
+.leaflet-tooltip.ward-label { background: none; border: 0; box-shadow: none; padding: 0; font: 600 calc(13.5px * var(--text-scale))/1.25 var(--font-ui); color: var(--ink); text-align: center;
   text-shadow: 0 0 4px var(--surface), 0 0 4px var(--surface), 0 0 2px var(--surface); }
 .leaflet-tooltip.ward-label::before { display: none; }
 .ward-label small { display: block; font-weight: var(--weight-medium); font-size: var(--text-xs); color: var(--ink-2); }
-.leaflet-tooltip.sel-label { background: var(--accent); color: var(--accent-ink); border: 0; border-radius: var(--radius-sm); font: 600 12.5px/1.3 var(--font-ui); padding: var(--space-1) var(--space-2); box-shadow: var(--shadow-float); white-space: nowrap; }
+.leaflet-tooltip.sel-label { background: var(--accent); color: var(--accent-ink); border: 0; border-radius: var(--radius-sm); font: 600 calc(12.5px * var(--text-scale))/1.3 var(--font-ui); padding: var(--space-1) var(--space-2); box-shadow: var(--shadow-float); white-space: nowrap; }
 .leaflet-tooltip.sel-label::before { border-top-color: var(--accent); }
 .sel-label b { margin-left: var(--space-1); font-variant-numeric: tabular-nums; }
 .sel-ring { animation: sel-in 0.3s ease-out; transform-box: fill-box; transform-origin: center; }
@@ -271,7 +271,8 @@ h1[tabindex="-1"]:focus:not(:focus-visible), h2[tabindex="-1"]:focus:not(:focus-
   .menu-button { display: block; flex: none; }
   .theme-toggle .tt-label { display: none; }
   .theme-toggle { width: 36px; padding: 0; justify-content: center; }
-  body[data-layer="home"] .site-bar .theme-toggle { margin-left: auto; }
+  body[data-layer="home"] .site-bar .display { margin-left: auto; }
+  .display-panel { position: fixed; top: calc(var(--header-h) + var(--space-2)); left: var(--space-4); right: var(--space-4); width: auto; }
   .atlas-nav { display: none; align-self: auto; position: absolute; top: 100%; right: 0; left: 0; flex-direction: column; gap: 0; background: var(--surface); border-bottom: var(--border-width) solid var(--border-color); box-shadow: var(--shadow-pop); padding: var(--space-1) var(--space-4); }
   .atlas-nav.open { display: flex; }
   .atlas-nav a { padding: var(--space-3) 0; border-top: 0; border-bottom: var(--border); }

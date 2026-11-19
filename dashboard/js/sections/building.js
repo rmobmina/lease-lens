@@ -11,6 +11,7 @@ import { buildingEvaluations, timelinePoints } from '../xray-model.js';
 import { nearby } from '../atlas/logic.js';
 import { renderTimeline } from './xray-timeline.js';
 import { pct, fmt, esc, titleCase, formatDate } from '../ui.js';
+import { reducedMotion } from '../motion.js';
 
 const BAND = {
   low10: { label: 'Lowest 10% in Toronto', cls: 'band-low10', mark: '▼ ' },
@@ -170,7 +171,7 @@ function renderWardCard(box, ctx, M, opts) {
     e.currentTarget.setAttribute('aria-expanded', String(now));
     e.currentTarget.textContent = now ? 'Hide ward details' : 'Explore ward';
     more.hidden = !now;
-    if (now && !matchMedia('(prefers-reduced-motion: reduce)').matches) more.animate([{ opacity: 0, transform: 'translateY(-4px)' }, { opacity: 1, transform: 'none' }], { duration: 220, easing: 'cubic-bezier(0.2, 0.7, 0.2, 1)' });
+    if (now && !reducedMotion()) more.animate([{ opacity: 0, transform: 'translateY(-4px)' }, { opacity: 1, transform: 'none' }], { duration: 220, easing: 'cubic-bezier(0.2, 0.7, 0.2, 1)' });
   });
 }
 

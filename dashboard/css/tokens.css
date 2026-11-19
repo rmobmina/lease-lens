@@ -99,14 +99,18 @@
   --font-display: var(--font-family);
   --font-ui: var(--font-family);
   --font: var(--font-ui);
-  /* type scale: interface sizes, then display sizes */
-  --text-xs: 12px;    /* captions, chart ticks */
-  --text-sm: 13px;    /* secondary labels, legends, metadata */
-  --text-base: 14px;  /* interface text in panels */
-  --text-md: 16px;    /* body copy */
-  --text-lg: 18px;    /* lead paragraphs */
-  --text-xl: 22px;    /* panel headings */
-  --text-2xl: 32px;   /* page headings */
+  /* type scale: interface sizes, then display sizes. --text-scale is the Display setting (100 / 115 / 130%,
+     data-text on <html>); headings grow at half that rate, since they are already large, so the hierarchy
+     survives and the fitted, no-scroll pages keep their shape. */
+  --text-scale: 1;
+  --display-scale: calc(1 + (var(--text-scale) - 1) / 2);
+  --text-xs: calc(12px * var(--text-scale));    /* captions, chart ticks */
+  --text-sm: calc(13px * var(--text-scale));    /* secondary labels, legends, metadata */
+  --text-base: calc(14px * var(--text-scale));  /* interface text in panels */
+  --text-md: calc(16px * var(--text-scale));    /* body copy */
+  --text-lg: calc(18px * var(--text-scale));    /* lead paragraphs */
+  --text-xl: calc(22px * var(--display-scale)); /* panel headings */
+  --text-2xl: calc(32px * var(--display-scale)); /* page headings */
   --text-hero: clamp(48px, 3.9vw, 64px);   /* tuned with the hero's width and tracking (home.css) */
   --weight-regular: 400; --weight-medium: 500; --weight-semibold: 600; --weight-bold: 700;
   --leading-tight: 1.1; --leading-snug: 1.3; --leading-body: 1.55;   /* large headings · section headings and labels · paragraphs */
@@ -114,10 +118,10 @@
   --tracking-hero: -0.035em; --tracking-display: -0.025em; --tracking-heading: -0.015em; --tracking-body: 0; --tracking-label: 0.01em; --tracking-caps: 0.06em;
 
   /* ---- chart type: one set of sizes for every chart's text --------------------------------------------- */
-  --chart-label: 13px;   /* row and category labels, group titles */
-  --chart-axis: 12px;    /* tick labels, axis titles, values, notes beside marks */
-  --chart-stat: 28px;    /* the one summary statistic under an analysis chart */
-  --chart-caption: 13px; /* what that statistic measures */
+  --chart-label: calc(13px * var(--text-scale));   /* row and category labels, group titles */
+  --chart-axis: calc(12px * var(--text-scale));    /* tick labels, axis titles, values, notes beside marks */
+  --chart-stat: calc(28px * var(--display-scale)); /* the one summary statistic under an analysis chart */
+  --chart-caption: calc(13px * var(--text-scale)); /* what that statistic measures */
 
   /* ---- spacing scale (every margin, gap and padding uses one of these) ------------------- */
   --space-1: 4px; --space-2: 8px; --space-3: 12px; --space-4: 16px;
@@ -226,4 +230,56 @@
   --atlas-fill: #071330; --atlas-rental: #FFFFFF; --atlas-rental-fill: #1E3F8C; --atlas-rental-hover: #2F58B8; --atlas-label: #E8EEFA;
   --ch-0: #4C74D0; --ch-1: #263F78; --ch-2: #3A4256; --ch-3: #8A3F3A; --ch-4: #E0544C; --ch-none: #142449; --ward-line: #9FB2D8; --map-tiles: grayscale(1) invert(1) contrast(0.74) brightness(0.78) sepia(0.4) hue-rotate(186deg) saturate(2.4);
   --shadow-pop: 0 8px 28px rgba(2, 8, 24, 0.55); --shadow-float: 0 1px 2px rgba(2, 8, 24, 0.45), 0 6px 18px rgba(2, 8, 24, 0.4);
+}
+
+/* ==== Display settings (js/display-settings.js) ===========================================================
+   Attributes on <html>, set before the first paint. They change tokens only, so every component follows. */
+
+/* Text size */
+:root[data-text="115"] { --text-scale: 1.15; }
+:root[data-text="130"] { --text-scale: 1.3; }
+
+/* Easy-to-read typeface: Atkinson Hyperlegible (Braille Institute), drawn so that easily confused letters and
+   numbers (I l 1, O 0, b d p q) stay distinct. */
+:root[data-font="legible"] { --font-family: "Atkinson Hyperlegible", system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif; }
+
+/* High contrast: secondary text close to body text, borders, axes and gridlines that hold at a glance, chart
+   greys dark enough to read against the panel (3:1 or more for marks), a thicker focus ring, and links always
+   underlined. The meaning of every colour stays the same; only its strength changes. */
+:root[data-contrast="high"] {
+  --ink: #000814; --ink-2: #1A2438; --muted: #2E384C;
+  --line: #7C889D; --border-control: #4A556B; --axis: #5A6579; --grid: #C2CADA;
+  --accent: #1747B8; --accent-strong: #0B1F4D; --focus: #1747B8; --accent-soft: #DCE6FB;
+  --low-25: #D46060; --dot: #6B7588; --flat: #7A8599; --chart-neutral: #7D899E;
+  --ch-none: #E4E8EF; --ward-line: #0B1F4D;
+  --fp-3: #C9D0DC; --xr-ok: #BDBDBD; --xr-none: #8E939B;
+  --focus-ring: 3px solid var(--focus);
+}
+@media (prefers-color-scheme: dark) {
+  :root[data-contrast="high"]:not([data-theme="light"]) {
+    --bg: #030A1C; --surface: #061331; --surface-2: #0C1D45;
+    --ink: #FFFFFF; --ink-2: #E3E9F5; --muted: #C9D3E6;
+    --line: rgba(190, 210, 255, 0.45); --border-control: rgba(190, 210, 255, 0.7); --axis: rgba(190, 210, 255, 0.65); --grid: #2A4378;
+    --accent: #ADC6FF; --accent-strong: #ADC6FF; --focus: #ADC6FF; --accent-soft: #1D3A7E;
+    --low-25: #B05252; --dot: #8D9CBB; --flat: #7487AE; --chart-neutral: #6A80B0;
+    --ch-none: #0E1C3F; --ward-line: #D5E0F5;
+    --fp-3: #34497A; --xr-ok: #6A707C; --xr-none: #80868F;
+  }
+}
+:root[data-contrast="high"][data-theme="dark"] {
+  --bg: #030A1C; --surface: #061331; --surface-2: #0C1D45;
+  --ink: #FFFFFF; --ink-2: #E3E9F5; --muted: #C9D3E6;
+  --line: rgba(190, 210, 255, 0.45); --border-control: rgba(190, 210, 255, 0.7); --axis: rgba(190, 210, 255, 0.65); --grid: #2A4378;
+  --accent: #ADC6FF; --accent-strong: #ADC6FF; --focus: #ADC6FF; --accent-soft: #1D3A7E;
+  --low-25: #B05252; --dot: #8D9CBB; --flat: #7487AE; --chart-neutral: #6A80B0;
+  --ch-none: #0E1C3F; --ward-line: #D5E0F5;
+  --fp-3: #34497A; --xr-ok: #6A707C; --xr-none: #80868F;
+}
+:root[data-contrast="high"] a:not(.btn):not(.wordmark):not(.skip-link) { text-decoration: underline; }
+
+/* Reduced motion (the Display setting; the system preference is handled in each stylesheet): animations and
+   transitions finish at once. JavaScript motion checks the same attribute (motion.js). */
+:root[data-motion="reduce"] *, :root[data-motion="reduce"] *::before, :root[data-motion="reduce"] *::after {
+  animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; animation-delay: 0ms !important;
+  transition-duration: 0.01ms !important; transition-delay: 0ms !important; scroll-behavior: auto !important;
 }

@@ -1,3 +1,4 @@
+import { reducedMotion } from './motion.js';
 // Chart motion: meaning-preserving updates for charts that redraw from scratch.
 //
 // The analysis charts rebuild their SVG on every render (a filter, a ward, a theme change, a map move).
@@ -15,7 +16,7 @@
 // A resized container is not a data change: it redraws without motion. Reduced motion: no animation.
 
 const EASE = 'cubic-bezier(0.2, 0.7, 0.2, 1)';
-const reduced = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
+const reduced = reducedMotion;
 const box = (n) => n?.getBoundingClientRect();
 
 export function snapshot(root) {

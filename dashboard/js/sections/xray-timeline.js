@@ -5,6 +5,7 @@
 
 import { timelineSegments, trendSummary } from '../xray-model.js';
 import { tip, esc, formatDate, signed, cssVar, anchorEvent } from '../ui.js';
+import { reducedMotion } from '../motion.js';
 
 const SYSTEM = { pre: '2017 – 2023 system', cur: '2023 – now system' };
 
@@ -105,7 +106,7 @@ export function renderTimeline(box, { points, shown, era, P, systemChange, onPic
 
   const html = (p) => `<div class="tt-title">${p.rec.score} / 100</div><div class="tt-sub">${formatDate(p.rec.date)} · ${SYSTEM[p.era]}</div>
     <dl><dt>Change</dt><dd>${deltaText(p)}</dd></dl><p class="tt-hint">${p.rec === shown ? W.shown : W.pick}</p>`;
-  const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const reduced = reducedMotion();
   const choose = (p) => {
     tip.hide();
     if (!onSelect) { onPick(p.rec.uid); return; }

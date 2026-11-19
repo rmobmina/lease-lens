@@ -109,7 +109,7 @@ body.story-detail .lens { max-height: 100%; }
 /* ---- tablets: a narrower caption ----------------------------------------------------------------------- */
 @media (min-width: 761px) and (max-width: 1100px) {
   .story-panel { width: min(320px, calc(100% - var(--gut) * 2)); }
-  .sc-text { font-size: 15px; }
+  .sc-text { font-size: calc(15px * var(--text-scale)); }
   body.is-story .xr-grid { grid-template-columns: minmax(0, 1fr); }
   body.is-story .xr-side { display: none; }
   .story-steps { grid-template-columns: 1fr; gap: var(--space-4); }
@@ -122,7 +122,7 @@ body.story-detail .lens { max-height: 100%; }
     padding: var(--space-4) var(--space-4) calc(var(--space-3) + env(safe-area-inset-bottom)); gap: var(--space-2); }
   .sc-name { display: none; }
   .sc-title { font-size: 21px; }
-  .sc-text { font-size: 15px; line-height: 1.45; }
+  .sc-text { font-size: calc(15px * var(--text-scale)); line-height: 1.45; }
   body.is-story .rail-left { display: none; }
   body.is-story .leaflet-bottom { bottom: var(--cap-h, 240px); }
   body.is-story .xr-grid { grid-template-columns: minmax(0, 1fr); }

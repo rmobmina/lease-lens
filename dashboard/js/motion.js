@@ -9,13 +9,14 @@
 //   cancel(key)          stop it where it is (done(false) is called)
 //   cameraDuration(px)   map flights: 0.35–0.7 s depending on the distance travelled on screen
 //
-// prefers-reduced-motion: every animation jumps straight to its end state.
+// prefers-reduced-motion (or the Display setting): every animation jumps straight to its end state.
 // Map camera moves use Leaflet's own flyTo (interruptible by any new move or by the user); CSS handles
 // small hover/press transitions. Nothing else should start its own animation loop.
 
 const running = new Map();
 
-export const reducedMotion = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
+// The site's Display settings can turn motion down too (data-motion="reduce" on <html>); either one is enough.
+export const reducedMotion = () => document.documentElement.dataset.motion === 'reduce' || matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 export const ease = {
   out: (t) => 1 - (1 - t) ** 3,
