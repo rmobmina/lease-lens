@@ -1,5 +1,5 @@
 // Data model for the Lease Lens dashboard.
-// Takes the normalized records from explorer/js/data.js (LL.loadAll) and derives
+// Takes the normalized records from shared/js/data.js (LL.loadAll) and derives
 // everything the five sections need. No values are altered here: we only choose
 // which records answer each question, and every choice is described on the page.
 

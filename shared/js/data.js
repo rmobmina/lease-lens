@@ -1,5 +1,5 @@
 // Loads both RentSafeTO CSVs and normalizes them into one list of evaluation records.
-// Every transformation here is documented in explorer/DATA_NOTES.md and in the "Data notes" tab.
+// Every transformation here is documented in docs/data-notes.md.
 // No record is dropped: anomalies are kept and tagged in `flags`.
 
 const ERA = {

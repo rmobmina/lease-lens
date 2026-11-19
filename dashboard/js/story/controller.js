@@ -16,7 +16,7 @@
 import { CHAPTERS, chapterIndex } from './chapters.js';
 import { drawVisual } from './visuals.js';
 import { clearAnnotation } from './annotation.js';
-import { animate, DUR } from '../motion.js';
+import { animate, DUR, reducedMotion } from '../motion.js';
 import * as S from './selectors.js';
 
 const KEEP = ['period', 'ward', 'selected', 'mapShow', 'lens', 'placeTab', 'problems', 'changes', 'movers', 'fp', 'xray'];
@@ -93,7 +93,11 @@ export function createStory(app) {
     app.syncControls();
     renderPanel(c, d);
     if (c.visual) visual.innerHTML = ''; // the previous chapter's chart never lingers under the new one
-    app.present({ depth: c.depth, mapTo: c.mapTo?.(d), via: c.via?.(d), after: () => { if (c.visual) drawVisual(c.visual, visual, d, api); } });
+    app.present({ depth: c.depth, mapTo: c.mapTo?.(d), via: c.via?.(d), after: () => {
+      if (!c.visual) return;
+      drawVisual(c.visual, visual, d, api);
+      if (!reducedMotion()) visual.animate([{ opacity: 0 }, { opacity: 1 }], { duration: DUR.panel, easing: 'ease-out' });
+    } });
   }
 
   function renderPanel(c, d) {
@@ -105,8 +109,10 @@ export function createStory(app) {
         <p class="sc-name">Beyond the Score <button type="button" class="info-btn" data-info="story" aria-label="About this story and its data">i</button></p>
         <button type="button" class="sc-exit" data-act="exit">Exit story <span aria-hidden="true">×</span></button>
       </div>
-      <h1 class="sc-title" id="story-title" tabindex="-1">${c.title(d)}</h1>
-      <p class="sc-text">${c.text(d)}</p>
+      <div class="sc-copy">
+        <h1 class="sc-title" id="story-title" tabindex="-1">${c.title(d)}</h1>
+        <p class="sc-text">${c.text(d)}</p>
+      </div>
       <div class="sc-foot">
         <div class="sc-act">
           ${step ? `<button type="button" class="sc-action" data-act="step" data-id="${step.id}">${step.label} <span aria-hidden="true">→</span></button>` : ''}
@@ -119,6 +125,7 @@ export function createStory(app) {
             : `<button type="button" class="btn btn-primary" data-act="next">${index === 0 ? 'Begin' : 'Next'} <span aria-hidden="true">→</span></button>`}
         </div>
       </div>`;
+    reserveCopy(d);
     panel.querySelectorAll('[data-act]').forEach((b) => b.addEventListener('click', () => {
       const act = b.dataset.act;
       if (act === 'next') go(index + 1);
@@ -143,11 +150,34 @@ export function createStory(app) {
     });
   }
 
+  // The copy box keeps the height of the longest chapter's headline and narration at the current width,
+  // text size and font, so the counter, title and Back / Next never shift between chapters. Measured
+  // off-screen with the real styles; re-measured whenever the width or a Display setting changes.
+  let reserveKey = '', reserveH = 0;
+  function reserveCopy(d) {
+    const copy = panel.querySelector('.sc-copy');
+    const de = document.documentElement;
+    const key = `${panel.clientWidth}|${de.dataset.text}|${de.dataset.font}|${getComputedStyle(de).fontSize}`;
+    if (key !== reserveKey && panel.clientWidth) {
+      const probe = copy.cloneNode(false);
+      Object.assign(probe.style, { position: 'absolute', visibility: 'hidden', left: '0', top: '0', width: `${copy.clientWidth}px`, minHeight: '0' });
+      panel.append(probe);
+      reserveH = Math.max(...CHAPTERS.map((ch) => {
+        probe.innerHTML = `<h1 class="sc-title">${ch.title(d)}</h1><p class="sc-text">${ch.text(d)}</p>`;
+        return probe.offsetHeight;
+      }));
+      probe.remove();
+      reserveKey = key;
+    }
+    copy.style.minHeight = reserveH ? `${reserveH}px` : '';
+  }
+
   // A detail is either one analysis layer (detail.lens) or a closer view of the chapter's own visual
   // (detail.toggle: a body class, e.g. the comparison's full item grids).
   const detailOpen = (c) => (c.detail.toggle ? document.body.classList.contains(c.detail.toggle) : app.state.lens === c.detail.lens);
   function toggleDetail(c) {
-    if (c.detail.toggle) document.body.classList.toggle(c.detail.toggle);
+    // a closer view of the chapter's own visual: redraw it now that it has room (charts measure their box)
+    if (c.detail.toggle) { document.body.classList.toggle(c.detail.toggle); app.render(); }
     else app.openDetail(app.state.lens === c.detail.lens ? null : c.detail.lens);
     panel.querySelector('[data-act=detail]')?.setAttribute('aria-expanded', String(detailOpen(c)));
   }
@@ -168,6 +198,7 @@ export function createStory(app) {
   // The caption's real size is the safe area every visual keeps clear of (story.css --cap-w / --cap-h).
   new ResizeObserver(() => {
     if (panel.hidden) return;
+    if (panel.querySelector('.sc-copy')) reserveCopy(data());
     document.body.style.setProperty('--cap-w', `${Math.round(panel.offsetWidth)}px`);
     document.body.style.setProperty('--cap-h', `${Math.round(panel.offsetHeight)}px`);
   }).observe(panel);

@@ -24,17 +24,7 @@ Then open http://localhost:8000/dashboard/ in your browser.
 - **Building X-Ray** (`#/xray/<RSN>`): one inspection laid out by category on an interactive 3D model of that building (real footprint and height from the City of Toronto 3D Massing data where a reliable match exists; illustrative interior; Three.js, lazy-loaded), plus *Same score. Different story.* and the building's score history. Data in `dashboard/js/xray-model.js`, scene in `dashboard/js/xray/`, view in `dashboard/js/sections/xray*.js`. Architecture, item-to-category mapping, rules, controls and limitations: [docs/building-xray.md](docs/building-xray.md).
 - **Inspection fingerprint** (`#/fingerprint`, the novel view): `dashboard/js/fingerprint-model.js` (data) and `dashboard/js/sections/fingerprint.js` (drawing). The process-book write-up is in [docs/process-book/inspection-fingerprint.md](docs/process-book/inspection-fingerprint.md).
 - `dashboard/css/tokens.css` holds every colour, type and shape token (light and dark, Toronto flag-inspired); `atlas.css` is the map shell; `dashboard.css`, `home.css` and `workspace.css` hold the components.
-- Data loading and normalization are shared with the explorer (`explorer/js/data.js`), so both views use the same cleaned records.
-
-## Data explorer (Milestone 3)
-
-To open the data exploration dashboard, run these from this folder:
-
-```sh
-python3 -m http.server 8000
-```
-
-Then open http://localhost:8000/explorer/ in your browser. Press Ctrl + C in the terminal to stop the server. See [explorer/README.md](explorer/README.md) for details.
+- Data loading and normalization live in `shared/js/` (`data.js`, plus chart helpers in `charts.js`), shared by the dashboard and the story page, so both use the same cleaned records.
 
 ## Story: temporal chapter (Prototype V1)
 

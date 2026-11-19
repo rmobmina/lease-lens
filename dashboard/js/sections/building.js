@@ -1,6 +1,7 @@
 // Place panel: the compact, dismissible card beside the map for what is selected.
-//   Building → address, latest score with its citywide band, latest inspection date, one line of context,
-//              one primary action (Inspect building) and two quieter ones (History, Compare nearby).
+//   Building → one card: Toronto › ward breadcrumb (filled by main.js), ward, address, the score and its
+//              citywide ranking in one panel, the inspection finding, last inspected date and building facts,
+//              then one primary action (View inspection details) over two equal ones (Score history, Compare nearby).
 //   Ward     → one finding: its share in the citywide lowest 10%, against the city's share. "Explore ward"
 //              opens the rest on request: median and rank, its lowest-scoring buildings (also the keyboard
 //              route to individual buildings) and the two analysis layers that work per ward.
@@ -14,9 +15,9 @@ import { pct, fmt, esc, titleCase, formatDate } from '../ui.js';
 import { reducedMotion } from '../motion.js';
 
 const BAND = {
-  low10: { label: 'Lowest 10% in Toronto', cls: 'band-low10', mark: '▼ ' },
-  low25: { label: 'Lowest 25% in Toronto', cls: 'band-low25', mark: '▼ ' },
-  other: { label: 'Above the lowest 25%', cls: 'band-ok', mark: '' },
+  low10: { label: 'Lowest 10% in Toronto', cls: 'band-low10' },
+  low25: { label: 'Lowest 25% in Toronto', cls: 'band-low25' },
+  other: { label: 'Above the lowest 25%', cls: 'band-ok' },
 };
 
 const distance = (m) => (m < 1000 ? `${Math.round(m / 10) * 10} m` : `${(m / 1000).toFixed(1)} km`);
@@ -40,18 +41,20 @@ function renderBuildingCard(box, ctx, M, opts) {
   box.hidden = false;
   if (!any) { box.innerHTML = ''; box.hidden = true; return; }
 
+  // the breadcrumb (Toronto › ward › building) is filled by main.js, which owns its navigation
   const head = `<header class="place-head">
-      <div><p class="place-kicker">Ward ${+any.ward} · ${esc(any.wardName)}</p>
-      <h2 id="place-title" tabindex="-1">${esc(titleCase(any.address))}</h2></div>
+      <nav aria-label="You are here" class="place-crumbs"><ol class="crumbs" id="place-crumbs"></ol></nav>
       <button type="button" class="icon-button place-close" data-act="close" aria-label="Close building details" title="Close (Esc)">×</button>
-    </header>`;
+    </header>
+    <p class="place-kicker">Ward ${+any.ward} · ${esc(any.wardName)}</p>
+    <h2 id="place-title" tabindex="-1">${esc(titleCase(any.address))}</h2>`;
 
   if (!r) {
     box.innerHTML = `${head}
       <p class="place-note">No evaluation of this building in the ${esc(pm.P.long)}.${other ? ` Its latest evaluation (${formatDate(other.date)}) used the ${esc(M.byPeriod[otherEra].P.long)}.` : ''}</p>
       <div class="place-actions">
         ${other ? `<button type="button" class="btn btn-primary" data-act="period" data-era="${otherEra}">Show the ${esc(M.byPeriod[otherEra].P.label)} system</button>` : ''}
-        <button type="button" class="btn" data-act="inspect">Inspect building</button>
+        <button type="button" class="btn" data-act="inspect">View inspection details</button>
       </div>`;
     wire(box, opts, selected);
     return;
@@ -66,19 +69,22 @@ function renderBuildingCard(box, ctx, M, opts) {
   // chosen view takes the room the details used, so nothing in the panel has to scroll.
   box.classList.toggle('is-compact', tab !== 'summary');
   const pressed = (t) => `aria-pressed="${tab === t}"`;
+  // the scoring system and its explanation live in Score history (renderHistory)
   box.innerHTML = `${head}
     <div class="place-score">
-      <p class="score-line"><span class="score-num">${r.score}</span><span class="score-of">/100</span>
-        <span class="band ${BAND[band].cls}">${BAND[band].mark ? `<span aria-hidden="true">${BAND[band].mark}</span>` : ''}${BAND[band].label}</span></p>
-      <p class="place-date"><span>Latest inspection <b>${formatDate(r.date)}</b></span><span class="place-sys">${esc(pm.P.label)} system
-        <button type="button" class="info-btn" data-info="score" aria-label="What does this score mean?">i</button></span></p>
+      <p class="score-line"><span class="score-num">${r.score}</span><span class="score-of">/100</span></p>
+      <p class="band ${BAND[band].cls}">${BAND[band].label}</p>
     </div>
-    <p class="place-context"><b>${poor}</b> of ${rated.length} items rated poorly<span aria-hidden="true"> · </span><span class="place-facts">${facts.join(' · ')}</span></p>
+    <div class="place-findings">
+      <p class="place-context"><b>${poor}</b> of ${rated.length} items rated poorly</p>
+      <p class="place-date">Last inspected <b>${formatDate(r.date)}</b></p>
+      <p class="place-facts">${facts.join(' · ')}</p>
+    </div>
     <div class="place-actions" role="group" aria-label="Building actions">
-      <button type="button" class="btn btn-primary" data-act="inspect">Inspect building</button>
+      <button type="button" class="btn btn-primary" data-act="inspect">View inspection details</button>
       <div class="place-sec">
-        <button type="button" class="btn btn-quiet" data-act="tab" data-tab="history" ${pressed('history')} aria-controls="place-more">History</button>
-        <button type="button" class="btn btn-quiet" data-act="tab" data-tab="nearby" ${pressed('nearby')} aria-controls="place-more">Compare nearby</button>
+        <button type="button" class="btn place-sec-btn" data-act="tab" data-tab="history" ${pressed('history')} aria-controls="place-more">Score history</button>
+        <button type="button" class="btn place-sec-btn" data-act="tab" data-tab="nearby" ${pressed('nearby')} aria-controls="place-more">Compare nearby</button>
       </div>
     </div>
     <div class="place-more" id="place-more" aria-live="polite"></div>`;
@@ -101,13 +107,16 @@ function renderNearby(el, r, ctx, M) {
       <li><button type="button" data-rsn="${d.rsn}"><span class="nl-name">${esc(titleCase(d.address))}</span>
       <span class="nl-km">${distance(m)}</span><span class="nl-score ${scoreBand(d.score, pm)}">${d.score}</span></button></li>`).join('')}</ul>`
       : '<p class="place-sub">No other evaluated building within 1.5 km.</p>'}
-    ${pm.era === 'cur' ? `<p class="place-link"><a href="#/compare/${r.rsn}" data-depth>Same score, elsewhere: compare item by item →</a></p>` : ''}`;
+    ${pm.era === 'cur' ? `<p class="place-link"><a href="#/compare/${r.rsn}" data-depth>Compare buildings with the same score&nbsp;→</a></p>` : ''}`;
 }
 
 function renderHistory(el, r, ctx, M, opts) {
   const { pm } = ctx;
   const all = buildingEvaluations(M.data.byRsn.get(r.rsn) ?? []);
-  el.innerHTML = '<h3 class="place-h3">Score history</h3><div class="place-tl chart"></div>';
+  el.innerHTML = `<h3 class="place-h3">Score history</h3>
+    <p class="place-sys">Latest score uses the ${esc(pm.P.label)} system
+      <button type="button" class="info-btn" data-info="score" aria-label="What does this score mean?">i</button></p>
+    <div class="place-tl chart"></div>`;
   renderTimeline(el.querySelector('.place-tl'), {
     points: timelinePoints(all), shown: r, era: pm.era, P: pm.P, systemChange: M.byPeriod.cur.dates[0],
     onPick: (uid) => opts.onInspect(r.rsn, uid),
