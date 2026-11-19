@@ -13,8 +13,9 @@
 
 import { esc, titleCase, pct } from '../ui.js';
 import { pairedProfile } from '../fingerprint-model.js';
+import { reducedMotion } from '../motion.js';
 
-const reduced = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
+const reduced = reducedMotion;
 let openKey = null;
 
 export function renderProfile(box, pa, pb) {

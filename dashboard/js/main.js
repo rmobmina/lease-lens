@@ -30,13 +30,13 @@ import { createStory } from './story/controller.js';
 import { drawVisual } from './story/visuals.js';
 import { scoreDistribution } from './story/selectors.js';
 import { initHome, showHome } from './home/home.js';
-import { animate, DUR } from './motion.js';
+import { animate, DUR, reducedMotion } from './motion.js';
+import * as Display from './display-settings.js';
 import * as Atlas from './atlas/map.js';
 import { initSearch } from './atlas/search.js';
 import { wardChoropleth, choroplethSummary, encodeExplore, decodeExplore, legacyRoute, footprintLatLngs, SMALL_WARD } from './atlas/logic.js';
 
 const $ = (id) => document.getElementById(id);
-const reducedMotion = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
 const narrow = () => window.innerWidth <= 760;
 
 // ---- analysis layers: one at a time, beside the map ---------------------------------------------------
@@ -818,42 +818,56 @@ function wireShell() {
     else if (state.ward) { setWard('', { fly: false }); e.preventDefault(); }
   });
 
-  // Theme toggle: one visible button in the homepage header and one in the atlas bar, kept in sync.
-  // Its label names the mode it switches TO. Remembered per browser; works if storage is blocked.
-  const toggles = [...document.querySelectorAll('[data-theme-toggle]')];
-  const isDark = () => (document.documentElement.dataset.theme ? document.documentElement.dataset.theme === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches);
-  const applyTheme = (t) => {
-    if (t) document.documentElement.dataset.theme = t; else delete document.documentElement.dataset.theme;
-    const dark = isDark();
-    for (const b of toggles) {
-      b.dataset.mode = dark ? 'dark' : 'light';
-      b.setAttribute('aria-label', dark ? 'Switch to light mode' : 'Switch to dark mode');
-      b.title = dark ? 'Switch to light mode' : 'Switch to dark mode';
-      b.querySelector('.tt-label').textContent = dark ? 'Light' : 'Dark';
-    }
-    document.dispatchEvent(new CustomEvent('themechange'));
+  setupDisplaySettings();
+
+  // Entering from the homepage: a short crossfade where the browser supports it. The hero drawing and the
+  // map share a transition name, so the drawing settles into the map's box (a shared box, not a camera
+  // move: the two use different projections).
+  document.addEventListener('click', (e) => {
+    // From the homepage (its links or the shared header), the map opens with the drawing settling into it.
+    const a = e.target.closest('#home a[href^="#/"]') ?? (state.layer === 'home' ? e.target.closest('.site-bar a[href^="#/"]:not(.wordmark)') : null);
+    if (!a || e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey) return;
+    e.preventDefault();
+    enterWorkspace(a.getAttribute('href'));
+  });
+}
+
+// Display settings (theme, text size, contrast, typeface, motion): a small panel under the header's Display
+// button. Every change applies at once and is saved per browser (display-settings.js). A theme change keeps
+// the circular reveal from the button (View Transitions), or a short colour cross-fade where that isn't
+// supported; a second change mid-reveal skips the running one to its end, so rapid changes never queue.
+function setupDisplaySettings() {
+  const btn = $('display-btn'), panel = $('display-panel'), form = $('display-form');
+  const root = document.documentElement;
+  let settings = Display.read();
+  Display.apply(settings);
+
+  const syncForm = () => {
+    for (const [k, v] of Object.entries(settings)) { const r = form.querySelector(`input[name="${k}"][value="${v}"]`); if (r) r.checked = true; }
   };
-  let saved = null;
-  try { saved = localStorage.getItem('lease-lens-theme'); } catch { /* storage unavailable */ }
-  applyTheme(saved);
-  // The map can only be redrawn while it is on screen; a toggle on the homepage waits until it is.
-  const restyle = () => {
+  syncForm();
+
+  // Charts, the map and the homepage drawing read colours and sizes when they draw, so they redraw after a change.
+  // The map can only be redrawn while it is on screen; a change on the homepage waits until it is.
+  const restyle = (layout) => {
+    document.dispatchEvent(new CustomEvent('themechange'));
+    if (layout) window.dispatchEvent(new Event('resize'));   // text size and typeface change the space labels need
     if (document.body.dataset.layer !== 'work') { themeStale = true; return; }
     themeStale = false; Atlas.restyle(); render();
   };
-  // The switch itself: a circular reveal of the new theme from the button that was pressed (View Transitions),
-  // or a short colour cross-fade where that isn't supported. A second press mid-reveal skips the running one
-  // to its end and starts the next from there, so rapid toggling never queues or leaves mixed colours.
-  let themeVT = null, fadeTimer = 0;
   const commit = (next) => {
-    try { localStorage.setItem('lease-lens-theme', next); } catch { /* ignore */ }
-    applyTheme(next);
-    restyle();
+    const layout = next.text !== settings.text || next.font !== settings.font;
+    settings = next;
+    Display.save(settings);
+    Display.apply(settings);
+    syncForm();
+    restyle(layout);
   };
-  const switchTheme = (btn) => {
-    const next = isDark() ? 'light' : 'dark';
-    const root = document.documentElement;
-    if (matchMedia('(prefers-reduced-motion: reduce)').matches) { commit(next); return; }
+
+  let themeVT = null, fadeTimer = 0;
+  const change = (next) => {
+    const themeChanges = Display.isDark() !== (next.theme === 'system' ? matchMedia('(prefers-color-scheme: dark)').matches : next.theme === 'dark');
+    if (!themeChanges || reducedMotion() || next.motion === 'reduce') { commit(next); return; }
     if (!document.startViewTransition) {
       clearTimeout(fadeTimer);
       root.classList.add('theme-fade');
@@ -874,19 +888,26 @@ function wireShell() {
     }).catch(() => {});
     vt.finished.finally(() => { if (themeVT === vt) { themeVT = null; root.classList.remove('theme-vt'); } });
   };
-  for (const b of toggles) b.addEventListener('click', () => switchTheme(b));
-  matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { applyTheme(document.documentElement.dataset.theme); restyle(); });
 
-  // Entering from the homepage: a short crossfade where the browser supports it. The hero drawing and the
-  // map share a transition name, so the drawing settles into the map's box (a shared box, not a camera
-  // move: the two use different projections).
-  document.addEventListener('click', (e) => {
-    // From the homepage (its links or the shared header), the map opens with the drawing settling into it.
-    const a = e.target.closest('#home a[href^="#/"]') ?? (state.layer === 'home' ? e.target.closest('.site-bar a[href^="#/"]:not(.wordmark)') : null);
-    if (!a || e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey) return;
-    e.preventDefault();
-    enterWorkspace(a.getAttribute('href'));
-  });
+  form.addEventListener('change', (e) => { if (e.target.name in settings) change(Display.clean({ ...settings, [e.target.name]: e.target.value })); });
+  form.addEventListener('submit', (e) => e.preventDefault());
+  $('display-reset').addEventListener('click', () => change({ ...Display.DEFAULTS }));
+  matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { if (settings.theme === 'system') restyle(false); });
+
+  // Open / close. A non-modal dialog: Escape or a click outside closes it, and focus goes back to the button.
+  const open = (on, { focusButton = false } = {}) => {
+    panel.hidden = !on;
+    btn.setAttribute('aria-expanded', String(on));
+    if (on) (form.querySelector('input:checked') ?? form.querySelector('input'))?.focus();
+    else if (focusButton) btn.focus();
+  };
+  btn.addEventListener('click', () => open(panel.hidden));
+  $('display-close').addEventListener('click', () => open(false, { focusButton: true }));
+  document.addEventListener('click', (e) => { if (!panel.hidden && !e.target.closest('.display')) open(false); });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && !panel.hidden) { e.preventDefault(); e.stopPropagation(); open(false, { focusButton: true }); }
+  }, true);
+  panel.addEventListener('focusout', (e) => { if (!panel.hidden && e.relatedTarget && !e.relatedTarget.closest('.display')) open(false); });
 }
 
 export function enterWorkspace(hash) {

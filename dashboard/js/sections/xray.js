@@ -10,9 +10,9 @@ import { XRAY_ZONES, STATUS, CONCENTRATED, zoneByKey, zoneProfile, buildingEvalu
 import { pct, fmt, esc, titleCase, formatDate, cssVar, signed } from '../ui.js';
 import { renderTimeline } from './xray-timeline.js';
 import { renderCompare } from './xray-compare.js';
+import { reducedMotion } from '../motion.js';
 
 const $ = (id) => document.getElementById(id);
-const reducedMotion = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
 const SHARDS = 64;                // must match scripts/build_massing.py
 const LIST_ORDER = ['exterior', 'shared', 'systems', 'grounds', 'records']; // the façade, the rooms top to bottom, the records sheet
 const MODES = ['exterior', 'cutaway', 'focus'];

@@ -10,11 +10,12 @@ import { itemLabel } from '../model.js';
 import { itemStats, buildingProfile, sameScorePairs, contrastFor, scoreOptions, cityFindings, SCALE_MAX, UNCOMMON_SHARE } from '../fingerprint-model.js';
 import { tip, pct, fmt, esc, titleCase, formatDate, cssVar, anchorEvent } from '../ui.js';
 import { renderProfile, refitProfile } from './fp-profile.js';
+import { reducedMotion } from '../motion.js';
 
 const $ = (id) => document.getElementById(id);
 const GAP = 3;
 const PER_ROW = 13; // the largest group has 13 items, so each group fits on one row when there's room
-const reduceMotion = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
+const reduceMotion = reducedMotion;
 
 let layoutCache = { key: null, layout: null };
 const prevFill = { a: new Map(), b: new Map() }; // last colours drawn, so a change of building animates

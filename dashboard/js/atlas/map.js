@@ -14,13 +14,13 @@
 // the ward fill also fades continuously with zoom, so nothing flickers at a boundary.
 
 import { levelFor, wardFillOpacity, clusterScreen, clusterDiameter, ZOOM } from './logic.js';
-import { animate, cancel as cancelMotion, cameraDuration, DUR } from '../motion.js';
+import { animate, cancel as cancelMotion, cameraDuration, DUR, reducedMotion } from '../motion.js';
 import { scoreBand } from '../model.js';
 import { tip, esc, titleCase, cssVar, buildingTip, pct } from '../ui.js';
 
 const TORONTO = [43.715, -79.39];
 const BOUNDS = [[43.5, -79.75], [43.95, -79.0]];
-const reduced = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
+const reduced = reducedMotion;
 
 let map = null, H = {};
 let level = 'city';

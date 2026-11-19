@@ -3,6 +3,7 @@
 // after the page is idle and replaces it without changing the layout.
 
 import { cssVar } from '../ui.js';
+import { reducedMotion } from '../motion.js';
 
 let atlas = null, mounting = false, onPickCb = null;
 
@@ -28,7 +29,7 @@ export function showHome() {
       if (!canvas.getContext || !canvas.getContext('2d')) throw new Error('no canvas');
       const { mountHeroAtlas } = await import('./hero-atlas.js');
       atlas = await mountHeroAtlas(host, {
-        reducedMotion: matchMedia('(prefers-reduced-motion: reduce)').matches,
+        reducedMotion: reducedMotion(),
         colors,
         onPick: (r) => onPickCb?.(r),
         onReady: () => host.classList.add('is-live'),

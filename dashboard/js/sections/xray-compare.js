@@ -10,10 +10,11 @@ import { itemLabel } from '../model.js';
 import { zoneByKey, zoneDifferences, findMatches, ratingClass } from '../xray-model.js';
 import { tip, pct, esc, titleCase, formatDate } from '../ui.js';
 import { enhanceSelect } from '../components/select.js';
+import { reducedMotion } from '../motion.js';
 
 const ORDER = ['exterior', 'shared', 'systems', 'grounds', 'records'];   // the same order as the Inspection list
 const MAX_OPTIONS = 40;
-const reduced = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
+const reduced = reducedMotion;
 
 export function renderCompare(box, { rec, pm, ctx, M, matchRsn, zone = null, onChoose, onZone, onOpen }) {
   if (!rec) {

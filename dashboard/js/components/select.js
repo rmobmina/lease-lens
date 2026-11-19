@@ -1,3 +1,4 @@
+import { reducedMotion } from '../motion.js';
 // Select: one application-styled dropdown for every choice list in LeaseLens (ward, comparison building,
 // overall score). It replaces the operating system's popup, so the menu looks the same on every platform.
 //
@@ -19,7 +20,7 @@
 // room there, never leaves the viewport, and follows the field while it is open. Only the list scrolls
 // (overscroll-behavior: contain), never the page or the map. On narrow screens it becomes a bottom sheet.
 
-const reduced = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
+const reduced = reducedMotion;
 const NATIVE_VALUE = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value');
 const LIST_MAX = 320;      // px: the list never grows taller than this
 const GAP = 4;             // px between the field and the menu
