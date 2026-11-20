@@ -18,7 +18,7 @@ const reduced = reducedMotion;
 
 export function renderCompare(box, { rec, pm, ctx, M, matchRsn, zone = null, onChoose, onZone, onOpen }) {
   if (!rec) {
-    box.innerHTML = `<p class="bx-cmp-empty">This building has no evaluation in the ${esc(pm.P.long)}, so there’s no score to match. Switch the scoring system in Layers to compare it.</p>`;
+    box.innerHTML = `<p class="bx-cmp-empty">This building has no evaluation in the ${esc(pm.P.long)}, so there’s no score to match. Switch the scoring system in Filters to compare it.</p>`;
     box._cmp = null;
     return;
   }

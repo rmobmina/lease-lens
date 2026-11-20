@@ -4,7 +4,7 @@
 
 Route: `#/xray/<RSN>`, the inspection level of the Explore map: select a building on the map (or search its address) and choose **Inspect building**. It opens over the map; **Back to map** returns to the same place and zoom.
 
-The view has three parts, all driven by the same selected building and the scoring system chosen in Layers:
+The view has three parts, all driven by the same selected building and the scoring system chosen in Filters:
 
 1. **3D Building X-Ray**: one inspection laid out by category on a 3D model of *that* building. The exterior comes from the City's 3D Massing data; the interior is illustrative.
 2. **Same score. Different story.**: the building next to another building with the same (or a labelled near) score.
@@ -160,7 +160,7 @@ The count condition matters. The exterior zone has only 4 items, so one low mark
 
 `findMatches` in `xray-model.js`, all tested:
 
-- Latest evaluations from the **same scoring system** only (the one chosen in Layers), the selected building excluded.
+- Latest evaluations from the **same scoring system** only (the one chosen in Filters), the selected building excluded.
 - Identical overall score first. If there is none, ±1, then ±2. The tolerance is stated on the page.
 - With a ward filter on, matches come from that ward if there are any, otherwise all of Toronto (stated).
 - Ordered from the most different category profile (sum of absolute share gaps) to the least, then by RSN, so every reader sees the same order. The reader can choose any match.
