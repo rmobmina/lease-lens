@@ -3,8 +3,8 @@
 //              citywide ranking in one panel, the inspection finding, last inspected date and building facts,
 //              then one primary action (View inspection details) over two equal ones (Score history, Compare nearby).
 //   Ward     → one finding: its share in the citywide lowest 10%, against the city's share. "Explore ward"
-//              opens the rest on request: median and rank, its lowest-scoring buildings (also the keyboard
-//              route to individual buildings) and the two analysis layers that work per ward.
+//              opens the rest on request: median and rank, its lowest- or highest-scoring buildings (switchable;
+//              also the keyboard route to individual buildings) and the two analysis layers that work per ward.
 // It replaces the old full-page Building Explorer; the numbers and rules are the same.
 
 import { scoreBand } from '../model.js';
@@ -129,6 +129,27 @@ function renderHistory(el, r, ctx, M, opts) {
 // ---- ward ------------------------------------------------------------------------------------------------
 // The card leads with one finding. Its details stay open per ward while the reader moves the map.
 let wardOpen = null;
+let wardList = 'low';   // which buildings the ward list shows: 'low' (lowest scores) | 'high' (highest); kept across wards
+
+// The ward's buildings at one end of the score range: five, then a note for any others tied with the fifth,
+// so a cut-off never silently hides buildings with exactly the same score.
+const LIST_N = 5;
+export function wardExtremes(inWard, which) {
+  const dir = which === 'high' ? -1 : 1;
+  const sorted = [...inWard].sort((a, b) => dir * (a.score - b.score) || a.address.localeCompare(b.address));
+  const shown = sorted.slice(0, LIST_N);
+  const edge = shown.at(-1)?.score;
+  const tiedMore = sorted.slice(LIST_N).filter((r) => r.score === edge).length;
+  return { shown, edge, tiedMore };
+}
+
+function wardListHtml(inWard, pm) {
+  const { shown, edge, tiedMore } = wardExtremes(inWard, wardList);
+  return `<ol class="near-list">${shown.map((d) => `
+      <li><button type="button" data-rsn="${d.rsn}"><span class="nl-name">${esc(titleCase(d.address))}</span>
+      <span class="nl-km">${formatDate(d.date)}</span><span class="nl-score ${scoreBand(d.score, pm)}">${d.score}</span></button></li>`).join('')}</ol>
+    ${tiedMore ? `<p class="place-note">${fmt.n(tiedMore)} more building${tiedMore === 1 ? '' : 's'} also scored ${edge}.</p>` : ''}`;
+}
 
 function renderWardCard(box, ctx, M, opts) {
   const { pm, ward, ch } = ctx;
@@ -143,7 +164,6 @@ function renderWardCard(box, ctx, M, opts) {
   if (!row) { box.innerHTML = `${head}<p class="place-note">No evaluated buildings in this ward in the ${esc(pm.P.long)}.</p>`; wire(box, opts); return; }
   const open = wardOpen === ward;
   const inWard = pm.latest.filter((r) => r.ward === ward);
-  const lowest = [...inWard].sort((a, b) => a.score - b.score || a.address.localeCompare(b.address)).slice(0, 5);
   const high = row.share > ch.city * 1.15, low = row.share < ch.city * 0.85;
   const max = Math.max(row.share, ch.city) * 1.15 || 1;
   box.innerHTML = `${head}
@@ -162,10 +182,13 @@ function renderWardCard(box, ctx, M, opts) {
     </div>
     <div class="place-more ward-more" id="ward-more" ${open ? '' : 'hidden'}>
       <p class="place-sub">Median score <b>${row.median}</b> · rank ${row.rank} of ${ch.rows.length} wards by this share</p>
-      <h3 class="place-h3">Lowest-scoring buildings</h3>
-      <ol class="near-list low-list">${lowest.map((d) => `
-        <li><button type="button" data-rsn="${d.rsn}"><span class="nl-name">${esc(titleCase(d.address))}</span>
-        <span class="nl-km">${formatDate(d.date)}</span><span class="nl-score ${scoreBand(d.score, pm)}">${d.score}</span></button></li>`).join('')}</ol>
+      <fieldset class="seg seg-sm ward-list-pick">
+        <legend class="place-h3">Buildings in this ward</legend>
+        <label><input type="radio" name="ward-list" value="low" ${wardList === 'low' ? 'checked' : ''} /><span>Lowest scores</span></label>
+        <label><input type="radio" name="ward-list" value="high" ${wardList === 'high' ? 'checked' : ''} /><span>Highest scores</span></label>
+      </fieldset>
+      <div class="ward-list" id="ward-list" aria-live="polite">${wardListHtml(inWard, pm)}</div>
+      <p class="place-link"><button type="button" class="link-btn" data-act="ward-all" aria-haspopup="dialog">See all ${fmt.n(inWard.length)} buildings and scores</button></p>
       <h3 class="place-h3">Analyse this ward</h3>
       <div class="place-lenses">
         <button type="button" class="btn btn-sm" data-act="lens" data-lens="age">Age and score</button>
@@ -173,6 +196,14 @@ function renderWardCard(box, ctx, M, opts) {
       </div>
     </div>`;
   wire(box, opts);
+  box.querySelector('[data-act="ward-all"]').addEventListener('click', (e) => openWardTable(inWard, name, pm, opts, e.currentTarget));
+  // Switching the list redraws only the list, so focus stays on the switch.
+  box.querySelectorAll('input[name="ward-list"]').forEach((i) => i.addEventListener('change', () => {
+    wardList = i.value;
+    const list = box.querySelector('#ward-list');
+    list.innerHTML = wardListHtml(inWard, pm);
+    list.querySelectorAll('[data-rsn]').forEach((b) => b.addEventListener('click', () => opts.onSelect(b.dataset.rsn)));
+  }));
   box.querySelector('[data-act="ward-more"]').addEventListener('click', (e) => {
     wardOpen = wardOpen === ward ? null : ward;
     const now = wardOpen === ward;
@@ -182,6 +213,109 @@ function renderWardCard(box, ctx, M, opts) {
     more.hidden = !now;
     if (now && !reducedMotion()) more.animate([{ opacity: 0, transform: 'translateY(-4px)' }, { opacity: 1, transform: 'none' }], { duration: 220, easing: 'cubic-bezier(0.2, 0.7, 0.2, 1)' });
   });
+}
+
+// ---- every building in a ward: a sortable, searchable table in a dialog -----------------------------------
+// The card stays short (the page never scrolls); the full list opens on request. Every column heading sorts the
+// list (click again to reverse): each shows ↕ until it is the sort, then ▲ or ▼. Filter by address. Choosing a
+// building closes the dialog and selects it on the map.
+const COLS = [
+  { key: 'address', label: 'Address', get: (r) => titleCase(r.address), cmp: (a, b) => a.localeCompare(b) },
+  { key: 'score', label: 'Score', get: (r) => r.score, num: true },
+  { key: 'date', label: 'Latest inspection', get: (r) => r.date ?? '', cmp: (a, b) => a.localeCompare(b) },
+  { key: 'yearBuilt', label: 'Built', get: (r) => r.yearBuilt, num: true },
+  { key: 'storeys', label: 'Storeys', get: (r) => r.storeys, num: true },
+  { key: 'units', label: 'Units', get: (r) => r.units, num: true },
+];
+let tableSort = { key: 'score', dir: 1 };   // lowest scores first, like the card; kept between openings
+
+export function sortWardRows(rows, { key, dir }) {
+  const col = COLS.find((c) => c.key === key) ?? COLS[1];
+  const cmp = col.cmp ?? ((a, b) => a - b);
+  return [...rows].sort((a, b) => {
+    const va = col.get(a), vb = col.get(b);
+    if (va == null || vb == null) return va == null && vb == null ? 0 : va == null ? 1 : -1;   // not recorded: always last
+    return dir * cmp(va, vb) || a.address.localeCompare(b.address);
+  });
+}
+
+function openWardTable(inWard, name, pm, opts, opener) {
+  let dlg = document.getElementById('ward-table-dialog');
+  if (!dlg) {
+    dlg = document.createElement('dialog');
+    dlg.className = 'bx-dialog ward-dialog';
+    dlg.id = 'ward-table-dialog';
+    dlg.setAttribute('aria-labelledby', 'ward-table-title');
+    document.body.append(dlg);
+  }
+  dlg.innerHTML = `
+    <div class="bx-dialog-head">
+      <div><p class="place-kicker">${esc(pm.P.label)} system</p><h2 id="ward-table-title">Every evaluated building in ${esc(name)}</h2></div>
+      <button type="button" class="popover-close" data-close aria-label="Close the list">×</button>
+    </div>
+    <div class="ward-table-tools">
+      <label class="visually-hidden" for="ward-table-q">Filter by address</label>
+      <input id="ward-table-q" type="search" placeholder="Filter by address" autocomplete="off" spellcheck="false" />
+      <p class="ward-table-count" id="ward-table-count" aria-live="polite"></p>
+    </div>
+    <div class="bx-dialog-body ward-table">
+      <table>
+        <caption class="visually-hidden">Buildings in ${esc(name)}, with their latest score. Column headings sort the table.</caption>
+        <thead><tr>${COLS.map((c) => `<th scope="col" data-key="${c.key}" data-col="${c.key}" class="${c.num ? 'is-num' : ''}"><button type="button"><span class="th-label">${c.label}</span><span class="sort-mark" aria-hidden="true"></span></button></th>`).join('')}</tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>`;
+
+  const q = dlg.querySelector('#ward-table-q');
+  const table = dlg.querySelector('table');
+  const body = dlg.querySelector('tbody');
+  const draw = () => {
+    table.dataset.sort = tableSort.key;   // on phones, the sorted column stays visible (building.css)
+    const needle = q.value.trim().toLowerCase();
+    const rows = sortWardRows(inWard.filter((r) => !needle || r.address.toLowerCase().includes(needle)), tableSort);
+    dlg.querySelectorAll('thead th').forEach((th) => {
+      const on = th.dataset.key === tableSort.key;
+      th.setAttribute('aria-sort', on ? (tableSort.dir > 0 ? 'ascending' : 'descending') : 'none');
+      const mark = th.querySelector('.sort-mark');
+      mark.textContent = on ? (tableSort.dir > 0 ? '▲' : '▼') : '↕';
+      mark.classList.toggle('is-on', on);
+      th.querySelector('button').setAttribute('aria-label', `${th.querySelector('.th-label').textContent}: ${on ? `sorted ${tableSort.dir > 0 ? 'ascending' : 'descending'}, click to reverse` : 'click to sort'}`);
+    });
+    body.innerHTML = rows.map((r) => {
+      const band = scoreBand(r.score, pm);
+      return `<tr>
+        <th scope="row"><button type="button" class="link-btn" data-rsn="${r.rsn}">${esc(titleCase(r.address))}</button></th>
+        <td class="is-num"><span class="nl-score ${band}">${r.score}</span>${BAND[band].mark ? `<span class="visually-hidden"> (${BAND[band].label})</span>` : ''}</td>
+        <td data-col="date">${formatDate(r.date)}</td>
+        <td class="is-num" data-col="yearBuilt">${r.yearBuilt ?? '<span class="muted">–</span>'}</td>
+        <td class="is-num" data-col="storeys">${r.storeys ?? '<span class="muted">–</span>'}</td>
+        <td class="is-num" data-col="units">${r.units ?? '<span class="muted">–</span>'}</td>
+      </tr>`;
+    }).join('') || `<tr><td colspan="${COLS.length}" class="muted">No building in this ward matches “${esc(q.value)}”.</td></tr>`;
+    dlg.querySelector('#ward-table-count').textContent = needle ? `${fmt.n(rows.length)} of ${fmt.n(inWard.length)} buildings` : `${fmt.n(inWard.length)} buildings`;
+  };
+  dlg.querySelectorAll('thead th button').forEach((b) => b.addEventListener('click', () => {
+    const key = b.parentElement.dataset.key;
+    tableSort = tableSort.key === key ? { key, dir: -tableSort.dir } : { key, dir: key === 'address' || key === 'score' ? 1 : -1 };
+    draw();
+  }));
+
+  q.addEventListener('input', draw);
+  body.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-rsn]');
+    if (!b) return;
+    dlg.close();
+    opts.onSelect(b.dataset.rsn);
+  });
+  const close = () => dlg.close();
+  dlg.querySelector('[data-close]').addEventListener('click', close);
+  dlg.onclick = (e) => { if (e.target === dlg) close(); };
+  // Escape closes only the dialog, never the ward behind it (main.js skips key events already handled)
+  dlg.onkeydown = (e) => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); close(); } };
+  dlg.onclose = () => { if (opener.isConnected) opener.focus(); };
+  draw();
+  dlg.showModal();
+  q.focus();
 }
 
 function wire(box, opts, rsn) {
