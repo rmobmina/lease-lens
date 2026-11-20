@@ -150,17 +150,24 @@ function normalize(era, raw, columns) {
   };
 }
 
+// Hands the main thread back between the heavy steps, so the page keeps answering input while the data
+// loads (one unbroken parse froze the homepage for ~150 ms on a laptop, several times that on a phone).
+const yieldToPage = () => new Promise((res) => setTimeout(res, 0));
+
 async function loadAll(onProgress) {
   const out = { records: [], cats: {}, profile: {} };
   for (const era of ['pre', 'cur']) {
     onProgress?.(`Loading ${ERA[era].label}…`);
     const text = await d3.text(ERA[era].file);
+    await yieldToPage();
     const raw = d3.csvParse(text);
+    await yieldToPage();
     const { cats, records } = normalize(era, raw, raw.columns);
     out.cats[era] = cats;
     out.profile[era] = { columns: raw.columns, rows: raw.length };
     out.records.push(...records);
   }
+  await yieldToPage();
 
   // Duplicate RSN + date within a file
   const seen = d3.group(out.records, (r) => `${r.era}|${r.rsn}|${r.date}`);
@@ -184,6 +191,7 @@ async function loadAll(onProgress) {
     for (const r of rs) r.scorePctInEra = (d3.bisectRight(sorted, r.score) / sorted.length) * 100;
   }
 
+  await yieldToPage();
   // Evaluation sequence per building (by RSN) across both files.
   out.byRsn = d3.group(out.records, (r) => r.rsn);
   for (const [, evs] of out.byRsn) {
@@ -200,4 +208,4 @@ async function loadAll(onProgress) {
   return out;
 }
 
-window.LL = Object.assign(window.LL || {}, { ERA, COLS, loadAll, median, prettyCat });
+window.LL = Object.assign(window.LL || {}, { ERA, COLS, loadAll, median, prettyCat, yieldToPage });

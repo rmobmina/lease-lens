@@ -680,6 +680,8 @@ export function createXrayScene(container, { onSelect, onHover, onContextLost, p
   // ---- size follows the viewer container -------------------------------------------------------------------------
   let lastSize = '';
   function resize() {
+    // hidden (a parked X-Ray): keep the drawing buffer as it is until the view shows again
+    if (!canvasWrap.clientWidth && lastSize) return false;
     const w = canvasWrap.clientWidth || 600, h = canvasWrap.clientHeight || 420;
     if (`${w}x${h}` === lastSize) return false;
     lastSize = `${w}x${h}`;

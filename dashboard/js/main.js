@@ -23,7 +23,7 @@ import { renderChanges } from './sections/changes.js';
 import { renderMovers } from './sections/movers.js';
 import { renderPlace } from './sections/building.js';
 import { renderFingerprint } from './sections/fingerprint.js';
-import { renderXray, disposeXray, loadMassing, holdStage, warmXray } from './sections/xray.js';
+import { renderXray, parkXray, loadMassing, holdStage, warmXray } from './sections/xray.js';
 import { initInfoPopovers } from './components/info-popover.js';
 import { enhanceSelect } from './components/select.js';
 import { createStory } from './story/controller.js';
@@ -581,7 +581,7 @@ function backToMap() {
 
 function openDepth(kind, page = null, after, { reveal: revealMs = REVEAL.open } = {}) {
   const prev = state.depth, prevPage = state.page, wasShown = !$('depth').hidden;
-  if (prev === 'xray' && kind !== 'xray') disposeXray();
+  if (prev === 'xray' && kind !== 'xray') parkXray();
   state.depth = kind; state.page = page;
   document.body.dataset.depth = kind;
   if (page) document.body.dataset.page = page; else delete document.body.dataset.page;
@@ -640,7 +640,7 @@ function closeDepth() {
   // focus goes back to the button that opened the level
   if (!story?.active() && (was === 'xray' || was === 'compare')) requestAnimationFrame(() => { if (state.depth === 'map') $('place').querySelector('[data-act=inspect]')?.focus({ preventScroll: true }); });
   const d = $('depth');
-  const done = () => { if (state.depth !== 'map') return; d.hidden = true; d.inert = false; if (was === 'xray') disposeXray(); };
+  const done = () => { if (state.depth !== 'map') return; d.hidden = true; d.inert = false; if (was === 'xray') parkXray(); };
   // Back from a building's X-Ray or comparison: the level closes back into the building on the map.
   const pt = !reducedMotion() && !story?.active() && (was === 'xray' || was === 'compare') && !d.hidden ? placeOrigin() : null;
   // In the story the stage fades out over the map instead of vanishing in one frame (a newer chapter
@@ -1021,6 +1021,7 @@ const app = {
 
   try {
     const data = await LL.loadAll((msg) => ($('status').textContent = msg));
+    await LL.yieldToPage();
     M = buildModel(data);
   } catch (err) {
     console.error(err);
