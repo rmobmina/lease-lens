@@ -124,3 +124,13 @@ test('the story follows the storyboard: setting → hook → rising insights →
   assert.equal(CHAPTERS[chapterIndex('aha')].stage, 'aha', 'the old #/story/aha address opens the aha frame');
   assert.ok(CHAPTERS.at(-1).final, 'the next step ends with an action');
 });
+
+test('story caption: the storyboard arc and stage label are drawn (guards against merges dropping them)', async () => {
+  const src = await readFile(new URL('../dashboard/js/story/controller.js', import.meta.url), 'utf8');
+  // every helper the caption calls must be defined in the controller (a missing one crashes the story at run time)
+  for (const fn of ['arc', 'stageLabel', 'reserveCopy']) {
+    if (new RegExp(`\\b${fn}\\(`).test(src)) assert.match(src, new RegExp(`(function ${fn}\\(|const ${fn} = )`), `controller.js calls ${fn}() but does not define it`);
+  }
+  assert.match(src, /\$\{arc\(index\)\}/, 'the caption draws the storyboard arc');
+  assert.match(src, /class="sc-stage/, 'the caption shows the storyboard stage');
+});

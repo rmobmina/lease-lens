@@ -102,7 +102,6 @@ export function createStory(app) {
   function renderPanel(c, d) {
     const n = CHAPTERS.length;
     const step = c.steps?.(d).find((s) => !done.has(s.id));
-    const stage = `${STAGES[c.stage]}${c.question ? ` · ${c.question(d)}` : ''}`;
     panel.innerHTML = `
       <div class="sc-top">
         ${arc(index)}
@@ -110,6 +109,7 @@ export function createStory(app) {
         <button type="button" class="sc-exit" data-act="exit">Exit story <span aria-hidden="true">×</span></button>
       </div>
       <div class="sc-copy">
+        <p class="sc-stage is-${c.stage}"><span class="visually-hidden">Chapter ${index + 1} of ${n}: </span>${stageLabel(c, d)}</p>
         <h1 class="sc-title" id="story-title" tabindex="-1">${c.title(d)}</h1>
         <p class="sc-text">${c.text(d)}</p>
       </div>
@@ -154,6 +154,9 @@ export function createStory(app) {
   // text size and font, so the counter, title and Back / Next never shift between chapters. Measured
   // off-screen with the real styles; re-measured whenever the width or a Display setting changes.
   let reserveKey = '', reserveH = 0;
+  // The storyboard stage in words: "Setting", "Hook", "Rising insight · Where?", "Aha", "Next step".
+  const stageLabel = (c, d) => `${STAGES[c.stage]}${c.question ? ` · ${c.question(d)}` : ''}`;
+
   function reserveCopy(d) {
     const copy = panel.querySelector('.sc-copy');
     const de = document.documentElement;
@@ -163,13 +166,34 @@ export function createStory(app) {
       Object.assign(probe.style, { position: 'absolute', visibility: 'hidden', left: '0', top: '0', width: `${copy.clientWidth}px`, minHeight: '0' });
       panel.append(probe);
       reserveH = Math.max(...CHAPTERS.map((ch) => {
-        probe.innerHTML = `<h1 class="sc-title">${ch.title(d)}</h1><p class="sc-text">${ch.text(d)}</p>`;
+        probe.innerHTML = `<p class="sc-stage">${stageLabel(ch, d)}</p><h1 class="sc-title">${ch.title(d)}</h1><p class="sc-text">${ch.text(d)}</p>`;
         return probe.offsetHeight;
       }));
       probe.remove();
       reserveKey = key;
     }
     copy.style.minHeight = reserveH ? `${reserveH}px` : '';
+  }
+
+  // The storyboard arc (setting → hook → rising insights → aha → next step), drawn as in the lecture's
+  // storyboards: flat through the setting and hook, climbing through the rising insights to the aha at the
+  // peak, then settling on the next step. One dot per chapter; chapters already seen are filled, the current
+  // one is larger. Decorative: the stage label below says the same thing in words.
+  function arc(current) {
+    const W = 132, H = 26, pad = 5;
+    const rising = CHAPTERS.filter((c) => c.stage === 'rising').length;
+    let r = 0;
+    const pts = CHAPTERS.map((c, i) => {
+      const x = pad + (i * (W - pad * 2)) / (CHAPTERS.length - 1);
+      let lift = 0;                                       // 0 = baseline, 1 = the peak
+      if (c.stage === 'rising') lift = ++r / (rising + 1);
+      if (c.stage === 'aha') lift = 1;
+      if (c.stage === 'next') lift = 0.45;
+      return [x, H - pad - lift * (H - pad * 2)];
+    });
+    const line = [...pts, [W, pts.at(-1)[1]]].map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join(' ');
+    const dots = pts.map(([x, y], i) => `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${i === current ? 4.5 : 3}" class="${i === current ? 'is-now' : i < current ? 'is-seen' : ''}${CHAPTERS[i].stage === 'aha' ? ' is-aha' : ''}"/>`).join('');
+    return `<svg class="sc-arc" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" aria-hidden="true" focusable="false"><polyline points="${line}"/>${dots}</svg>`;
   }
 
   // A detail is either one analysis layer (detail.lens) or a closer view of the chapter's own visual
