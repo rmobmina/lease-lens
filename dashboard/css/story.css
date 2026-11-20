@@ -29,6 +29,8 @@ body.is-story .atlas-main { grid-template-columns: minmax(0, 1fr); position: rel
 .sc-exit span { font-size: var(--text-lg); line-height: 1; margin-left: var(--space-1); }
 .sc-title { font-family: var(--font-display); font-size: clamp(24px, 2vw, 30px); font-weight: var(--weight-bold); line-height: 1.1; letter-spacing: var(--tracking-display); outline: none; text-wrap: balance; }
 .sc-text { font-size: var(--text-md); line-height: var(--leading-body); color: var(--ink-2); }
+/* the copy keeps one height across chapters (story/controller.js reserveCopy), so nothing below or above it moves */
+.sc-copy { display: grid; align-content: start; gap: var(--space-3); }
 .sc-foot { display: flex; align-items: flex-end; justify-content: space-between; gap: var(--space-3); margin-top: var(--space-1); }
 .sc-act { display: grid; justify-items: start; gap: var(--space-1); min-width: 0; }
 .sc-action, .sc-detail { font: inherit; font-size: var(--text-base); font-weight: var(--weight-semibold); color: var(--accent); background: none; border: 0; padding: var(--space-1) 0; cursor: pointer; text-align: left; }
@@ -82,18 +84,22 @@ body.is-story .xr-stage { flex: 1; min-height: 0; height: auto; }
 body.is-story .xr-finding, body.is-story .xr-legend, body.is-story #xr-prov-detail { display: none; }
 body.is-story .xr-caveat { font-size: var(--text-xs); }
 body.is-story .xr-side { min-height: 0; overflow-y: auto; }
-/* the inspection summary repeats the caption; the item list appears once a category is in focus */
-body.is-story:not(.story-zone) .xr-panel { display: none; }
+/* the category list and its "View all items" list swap in place, as in Explore (building.css) */
 body.is-story .xr-section, body.is-story .xr-method, body.is-story .xr-head { display: none; }
 
 /* the comparison: the two inspection profiles, side by side, nothing else */
 body.is-story .fp-view { display: flex; align-items: center; }
 body.is-story .fp-wrap { width: 100%; max-width: 1120px; margin: 0 auto; }
-body.is-story .fp-pair { grid-template-columns: repeat(2, minmax(0, 1fr)); } /* side by side at every size */
-body.is-story .fp-verdict, body.is-story .fp-lows, body.is-story .fp-notes, body.is-story .fp-controls, body.is-story .fp-table,
+body.is-story .fp-verdict, body.is-story .fp-controls, body.is-story .fp-table,
 body.is-story .fp-city, body.is-story .fp-method-block, body.is-story .fp-intro, body.is-story .fp-items-title { display: none; }
 /* the chapter shows the paired profile; "Show every item" swaps it for the two full item grids */
-body.is-story:not(.story-items) .fp-pair, body.is-story:not(.story-items) .fp-legend { display: none; }
+body.is-story:not(.story-items) .fp-matrix-scroll, body.is-story:not(.story-items) .fp-legend { display: none; }
+/* "Show every item": the matrix fills the stage and scrolls inside itself (the one place the story scrolls) */
+body.is-story.story-items .fp-wrap { height: 100%; }
+body.is-story.story-items .fp-wrap, body.is-story.story-items .fp-main, body.is-story.story-items .fp-panels, body.is-story.story-items #fp-panel-items { display: flex !important; flex-direction: column; min-height: 0; max-height: 100%; }
+body.is-story.story-items .fp-main, body.is-story.story-items .fp-panels, body.is-story.story-items #fp-panel-items { flex: 1; }
+body.is-story.story-items #fp-panel-profile { display: none !important; }
+body.is-story .fp-m-head .fp-meta:nth-of-type(n+2) { display: none; } /* the caption has the facts */
 body.is-story.story-items .fp-profile { display: none; }
 body.is-story .fp-profile { margin: 0; }
 body.is-story .fp-view { align-items: safe center; }
@@ -137,9 +143,7 @@ body.story-detail .lens { max-height: 100%; }
   body.is-story .xr-grid { grid-template-columns: minmax(0, 1fr); }
   body.is-story .xr-side, body.is-story .xr-foot, body.is-story .xr-cam { display: none; }
   /* the comparison: two summaries side by side; the item grids are too fine for a phone stage */
-  body.is-story .fp-pair { gap: 0 var(--space-4); }
-  body.is-story .fp-building + .fp-building { padding-left: var(--space-4); }
-  body.is-story.story-items .fp-chart, body.is-story.story-items .fp-legend { display: none; }
+  body.is-story.story-items .fp-legend { display: none !important; }
   .story-steps { grid-template-columns: 1fr; gap: var(--space-3); }
   .story-step-n { font-size: 28px; }
 }

@@ -1,41 +1,66 @@
-/* Layer A: the public homepage. An architectural statement on the left, the Toronto drawing on the right,
-   on a quiet blueprint ground (a faint construction grid that fades toward the edges).
-   The header is shared with every route (atlas.css, .site-bar). The drawing's box has a fixed size before
-   anything loads, so nothing shifts when it arrives. */
+/* Layer A: the public homepage, a Toronto city atlas. The statement on the left, the architectural drawing of
+   downtown on the right, on a quiet ground with faint topographic contours, in navy type.
+   Colours come from the --home-* tokens (tokens.css), which hold up in the dark and high-contrast themes.
+   The header is shared with every route (atlas.css, .site-bar); only its homepage dress is here.
+   The drawing's box has a fixed size before anything loads, so nothing shifts when it arrives. */
 
 body[data-layer="home"] { background: var(--atlas-bg); }
 
-.home { position: relative; isolation: isolate; min-height: calc(100vh - var(--header-h)); min-height: calc(100svh - var(--header-h));
-  display: grid; grid-template-rows: minmax(0, 1fr) auto; background: var(--hero-ground); color: var(--ink); }
-/* construction grid: 48 px modules, strongest behind the city, gone at the edges */
-.home::before { content: ""; position: absolute; inset: 0; z-index: -1; pointer-events: none;
-  background-image: linear-gradient(var(--hero-grid) 1px, transparent 1px), linear-gradient(90deg, var(--hero-grid) 1px, transparent 1px);
-  background-size: 48px 48px; background-position: -1px -1px;
-  -webkit-mask-image: radial-gradient(ellipse 85% 90% at 62% 48%, #000 40%, transparent 92%);
-          mask-image: radial-gradient(ellipse 85% 90% at 62% 48%, #000 40%, transparent 92%); }
+/* The header on the homepage: navy text, even spacing and one fine divider */
+body[data-layer="home"] .site-bar { border-bottom: 1px solid var(--home-rule); }
+body[data-layer="home"] .atlas-nav a { color: var(--home-ink); }
+body[data-layer="home"] .atlas-nav a:hover { color: var(--accent); }
+body[data-layer="home"] .theme-toggle { color: var(--home-ink); border-color: var(--home-rule); }
+body[data-layer="home"] .theme-toggle:hover, body[data-layer="home"] .theme-toggle[aria-expanded="true"] { color: var(--accent); border-color: var(--accent); }
+
+.home { position: relative; isolation: isolate; overflow-x: clip; min-height: calc(100vh - var(--header-h)); min-height: calc(100svh - var(--header-h));
+  display: grid; grid-template-rows: minmax(0, 1fr); background: var(--hero-ground); color: var(--home-ink); }
+
+/* topographic contours ------------------------------------------------------------------------
+   Their own decorative layer (aria-hidden in the markup; pointer input passes through). The lines are an
+   alpha mask (assets/home/contours.svg: isolines of one smooth field, so nothing tiles) filled with the
+   contour colour. Further masks intersect with it: the lines show most in the open sky above the city and
+   over the lake, and fade almost to nothing behind the copy and the densest buildings. */
+.home-contours { position: absolute; inset: 0; z-index: -1; pointer-events: none; background-color: var(--home-contour); opacity: var(--home-contour-strength);
+  --fade-copy: radial-gradient(ellipse 38% 50% at 21% 52%, transparent 0 45%, #000 100%);
+  --fade-city: radial-gradient(ellipse 24% 28% at 70% 47%, transparent 0 30%, #000 100%);
+  -webkit-mask-image: url("../assets/home/contours.svg"), var(--fade-copy), var(--fade-city);
+          mask-image: url("../assets/home/contours.svg"), var(--fade-copy), var(--fade-city);
+  -webkit-mask-size: cover, 100% 100%, 100% 100%;
+          mask-size: cover, 100% 100%, 100% 100%;
+  -webkit-mask-position: center;
+          mask-position: center;
+  -webkit-mask-repeat: no-repeat;
+          mask-repeat: no-repeat;
+  -webkit-mask-composite: source-in, source-in;
+          mask-composite: intersect; }
 
 /* hero ----------------------------------------------------------------------------------------
-   The copy takes about 40% of a wide screen and never more than its column; the drawing keeps the rest.
-   Size, measure and tracking are tuned together: two balanced lines ("Your next home is / more than a
-   score."), set tight like a display face should be, with a clear channel between the words and the city. */
+   The copy takes about 40% of a wide screen and never more than its column; the drawing keeps the rest and
+   reaches a little under the copy, where its left edge fades out. Headline, paragraph and actions share one
+   left edge. Two deliberate lines on wide screens: "Your next home is / more than a score." */
 .hero { position: relative; display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); column-gap: clamp(var(--space-6), 4vw, var(--space-8)); min-height: 0; outline: none; }
-.hero-copy { align-self: center; padding: 0 0 var(--space-8) clamp(var(--space-5), 4.4vw, var(--space-8)); max-width: 620px; position: relative; z-index: 2; }
-.hero-title { font-family: var(--font-display); font-weight: var(--weight-bold); font-size: var(--text-hero); line-height: var(--leading-tight);
-  letter-spacing: var(--tracking-hero); font-kerning: normal; font-feature-settings: "kern" 1; font-optical-sizing: auto; color: var(--ink); text-wrap: balance; }
+.hero-copy { align-self: center; padding: var(--space-6) 0 var(--space-6) clamp(var(--space-5), 4.4vw, var(--space-8)); max-width: 620px; position: relative; z-index: 2; }
+.hero-title { font-family: var(--font-display); font-weight: var(--weight-bold); font-size: var(--text-hero); line-height: 1.04;
+  letter-spacing: var(--tracking-hero); font-kerning: normal; font-feature-settings: "kern" 1; font-optical-sizing: auto; color: var(--home-ink); text-wrap: balance; }
 /* deliberate line breaks on wide screens; natural, balanced wrapping where the column is narrow */
 .hero-title span { display: block; white-space: nowrap; }
-.hero-title em { font-style: normal; color: var(--accent); }
-.hero-sub { font-size: var(--text-lg); line-height: var(--leading-body); color: var(--ink-2); margin-top: var(--space-5); max-width: 30em; text-wrap: pretty; }
+.hero-sub { font-size: var(--text-lg); line-height: var(--leading-body); color: var(--home-sub); margin-top: var(--space-5); max-width: 30em; text-wrap: pretty; }
 .hero-actions { display: flex; flex-wrap: wrap; gap: var(--space-3); margin-top: var(--space-6); }
 .btn-lg { height: 48px; padding: 0 var(--space-5); font-size: var(--text-md); }
 .hero-actions .btn:not(.btn-primary) { background: transparent; border-color: color-mix(in srgb, var(--ink) 70%, transparent); color: var(--ink); }
 .hero-actions .btn:not(.btn-primary):hover { background: color-mix(in srgb, var(--ink) 6%, transparent); border-color: var(--ink); }
 
-.hero-atlas { margin: 0; position: relative; min-height: 0; display: grid; }
-.atlas-stage { position: relative; overflow: hidden; min-height: 420px; view-transition-name: atlas; }
+.hero-atlas { margin: 0 0 0 calc(-1 * clamp(var(--space-6), 7vw, 140px)); position: relative; min-height: 0; display: grid; }
+/* the drawing's left edge dissolves into the ground instead of meeting the copy as a hard line */
+.atlas-stage { position: relative; overflow: hidden; min-height: 420px; view-transition-name: atlas;
+  -webkit-mask-image: linear-gradient(to right, transparent 0, #000 clamp(80px, 14%, 220px));
+          mask-image: linear-gradient(to right, transparent 0, #000 clamp(80px, 14%, 220px)); }
 .atlas-fallback { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; object-position: center; transition: opacity 0.4s; }
 .atlas-stage.is-live .atlas-fallback { opacity: 0; }
-.atlas-canvas { position: absolute; inset: 0; display: block; }
+/* scoped: the map's own .atlas-canvas (atlas.css, loaded later) is position: relative, which let this canvas hold
+   its first height and stop the homepage shrinking with the window */
+.atlas-stage > .atlas-canvas { position: absolute; inset: 0; display: block; }
 .atlas-label { position: absolute; z-index: 3; pointer-events: none; background: var(--surface); color: var(--ink); border: var(--border); border-radius: var(--radius-sm);
   padding: var(--space-1) var(--space-2); font-size: var(--text-sm); white-space: nowrap; box-shadow: var(--shadow-pop); }
 
@@ -52,17 +77,23 @@ body[data-layer="home"] { background: var(--atlas-bg); }
   .atlas-fallback { transition: none; }
 }
 
-/* tablet --------------------------------------------------------------------------------------- */
+/* tablet: the copy and both actions first, the drawing below; the page scrolls if it needs to ------- */
 @media (max-width: 1080px) {
   .hero { grid-template-columns: 1fr; grid-template-rows: auto minmax(0, 1fr); }
   .hero-copy { padding: var(--space-7) var(--space-6) 0; max-width: 680px; }
   :root { --text-hero: clamp(36px, 5.6vw, 56px); }
-  .home { height: calc(100svh - var(--header-h)); }   /* the drawing takes whatever the copy leaves */
-  .atlas-stage { min-height: 240px; height: auto; }
+  .home { min-height: calc(100svh - var(--header-h)); }   /* the drawing takes whatever the copy leaves */
+  .hero-atlas { margin: var(--space-4) 0 0; }
+  .atlas-stage { min-height: 300px; height: auto;
+    -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 64px);
+            mask-image: linear-gradient(to bottom, transparent 0, #000 64px); }
+  .home-contours {
+    --fade-copy: radial-gradient(ellipse 70% 30% at 30% 22%, transparent 0 40%, #000 100%);
+    --fade-city: radial-gradient(ellipse 40% 22% at 50% 70%, transparent 0 30%, #000 100%); }
   .site-foot { padding: var(--space-4) var(--space-6); }
 }
 
-/* mobile: the drawing sits under the copy at a fixed height ------------------------------------- */
+/* mobile: the drawing sits under the copy at a fixed height -------------------------------------- */
 @media (max-width: 640px) {
   .hero-copy { padding: var(--space-6) var(--space-4) 0; }
   :root { --text-hero: clamp(34px, 9.6vw, 44px); --tracking-hero: -0.035em; }

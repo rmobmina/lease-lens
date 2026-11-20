@@ -1,11 +1,11 @@
 // Small presentation helpers shared by the dashboard sections.
-// Reuses the explorer's tooltip, number formats and deterministic hash (window.LLC from explorer/js/charts.js).
+// Reuses the explorer's tooltip, number formats and deterministic hash (window.LLC from shared/js/charts.js).
 
 export const { fmt, hash } = LLC;
 
 // The explorer's tooltip, with one rule for the analysis panel: a tooltip for a mark inside the panel sits beside
 // the panel (over the map), level with the mark, so it never covers the chart it explains. Elsewhere it follows
-// the pointer, flipping near an edge and staying inside the window (explorer/js/charts.js).
+// the pointer, flipping near an edge and staying inside the window (shared/js/charts.js).
 const baseTip = LLC.tip;
 function besidePanel(ev) {
   const el = baseTip.el;

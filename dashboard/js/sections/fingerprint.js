@@ -78,20 +78,18 @@ export function renderFingerprint(ctx, M, state) {
 
   // ---- intro numbers (computed, not typed) -------------------------------------
   const scores = pm.latest.map((r) => r.score).sort(d3.ascending);
-  $('fp-spread').innerHTML = `Half of Toronto's ${fmt.n(scores.length)} evaluated buildings score between <b>${d3.quantileSorted(scores, 0.25)}</b> and <b>${d3.quantileSorted(scores, 0.75)}</b>`;
+  // the citywide spread lives in the title's ⓘ (read from this hidden source by the info popover)
+  $('fp-spread').innerHTML = `<p>Half of Toronto's ${fmt.n(scores.length)} evaluated buildings score between <b>${d3.quantileSorted(scores, 0.25)}</b> and <b>${d3.quantileSorted(scores, 0.75)}</b>, so a score alone separates buildings very little.</p>`;
   renderLegend();
 
   // ---- the pair -------------------------------------------------------------------
   const pa = a && buildingProfile(a, layout);
   const pb = b && buildingProfile(b, layout);
-  $('fp-verdict').innerHTML = pa && pb ? verdict(pa, pb, mode) : 'Not enough buildings with this score to compare.';
+  $('fp-verdict').innerHTML = pa && pb ? takeaway(pa, pb) : 'Not enough buildings with this score to compare.';
   renderProfile($('fp-profile'), pa, pb);
   // the guided story shows the item grids without the tabs
   const story = document.body.classList.contains('is-story');
-  if (tab === 'items' || story) {
-    drawBuilding($('fp-a-card'), pa, 'a', ctx, pm);
-    drawBuilding($('fp-b-card'), pb, 'b', ctx, pm);
-  }
+  if (tab === 'items' || story) drawMatrix($('fp-matrix'), pa, pb, ctx, pm);
   renderTable(layout, pa, pb);
 
   // ---- Toronto overview -------------------------------------------------------------
@@ -167,6 +165,12 @@ function wire(ctx) {
     e.preventDefault();
     showTab(TABS[(next + TABS.length) % TABS.length], true);
   });
+  // the rating legend: a labelled disclosure beside the tabs
+  $('fp-legend-btn').addEventListener('click', () => {
+    const open = $('fp-legend').hidden;
+    $('fp-legend').hidden = !open;
+    $('fp-legend-btn').setAttribute('aria-expanded', String(open));
+  });
   // the full table and the method open on request, in dialogs
   for (const [btn, dlg] of [['fp-table-open', 'fp-table-dialog'], ['fp-method-open', 'fp-method-dialog']]) {
     const d = $(dlg);
@@ -181,128 +185,113 @@ function wire(ctx) {
     .observe($('fp-panel-items').parentElement);
 }
 
-// ---- annotations ------------------------------------------------------------------------
-function verdict(pa, pb, mode) {
+// ---- the takeaway ------------------------------------------------------------------------
+// One sentence under the selectors, from the data: the shared score, then who had items rated 0 or 1.
+function takeaway(pa, pb) {
   const name = (p) => `<b>${esc(titleCase(p.rec.address))}</b>`;
-  const same = pa.rec.score === pb.rec.score;
-  const lead = same ? `Both buildings scored <b>${pa.rec.score}</b>.` : `Different scores: <b>${pa.rec.score}</b> and <b>${pb.rec.score}</b>, so this isn’t a same-score comparison.`;
-  const desc = (p) => {
-    if (!p.low.length) return `${name(p)} had no item rated 0 or 1`;
-    const g = d3.greatest(p.groups, (x) => x.low);
-    return `${name(p)} had <b>${p.low.length}</b> item${p.low.length === 1 ? '' : 's'} rated 0 or 1${g.low > 1 ? `, ${g.low} of them in ${g.label.toLowerCase()}` : ''}`;
+  const n = (p) => p.low.length;
+  const items = (k) => (k === 1 ? 'an item' : `${k} items`);
+  const lead = pa.rec.score === pb.rec.score
+    ? `Both scored <b>${pa.rec.score}</b>.`
+    : `They scored <b>${pa.rec.score}</b> and <b>${pb.rec.score}</b>, so this isn’t a same-score comparison.`;
+  let tail;
+  if (!n(pa) && !n(pb)) tail = 'Neither had an item rated 0 or 1.';
+  else if (!n(pb)) tail = `Only ${name(pa)} had ${items(n(pa))} rated 0 or 1.`;
+  else if (!n(pa)) tail = `Only ${name(pb)} had ${items(n(pb))} rated 0 or 1.`;
+  else tail = `${name(pa)} had ${items(n(pa))} rated 0 or 1; ${name(pb)} had ${n(pb)}.`;
+  return `${lead} ${tail}`;
+}
+
+// ---- every item: one shared matrix --------------------------------------------------------
+// A row per inspection category and a column per building, so the same category reads straight across.
+// Each column header holds the building's address, inspection date and facts (once); each cell holds the
+// category's count of items rated 0 or 1, its item tiles (same order for every building) and, beside them,
+// the names of the items rated low. Names and tiles share the item's details (hover, focus, tap).
+function drawMatrix(table, pa, pb, ctx, pm) {
+  if (!pa || !pb) { table.innerHTML = '<tbody><tr><td class="card-text">No pair to show.</td></tr></tbody>'; return; }
+  const P = { a: pa, b: pb };
+  const evals = (r) => pm.recs.filter((d) => d.rsn === r.rsn).length;
+  const head = (slot) => {
+    const r = P[slot].rec, k = evals(r);
+    const facts = [`Ward ${+r.ward} · ${esc(r.wardName)}`, r.yearBuilt ? `built ${r.yearBuilt}` : null, r.storeys ? `${r.storeys} storeys` : null, r.units ? `${r.units} units` : null].filter(Boolean);
+    return `<th scope="col" class="fp-m-head">
+      <span class="card-label">Building ${slot.toUpperCase()}</span>
+      <a class="fp-name" href="#/explore?b=${r.rsn}">${esc(titleCase(r.address))}</a>
+      <span class="fp-meta">Inspected ${formatDate(r.date)}${k > 1 ? ` · latest of ${k} evaluations since 2023` : ''}</span>
+      <span class="fp-meta">${facts.join(' · ')}</span>
+      ${r.reactive != null && r.reactive < 0 ? `<span class="fp-meta">Includes a reactive adjustment of ${r.reactive} points</span>` : ''}
+    </th>`;
   };
-  const tail = mode === 'example' ? ' Same number, different problems.' : '';
-  return `${lead} ${desc(pa)}; ${desc(pb)}.${tail}`;
-}
+  const who = (slot) => `${slot.toUpperCase()} · ${esc(titleCase(P[slot].rec.address))}`;
+  const cell = (slot, gi) => {
+    const g = P[slot].groups[gi];
+    const lows = g.items.filter((i) => i.low).sort((x, y) => x.rating - y.rating);
+    return `<td class="fp-m-cell" data-slot="${slot}" data-group="${gi}">
+      <span class="fp-m-who">${who(slot)}</span>
+      <span class="fp-m-count${g.low ? ' is-low' : ''}">${g.rated ? `<b>${g.low}</b> of ${g.rated} rated 0–1` : 'Not rated'}</span>
+      <div class="fp-m-body">
+        <div class="fp-m-tiles"></div>
+        ${lows.length ? `<ul class="fp-m-lows" aria-label="Rated 0 or 1">${lows.map((i) => `
+          <li><button type="button" class="fp-m-low" data-col="${esc(i.col)}"><span class="fp-chip" style="background:${ratingColor(i.rating)}" aria-hidden="true">${i.rating}</span><span class="fp-m-low-name">${esc(i.stat.label)}${i.uncommon ? '<span class="fp-ring" title="Uncommon low mark" aria-hidden="true"></span><span class="visually-hidden">, uncommon low mark</span>' : ''}</span></button></li>`).join('')}</ul>` : ''}
+      </div>
+    </td>`;
+  };
+  table.innerHTML = `<caption class="visually-hidden">Every inspection item, by category, for ${esc(titleCase(pa.rec.address))} and ${esc(titleCase(pb.rec.address))}</caption>
+    <colgroup><col class="fp-m-col-cat" /><col /><col /></colgroup>
+    <thead><tr><th scope="col" class="fp-m-cat-head">Inspection category</th>${head('a')}${head('b')}</tr></thead>
+    <tbody>${pa.groups.map((g, gi) => `<tr><th scope="row" class="fp-m-cat">${esc(g.label)}</th>${cell('a', gi)}${cell('b', gi)}</tr>`).join('')}</tbody>`;
 
-function notesFor(p, pm) {
-  const r = p.rec;
-  const out = [];
-  if (p.low.length) {
-    const g = d3.greatest(p.groups, (x) => (x.rated ? x.low / x.rated : 0));
-    out.push(`Weakest area: <b>${esc(g.label.toLowerCase())}</b>, with ${g.low} of ${g.rated} items rated 0 or 1.`);
-  } else {
-    out.push(`No item rated 0 or 1. ${p.belowTop} of ${p.rated} items were rated 2, one below the top mark.`);
-  }
-  for (const i of p.uncommon.slice(0, 3)) {
-    out.push(`<span class="fp-ring" aria-hidden="true"></span><b>${esc(i.stat.label)}</b> rated ${i.rating}: only ${pct(i.stat.lowShare, 1)} of Toronto buildings get a mark this low.`);
-  }
-  if (p.na) out.push(`${p.na} item${p.na === 1 ? '' : 's'} marked N/A (doesn't apply). These aren't counted as problems or in the score.`);
-  if (r.reactive != null && r.reactive < 0) out.push(`The score includes a reactive adjustment of ${r.reactive} points (the City's “current reactive score”).`);
-  const evs = pm.recs.filter((d) => d.rsn === r.rsn).length;
-  out.push(`Inspected ${formatDate(r.date)}${evs > 1 ? `, the latest of ${evs} evaluations since 2023` : ''}.`);
-  return out;
-}
-
-// ---- one building ------------------------------------------------------------------------
-function drawBuilding(card, p, slot, ctx, pm) {
-  const head = card.querySelector('.fp-head'), chart = card.querySelector('.fp-chart'), notes = card.querySelector('.fp-notes'), lows = card.querySelector('.fp-lows');
-  chart.innerHTML = '';
-  if (!p) { head.innerHTML = '<p class="card-text">No building to show.</p>'; notes.innerHTML = ''; lows.innerHTML = ''; return; }
-  const r = p.rec;
-  head.innerHTML = `
-    <p class="card-label">Building ${slot.toUpperCase()}</p>
-    <h2 class="fp-name"><a href="#/explore?b=${r.rsn}">${esc(titleCase(r.address))}</a></h2>
-    <p class="fp-meta">Ward ${+r.ward} · ${esc(r.wardName)}${r.yearBuilt ? ` · built ${r.yearBuilt}` : ''} · ${r.units ?? '–'} units</p>
-    <p class="fp-score"><span class="fp-score-num">${r.score}</span><span class="fp-score-of">/100</span>
-      <span class="fp-score-sub">${p.low.length ? `<b>${p.low.length}</b> of ${p.rated} items rated 0 or 1` : `none of ${p.rated} items rated 0 or 1`}</span></p>`;
-
-  const width = Math.max(220, chart.clientWidth);
-  // the largest cell that fits the width and, when the chart is given a height (the fitted page), that too
-  const room = !document.body.classList.contains('is-story') && chart.clientHeight > 80 ? chart.clientHeight : Infinity;
-  const titleH = 22, groupGap = 12;
-  const layoutFor = (cell) => {
-    const perRow = Math.max(1, Math.floor((width + GAP) / (cell + GAP)));
-    let y = 0;
-    const rows = p.groups.map((g) => {
-      const top = y;
-      y += titleH + (Math.ceil(g.items.length / perRow) || 1) * (cell + GAP) + groupGap;
-      return { g, top };
+  // the tiles: one small grid per category and building, wrapping inside its own column
+  for (const slot of ['a', 'b']) {
+    const p = P[slot], r = p.rec;
+    const old = prevFill[slot];
+    const animate = !reduceMotion() && old.size && old.get('__rsn') !== r.rsn;
+    table.querySelectorAll(`.fp-m-cell[data-slot="${slot}"]`).forEach((td) => {
+      const g = p.groups[+td.dataset.group];
+      const box = td.querySelector('.fp-m-tiles');
+      drawTiles(box, g, r, pm, animate ? old : null);
     });
-    return { cell, perRow, rows, height: y - groupGap + 2 };
-  };
-  let L = layoutFor(Math.max(14, Math.min(28, Math.floor((width + GAP) / PER_ROW - GAP))));
-  while (L.height > room && L.cell > 12) L = layoutFor(L.cell - 1);
-  const { cell, perRow, rows, height } = L;
-  const svg = d3.select(chart).append('svg').attr('viewBox', `0 0 ${width} ${height}`).attr('width', width).attr('height', height)
-    .attr('role', 'img').attr('aria-label', `Inspection fingerprint for ${titleCase(r.address)}: ${p.rated} items rated, ${p.low.length} rated 0 or 1. ${p.groups.map((g) => `${g.label}: ${g.low} of ${g.rated} rated 0 or 1`).join('. ')}. Full list in the table below.`);
-
-  const flat = [];
-  for (const { g, top } of rows) {
-    const gg = svg.append('g').attr('transform', `translate(0,${top})`);
-    gg.append('text').attr('class', 'group-title').attr('x', 0).attr('y', 14).text(g.label);
-    gg.append('text').attr('class', 'value').attr('x', width).attr('y', 14).attr('text-anchor', 'end')
-      .html(g.rated ? `<tspan class="${g.low ? 'value-strong' : ''}">${g.low}</tspan> of ${g.rated} at 0–1` : 'not rated');
-    g.items.forEach((it, i) => flat.push({ it, x: (i % perRow) * (cell + GAP), y: top + titleH + Math.floor(i / perRow) * (cell + GAP) }));
+    prevFill[slot] = new Map([['__rsn', r.rsn], ...p.groups.flatMap((g) => g.items).filter((i) => i.status === 'rated').map((i) => [i.col, ratingColor(i.rating)])]);
+    ctx.registerShown?.(slot, r.rsn);
   }
 
-  const old = prevFill[slot];
-  const animate = !reduceMotion() && old.size && old.get('__rsn') !== r.rsn;
+  // the names of low-rated items open the same details as their tiles (keyboard, hover and touch)
+  table.querySelectorAll('.fp-m-low').forEach((btn) => {
+    const slot = btn.closest('.fp-m-cell').dataset.slot;
+    const it = P[slot].groups.flatMap((g) => g.items).find((i) => i.col === btn.dataset.col);
+    const show = () => { hotCol(it.col); tip.show(cellTip(it, P[slot].rec, pm), anchorEvent(btn)); $('fp-live').textContent = cellSpoken(it); };
+    const hide = () => { hotCol(null); tip.hide(); };
+    btn.addEventListener('mouseenter', show);
+    btn.addEventListener('mouseleave', hide);
+    btn.addEventListener('focus', show);
+    btn.addEventListener('blur', hide);
+    btn.addEventListener('click', show);
+  });
+}
+
+function drawTiles(box, g, r, pm, old) {
+  box.innerHTML = '';
+  const width = Math.max(80, box.clientWidth);
+  const size = Math.round(Math.max(16, Math.min(22, 18 * (parseFloat(getComputedStyle(document.documentElement).fontSize) / 16 || 1))));
+  const perRow = Math.max(1, Math.floor((width + GAP) / (size + GAP)));
+  const flat = g.items.map((it, i) => ({ it, x: (i % perRow) * (size + GAP) + 2, y: Math.floor(i / perRow) * (size + GAP) + 2 }));
+  const height = Math.max(1, Math.ceil(g.items.length / perRow)) * (size + GAP) + 2;
+  const svg = d3.select(box).append('svg').attr('width', Math.min(width, perRow * (size + GAP) + 2)).attr('height', height)
+    .attr('role', 'img').attr('aria-label', `${g.label}, ${titleCase(r.address)}: ${g.low} of ${g.rated} items rated 0 or 1.`);
   const cells = svg.append('g').attr('class', 'fp-cells').selectAll('g').data(flat).join('g')
     .attr('class', (d) => `fp-cell ${d.it.status}`).attr('data-col', (d) => d.it.col)
     .attr('transform', (d) => `translate(${d.x},${d.y})`);
-  cells.append('rect').attr('class', 'fp-hit').attr('x', -GAP / 2).attr('y', -GAP / 2).attr('width', cell + GAP).attr('height', cell + GAP);
-  const sq = cells.append('rect').attr('class', 'fp-sq').attr('width', cell).attr('height', cell).attr('rx', 2);
+  cells.append('rect').attr('class', 'fp-hit').attr('x', -GAP / 2).attr('y', -GAP / 2).attr('width', size + GAP).attr('height', size + GAP);
+  const sq = cells.append('rect').attr('class', 'fp-sq').attr('width', size).attr('height', size).attr('rx', 2);
   sq.filter((d) => d.it.status === 'rated')
-    .attr('fill', (d) => (animate && old.has(d.it.col) ? old.get(d.it.col) : ratingColor(d.it.rating)))
-    .transition().duration(animate ? 380 : 0).attr('fill', (d) => ratingColor(d.it.rating));
+    .attr('fill', (d) => (old?.has(d.it.col) ? old.get(d.it.col) : ratingColor(d.it.rating)))
+    .transition().duration(old ? 380 : 0).attr('fill', (d) => ratingColor(d.it.rating));
   // N/A and blank: an empty outline, never a coloured (problem-looking) square
-  sq.filter((d) => d.it.status !== 'rated').attr('fill', 'none').attr('x', 0.5).attr('y', 0.5).attr('width', cell - 1).attr('height', cell - 1);
-  // The digit repeats the colour for low marks, so they don't depend on colour vision.
-  cells.filter((d) => d.it.low).append('text').attr('class', 'fp-digit').attr('x', cell / 2).attr('y', cell / 2 + 4).attr('text-anchor', 'middle').text((d) => d.it.rating);
-  cells.filter((d) => d.it.uncommon).append('rect').attr('class', 'fp-uncommon').attr('x', -2).attr('y', -2).attr('width', cell + 4).attr('height', cell + 4).attr('rx', 3);
-  prevFill[slot] = new Map([['__rsn', r.rsn], ...flat.filter((d) => d.it.status === 'rated').map((d) => [d.it.col, ratingColor(d.it.rating)])]);
-
-  bindCells(svg, cells, flat, (d) => cellTip(d.it, r, pm), (d) => cellSpoken(d.it));
-
-  // Direct labels: the low marks, listed by name (no hovering needed).
-  lows.innerHTML = p.low.length
-    ? `<p class="card-sub">Rated 0 or 1</p><ul class="fp-low-list">${[...p.low].sort((x, y) => x.rating - y.rating || x.stat.lowShare - y.stat.lowShare).map((i) => `
-      <li data-col="${esc(i.col)}"><span class="fp-chip" style="background:${ratingColor(i.rating)}" aria-hidden="true">${i.rating}</span>
-        <span class="fp-low-name">${esc(i.stat.label)}${i.uncommon ? '<span class="fp-ring" title="Uncommon low mark" aria-label="uncommon"></span>' : ''}</span>
-        <span class="fp-low-city">${pct(i.stat.lowShare)} of buildings</span></li>`).join('')}</ul>`
-    : '';
-  notes.innerHTML = `<ul class="fp-note-list">${notesFor(p, pm).map((n) => `<li>${n}</li>`).join('')}</ul>`;
-  fitSide(card.querySelector('.fp-side'));
-  ctx.registerShown?.(slot, r.rsn);
-}
-
-// The side column holds the low-mark list and the notes in the room beside the grid. When there is not
-// room for all of it, the list is cut and says how many more there are (the grid still shows every one,
-// with its digit), and notes after the first are left to the table.
-function fitSide(side) {
-  if (!side || !side.clientHeight || document.body.classList.contains('is-story')) return;
-  const over = () => side.scrollHeight > side.clientHeight + 1;
-  const notes = [...side.querySelectorAll('.fp-note-list li')];
-  while (over() && notes.length > 1) notes.pop().remove();
-  const items = [...side.querySelectorAll('.fp-low-list li')];
-  if (!over() || !items.length) return;
-  const more = document.createElement('li');
-  more.className = 'fp-low-more';
-  side.querySelector('.fp-low-list').append(more);
-  let hidden = 0;
-  while (over() && items.length > 1) { items.pop().remove(); hidden++; more.textContent = `+${hidden} more, marked in the grid`; }
-  if (!hidden) more.remove();
+  sq.filter((d) => d.it.status !== 'rated').attr('fill', 'none').attr('x', 0.5).attr('y', 0.5).attr('width', size - 1).attr('height', size - 1);
+  // the digit repeats the colour for low marks, so they don't depend on colour vision
+  cells.filter((d) => d.it.low).append('text').attr('class', 'fp-digit').attr('x', size / 2).attr('y', size / 2 + 4).attr('text-anchor', 'middle').text((d) => d.it.rating);
+  cells.filter((d) => d.it.uncommon).append('rect').attr('class', 'fp-uncommon').attr('x', -2).attr('y', -2).attr('width', size + 4).attr('height', size + 4).attr('rx', 3);
+  bindCells(svg, cells, flat, (d) => cellTip(d.it, r, pm), (d) => cellSpoken(d.it), `${g.label}, ${titleCase(r.address)}`);
 }
 
 function cellTip(it, r, pm) {
@@ -320,13 +309,15 @@ const cellSpoken = (it) => `${it.stat.label}, ${it.stat.groupLabel}: ${it.status
 
 // Hover, focus and arrow keys. One tab stop per chart; arrows move between items.
 // Hovering an item highlights the same item in every chart on the page (linked comparison).
-function bindCells(svg, cells, flat, tipHtml, spoken) {
-  const hot = (col) => document.querySelectorAll('#fp-main [data-col]').forEach((n) => n.classList.toggle('is-hot', n.dataset.col === col));
+const hotCol = (col) => document.querySelectorAll('#fp-main [data-col]').forEach((n) => n.classList.toggle('is-hot', n.dataset.col === col));
+function bindCells(svg, cells, flat, tipHtml, spoken, label = 'Inspection items') {
+  const hot = hotCol;
   cells.on('mouseenter', function (ev, d) { hot(d.it.col); tip.show(tipHtml(d), ev); })
+    .on('click', function (ev, d) { hot(d.it.col); tip.show(tipHtml(d), anchorEvent(this)); }) // touch
     .on('mousemove', (ev) => tip.move(ev))
     .on('mouseleave', () => { hot(null); tip.hide(); });
   const group = svg.select('.fp-cells').attr('tabindex', 0).attr('role', 'group')
-    .attr('aria-label', 'Inspection items. Use the arrow keys to move between items.');
+    .attr('aria-label', `${label}. Use the arrow keys to move between items.`);
   let idx = -1;
   const nodes = cells.nodes();
   const show = (i) => {
@@ -443,10 +434,10 @@ function renderCityNotes(layout, ctx) {
 // ---- legend, table, method --------------------------------------------------------------------
 function renderLegend() {
   const sw = (v, label) => `<span class="key"><span class="fp-key" style="background:${ratingColor(v)}">${v <= 1 ? v : ''}</span>${label}</span>`;
-  $('fp-legend').innerHTML = `<span class="fp-legend-label">Item rating</span>
-    ${sw(3, '3 · top mark')}${sw(2, '2')}${sw(1, '1')}${sw(0, '0 · lowest')}
-    <span class="key"><span class="fp-key fp-key-na"></span>N/A · doesn't apply</span>
-    <span class="key"><span class="fp-key fp-key-ring" style="background:${ratingColor(1)}">1</span>uncommon low mark</span>`;
+  $('fp-legend').innerHTML = `
+    ${sw(3, '3 · top mark')}${sw(2, '2')}${sw(1, '1 · low')}${sw(0, '0 · lowest')}
+    <span class="key"><span class="fp-key fp-key-na"></span>N/A · doesn't apply; not counted as a problem or in the score</span>
+    <span class="key"><span class="fp-key fp-key-ring" style="background:${ratingColor(1)}">1</span>uncommon low mark (fewer than ${pct(UNCOMMON_SHARE)} of Toronto buildings)</span>`;
 }
 
 function renderTable(layout, pa, pb) {

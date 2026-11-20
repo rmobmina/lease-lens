@@ -25,6 +25,7 @@ const reduced = reducedMotion;
 let map = null, H = {};
 let level = 'city';
 let wardsGeo = null, wardLayer = null, wardBounds = null, wardLabel = null, hoverWard = null;
+let flying = false, labelPending = false; // the ward label waits for a camera flight to land
 let clusterLayer = null, bldLayer = null, selLayer = null, renderer = null;
 const markers = new Map();           // rsn -> circleMarker
 let markerKey = '';                  // period|show the markers were built for
@@ -186,7 +187,7 @@ function wardTip(p) {
   const row = D?.ch?.byWard.get(p.ward);
   if (!row) return `<div class="tt-title">${esc(p.name)}</div><div class="tt-sub">No evaluated buildings in this scoring system.</div>`;
   return `<div class="tt-title">${esc(p.name)} <span class="tt-muted">· Ward ${+p.ward}</span></div>
-    <dl><dt>Lowest 10%</dt><dd><b>${pct(row.share)}</b> (${row.low10} of ${row.n})</dd><dt>Citywide</dt><dd>${pct(D.ch.city)}</dd><dt>Median score</dt><dd>${row.median}</dd></dl>
+    <dl><dt>Lowest 10%</dt><dd><b>${pct(row.share)}</b> (${row.low10} of ${row.n})</dd><dt>Median score</dt><dd>${row.median}</dd></dl>
     ${row.small ? '<p class="tt-hint">Fewer than 30 evaluated buildings: a few buildings move this share a lot.</p>' : ''}
     <p class="tt-hint">Click to explore this ward</p>`;
 }
@@ -194,6 +195,7 @@ function wardTip(p) {
 // One permanent label: the selected ward's name (never all 25 at once).
 function labelWard() {
   if (wardLabel) { wardLabel.remove(); wardLabel = null; }
+  if (flying) { labelPending = true; return; } // reveal it once the ward is in frame
   if (!wardLayer || !D?.ward || level === 'building') return;
   const layer = wardLayer.getLayers().find((l) => l.feature.properties.ward === D.ward);
   if (!layer) return;
@@ -429,13 +431,17 @@ const motion = (o = {}) => (reduced() ? { animate: false } : { animate: true, du
 
 // Camera flights: Leaflet's flyTo. A new flight (or any drag, wheel or pinch) replaces the current one
 // from wherever the camera is, so the user can always change their mind mid-flight.
-function flyTo(latlng, zoom) {
+function flyTo(latlng, zoom, duration) {
   const i = insets();
   const off = L.point((i.left - i.right) / 2, (i.top - i.bottom) / 2);
   const target = map.unproject(map.project(latlng, zoom).subtract(off), zoom);
   if (reduced()) { map.stop(); map.setView(target, zoom, { animate: false }); return; }
   const px = map.latLngToContainerPoint(target).distanceTo(map.latLngToContainerPoint(map.getCenter()));
-  map.flyTo(target, zoom, { duration: cameraDuration(px + Math.abs(zoom - map.getZoom()) * 260) });
+  flying = true;
+  // the selection marks would be stretched by the flight's zoom; they step aside and fade back on landing
+  map.getContainer().classList.add('is-flying');
+  map.once('moveend', () => { flying = false; map.getContainer().classList.remove('is-flying'); if (labelPending) { labelPending = false; labelWard(); } });
+  map.flyTo(target, zoom, { duration: duration ?? cameraDuration(px + Math.abs(zoom - map.getZoom()) * 260) });
 }
 
 export function showCity() {
@@ -456,9 +462,15 @@ export function showWard(ward, { city = false } = {}) {
   flyTo(b.getCenter(), z);
 }
 
-export function showBuilding(rec, zoom = ZOOM.building) {
+// duration (s): a slower, deliberate flight (the guided story); otherwise it follows the distance
+export function showBuilding(rec, zoom = ZOOM.building, { duration } = {}) {
   if (!map || rec?.lat == null) return;
-  flyTo([rec.lat, rec.lon], Math.max(zoom, map.getZoom() >= ZOOM.buildingIn ? map.getZoom() : zoom));
+  flyTo([rec.lat, rec.lon], Math.max(zoom, map.getZoom() >= ZOOM.buildingIn ? map.getZoom() : zoom), duration);
+}
+
+// Resolves when the current camera flight has landed (at once if nothing is moving).
+export function whenSettled() {
+  return flying ? new Promise((res) => map.once('moveend', res)) : Promise.resolve();
 }
 
 export function setView(view, { animate = true } = {}) {

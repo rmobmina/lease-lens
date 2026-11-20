@@ -1,4 +1,3 @@
-import { reducedMotion } from '../motion.js';
 // Select: one application-styled dropdown for every choice list in LeaseLens (ward, comparison building,
 // overall score). It replaces the operating system's popup, so the menu looks the same on every platform.
 //
@@ -19,6 +18,8 @@ import { reducedMotion } from '../motion.js';
 // and overflow: hidden parents can't clip or cover it. It opens below the field, or above when there is more
 // room there, never leaves the viewport, and follows the field while it is open. Only the list scrolls
 // (overscroll-behavior: contain), never the page or the map. On narrow screens it becomes a bottom sheet.
+
+import { reducedMotion } from '../motion.js';
 
 const reduced = reducedMotion;
 const NATIVE_VALUE = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value');

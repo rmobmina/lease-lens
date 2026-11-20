@@ -47,6 +47,13 @@ export function disposeXray() {
   if (stage) stage.querySelectorAll('.xr-canvas, .xr-labels').forEach((n) => n.remove());
 }
 
+// Leaving the X-Ray keeps its 3D scene (WebGL context, shaders, geometry): it draws only on demand, so while
+// hidden it costs nothing, and coming back skips a rebuild that blocked the page for 100-180 ms. The camera
+// returns to the opening view so a revisit starts where a first visit would.
+export function parkXray() {
+  if (scene3d?.api) scene3d.api.reset();
+}
+
 export function renderXray(ctx, M, xs) {
   lastCtx = { ctx, M, xs };
   wire();

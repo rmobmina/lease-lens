@@ -43,7 +43,7 @@ Three.js 0.160.0 comes from jsDelivr via the import map in `dashboard/index.html
 | `dashboard/js/sections/xray.js` | The view: which inspection to show, geometry loading and provenance, category list, detail panel, 2D fallback, lazy 3D loading. |
 | `dashboard/js/sections/xray-compare.js` | Same score, different story (D3). |
 | `dashboard/js/sections/xray-timeline.js` | Score history (D3). |
-| `tests/xray-model.test.mjs`, `tests/load-data.mjs` | Tests. They load the CSVs through the site's own loader (`explorer/js/data.js`). |
+| `tests/xray-model.test.mjs`, `tests/load-data.mjs` | Tests. They load the CSVs through the site's own loader (`shared/js/data.js`). |
 | `scripts/check-syntax.mjs` | `npm run check` |
 
 Changes outside these files: `dashboard/index.html` (import map, nav item, view markup), `dashboard/js/main.js` (route, state, disposal on leaving, search stays on the X-Ray), `dashboard/js/sections/building.js` (link), `dashboard/css/dashboard.css` (`--xr-*` tokens for light and dark, and an `xr-` component block), `package.json` (`type: module`, `test` and `check` scripts).

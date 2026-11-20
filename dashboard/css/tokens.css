@@ -175,17 +175,23 @@
   --control-h: 40px;
   --control-h-sm: 32px;
 
-  /* ---- homepage ground: a quiet blueprint tone ------------------------------------------------ */
+  /* ---- homepage ground: a quiet blueprint tone (contours: --home-contour) ------------------------ */
   --hero-ground: radial-gradient(120% 90% at 78% 40%, var(--brand-grey) 0%, #FFFFFF 64%);
-  --hero-grid: rgba(30, 91, 216, 0.09);
+  /* the homepage atlas (home.css): navy type and contours. Dark and high contrast below. */
+  --home-ink: var(--brand-navy);
+  --home-sub: var(--text-secondary);
+  --home-rule: var(--border-subtle);
+  --home-contour: var(--brand-navy);
+  --home-contour-strength: 0.08;   /* opacity where the contours are most visible */
 }
 
 /* Dark: the same roles on a night-blue ground (the atlas becomes white line on deep blue). */
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     color-scheme: dark;
-    --hero-ground: radial-gradient(120% 90% at 78% 40%, #132A5E 0%, #071330 66%); --hero-grid: rgba(143, 177, 255, 0.075);
-    --bg: #071330; --surface: #0C1B3D; --surface-2: #11244D; --ink: #EEF2FA; --ink-2: #C3CDE0; --muted: #94A2BC;
+    --hero-ground: radial-gradient(120% 90% at 78% 40%, #132A5E 0%, #071330 66%);
+    --home-ink: var(--ink); --home-sub: var(--muted); --home-rule: var(--line); --home-contour: #8FB1FF; --home-contour-strength: 0.1;
+    --bg: #071330; --surface: #0C1B3D; --surface-2: #11244D; --surface-muted: var(--surface-2); --ink: #EEF2FA; --ink-2: #C3CDE0; --muted: #94A2BC;
     --line: rgba(176, 200, 255, 0.16); --grid: #1A2D58; --axis: rgba(176, 200, 255, 0.30);
     --accent: #8FB1FF; --accent-ink: #071330; --accent-soft: #17306A; --accent-strong: #8FB1FF; --focus: #8FB1FF; --warn: #FF7A7A;
     --low-10: #FF6B6B; --low-25: #A04A4A; --dot: #6A7A99; --up: #8FB1FF; --down: #FF6B6B; --flat: #4D5E82; --chart-neutral: #3E5079;
@@ -209,8 +215,9 @@
 }
 :root[data-theme="dark"] {
   color-scheme: dark;
-  --hero-ground: radial-gradient(120% 90% at 78% 40%, #132A5E 0%, #071330 66%); --hero-grid: rgba(143, 177, 255, 0.075);
-  --bg: #071330; --surface: #0C1B3D; --surface-2: #11244D; --ink: #EEF2FA; --ink-2: #C3CDE0; --muted: #94A2BC;
+  --hero-ground: radial-gradient(120% 90% at 78% 40%, #132A5E 0%, #071330 66%);
+  --home-ink: var(--ink); --home-sub: var(--muted); --home-rule: var(--line); --home-contour: #8FB1FF; --home-contour-strength: 0.1;
+  --bg: #071330; --surface: #0C1B3D; --surface-2: #11244D; --surface-muted: var(--surface-2); --ink: #EEF2FA; --ink-2: #C3CDE0; --muted: #94A2BC;
   --line: rgba(176, 200, 255, 0.16); --grid: #1A2D58; --axis: rgba(176, 200, 255, 0.30);
   --accent: #8FB1FF; --accent-ink: #071330; --accent-soft: #17306A; --accent-strong: #8FB1FF; --focus: #8FB1FF; --warn: #FF7A7A;
   --low-10: #FF6B6B; --low-25: #A04A4A; --dot: #6A7A99; --up: #8FB1FF; --down: #FF6B6B; --flat: #4D5E82; --chart-neutral: #3E5079;
@@ -254,10 +261,11 @@
   --ch-none: #E4E8EF; --ward-line: #0B1F4D;
   --fp-3: #C9D0DC; --xr-ok: #BDBDBD; --xr-none: #8E939B;
   --focus-ring: 3px solid var(--focus);
+  --home-ink: var(--ink); --home-sub: var(--muted); --home-rule: var(--line);
 }
 @media (prefers-color-scheme: dark) {
   :root[data-contrast="high"]:not([data-theme="light"]) {
-    --bg: #030A1C; --surface: #061331; --surface-2: #0C1D45;
+    --bg: #030A1C; --surface: #061331; --surface-2: #0C1D45; --surface-muted: var(--surface-2);
     --ink: #FFFFFF; --ink-2: #E3E9F5; --muted: #C9D3E6;
     --line: rgba(190, 210, 255, 0.45); --border-control: rgba(190, 210, 255, 0.7); --axis: rgba(190, 210, 255, 0.65); --grid: #2A4378;
     --accent: #ADC6FF; --accent-strong: #ADC6FF; --focus: #ADC6FF; --accent-soft: #1D3A7E;
@@ -267,7 +275,7 @@
   }
 }
 :root[data-contrast="high"][data-theme="dark"] {
-  --bg: #030A1C; --surface: #061331; --surface-2: #0C1D45;
+  --bg: #030A1C; --surface: #061331; --surface-2: #0C1D45; --surface-muted: var(--surface-2);
   --ink: #FFFFFF; --ink-2: #E3E9F5; --muted: #C9D3E6;
   --line: rgba(190, 210, 255, 0.45); --border-control: rgba(190, 210, 255, 0.7); --axis: rgba(190, 210, 255, 0.65); --grid: #2A4378;
   --accent: #ADC6FF; --accent-strong: #ADC6FF; --focus: #ADC6FF; --accent-soft: #1D3A7E;

@@ -1,5 +1,5 @@
 // Temporal chapter — rendering + interaction. All numbers come from TEMPORAL.build() (temporal-data.js).
-// Shared helpers reused from explorer/js/charts.js: LLC.tip (tooltip), LLC.fmt, LLC.hash.
+// Shared helpers reused from shared/js/charts.js: LLC.tip (tooltip), LLC.fmt, LLC.hash.
 
 (() => {
   const { tip, fmt, hash } = window.LLC;

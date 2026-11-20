@@ -1,5 +1,5 @@
 // Temporal chapter — data transformation only (no DOM, no drawing).
-// Input: the normalized records from explorer/js/data.js (LL.loadAll), reused unchanged.
+// Input: the normalized records from shared/js/data.js (LL.loadAll), reused unchanged.
 // Output: one "change" row per building, plus counts used for copy, annotations and validation.
 //
 // Definitions (documented in docs/temporal-chapter.md):

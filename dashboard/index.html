@@ -118,11 +118,13 @@
   <!-- Layer A: public homepage                                               -->
   <!-- ===================================================================== -->
   <div class="home" id="home">
+    <!-- decorative topographic contours (assets/home/contours.svg, drawn by css/home.css) -->
+    <div class="home-contours" aria-hidden="true"></div>
 
     <main class="hero" id="home-main" tabindex="-1">
       <div class="hero-copy">
-        <h1 class="hero-title"><span>Your next home is</span> <span>more than <em>a&nbsp;score.</em></span></h1>
-        <p class="hero-sub">Explore the inspections, history and citywide patterns behind every RentSafeTO score.</p>
+        <h1 class="hero-title"><span>Your next home is</span> <span>more than a&nbsp;score.</span></h1>
+        <p class="hero-sub">Look up a Toronto rental building to see what inspectors found and how its score has changed.</p>
         <div class="hero-actions">
           <a class="btn btn-primary btn-lg" href="#/explore" data-enter>Let’s explore</a>
           <a class="btn btn-lg" href="#/story">Follow the story</a>
@@ -413,8 +415,9 @@
           <section class="view fp-view" data-view="compare" aria-labelledby="fp-title" hidden>
             <div class="fp-wrap">
               <header class="fp-intro">
-                <h1 id="fp-title">Same score, different story <button type="button" class="info-btn" data-info="low-mark" aria-label="What a low mark is">i</button></h1>
-                <p class="lede"><span id="fp-spread"></span>. Lay the inspection items side by side and two buildings with the same score can look nothing alike.</p>
+                <h1 id="fp-title">Same score, different story <button type="button" class="info-btn" data-info="low-mark" data-info-from="fp-spread" aria-label="What a low mark is, and how scores spread across Toronto">i</button></h1>
+                <p class="lede">Lay the inspection items side by side and two buildings with the same score can look nothing alike.</p>
+                <div id="fp-spread" class="info-source" hidden></div>
               </header>
 
               <div id="fp-unavailable" class="fp-unavailable" hidden>
@@ -442,9 +445,11 @@
                     <button type="button" role="tab" id="fp-tab-items" aria-controls="fp-panel-items" data-fp-tab="items">Every item</button>
                     <button type="button" role="tab" id="fp-tab-city" aria-controls="fp-panel-city" data-fp-tab="city">All of Toronto</button>
                   </div>
+                  <button type="button" class="bx-method-btn fp-legend-btn" id="fp-legend-btn" aria-expanded="false" aria-controls="fp-legend">Item ratings <span aria-hidden="true">▾</span></button>
                   <button type="button" class="bx-method-btn" id="fp-table-open" aria-haspopup="dialog">Table</button>
                   <button type="button" class="bx-method-btn fp-method-btn" id="fp-method-open" aria-haspopup="dialog">Method</button>
                 </div>
+                <div id="fp-legend" class="legend fp-legend" role="group" aria-label="Item ratings" hidden></div>
 
                 <div class="fp-panels">
                   <div class="fp-panel" role="tabpanel" id="fp-panel-profile" aria-labelledby="fp-tab-profile">
@@ -452,11 +457,8 @@
                   </div>
                   <div class="fp-panel" role="tabpanel" id="fp-panel-items" aria-labelledby="fp-tab-items" hidden>
                     <h2 class="visually-hidden fp-items-title">Every item, side by side</h2>
-                    <div id="fp-legend" class="legend fp-legend" aria-label="Legend"></div>
-                    <div class="fp-pair">
-                      <article class="fp-building" id="fp-a-card"><div class="fp-head"></div><div class="fp-body"><div class="fp-chart chart"></div><div class="fp-side"><div class="fp-lows"></div><div class="fp-notes"></div></div></div></article>
-                      <article class="fp-building" id="fp-b-card"><div class="fp-head"></div><div class="fp-body"><div class="fp-chart chart"></div><div class="fp-side"><div class="fp-lows"></div><div class="fp-notes"></div></div></div></article>
-                    </div>
+                    <!-- one shared matrix: a row per inspection category, a column per building (fingerprint.js drawMatrix) -->
+                    <div class="fp-matrix-scroll"><table class="fp-matrix" id="fp-matrix"></table></div>
                     <p class="visually-hidden" id="fp-live" aria-live="polite"></p>
                   </div>
                   <div class="fp-panel" role="tabpanel" id="fp-panel-city" aria-labelledby="fp-tab-city" hidden>
@@ -550,7 +552,7 @@
                           <tr><th scope="row">Homepage drawing</th><td>Actual City footprints and streets, simplified.</td></tr>
                         </tbody>
                       </table>
-                      <p class="about-small">Base map © OpenStreetMap contributors. Ward boundaries simplified to about 12 m. Analysts: the <a href="../explorer/">data explorer</a> has every record and the full notes.</p>
+                      <p class="about-small">Base map © OpenStreetMap contributors. Ward boundaries simplified to about 12 m.</p>
                     </div>
                   </details>
                   <details class="disclosure" name="about-more">
@@ -594,9 +596,9 @@
 
   <div id="tooltip" class="tooltip" role="tooltip" hidden></div>
 
-  <!-- Shared modules from the explorer: data loading/normalization and small chart helpers -->
-  <script src="../explorer/js/data.js"></script>
-  <script src="../explorer/js/charts.js"></script>
+  <!-- Shared modules (also used by story/temporal.html): data loading/normalization and small chart helpers -->
+  <script src="../shared/js/data.js"></script>
+  <script src="../shared/js/charts.js"></script>
   <script type="module" src="js/main.js"></script>
 </body>
 </html>

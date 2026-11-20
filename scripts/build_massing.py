@@ -83,7 +83,7 @@ def num(v):
 
 
 def affine_fit(pts):
-    """Least squares lat/lon ~ a*X + b*Y + c (same approach as explorer/js/data.js)."""
+    """Least squares lat/lon ~ a*X + b*Y + c (same approach as shared/js/data.js)."""
     x0, y0 = 312000, 4840000
 
     def solve(key):

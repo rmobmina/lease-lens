@@ -23,7 +23,7 @@ import { renderChanges } from './sections/changes.js';
 import { renderMovers } from './sections/movers.js';
 import { renderPlace } from './sections/building.js';
 import { renderFingerprint } from './sections/fingerprint.js';
-import { renderXray, disposeXray, loadMassing, holdStage, warmXray } from './sections/xray.js';
+import { renderXray, parkXray, loadMassing, holdStage, warmXray } from './sections/xray.js';
 import { initInfoPopovers } from './components/info-popover.js';
 import { enhanceSelect } from './components/select.js';
 import { createStory } from './story/controller.js';
@@ -343,6 +343,10 @@ function renderChromeNow() {
     onPeriod: (e) => setPeriod(e),
     onLens: (id) => setLens(id),
   });
+  // a selected building carries its own breadcrumb, so the separate title card steps aside
+  const placeCrumbs = $('place-crumbs');
+  if (placeCrumbs) renderCrumbs(placeCrumbs, undefined, false);
+  document.body.classList.toggle('has-building', !!placeCrumbs && !place.hidden);
   renderLegend();
   renderLensMenu();
   renderLens(ctx);
@@ -380,12 +384,13 @@ function renderTitle() {
 }
 
 // Toronto › Ward › Building (› Inspection, in the depth bar)
-function renderCrumbs(el, tail) {
+// leaf: false stops at the ward (the building card's heading already names the building)
+function renderCrumbs(el, tail, leaf = true) {
   const r = recOf(state.selected);
   const ward = r?.ward ?? state.ward;
   const items = [`<li><button type="button" class="crumb" data-crumb="city">Toronto</button></li>`];
   if (ward) items.push(`<li><button type="button" class="crumb" data-crumb="ward" data-ward="${ward}" ${!r && !tail ? 'aria-current="location"' : ''}>${esc(M.wardName.get(ward) ?? `Ward ${+ward}`)}</button></li>`);
-  if (r) items.push(tail ? `<li><button type="button" class="crumb" data-crumb="building">${esc(titleCase(r.address))}</button></li>` : `<li><span aria-current="location">${esc(titleCase(r.address))}</span></li>`);
+  if (r && leaf) items.push(tail ? `<li><button type="button" class="crumb" data-crumb="building">${esc(titleCase(r.address))}</button></li>` : `<li><span aria-current="location">${esc(titleCase(r.address))}</span></li>`);
   if (tail) items.push(`<li><span aria-current="location">${esc(tail)}</span></li>`);
   el.innerHTML = items.join('');
   el.querySelectorAll('[data-crumb]').forEach((b) => b.addEventListener('click', () => {
@@ -478,10 +483,9 @@ function renderLensMenu() {
     + groups.map((g, i) => `<p class="lens-group">${esc(g.title)}${i === 0 ? ' <small>suggested at this zoom</small>' : ''}</p>${LENSES.filter((l) => l.scale === g.key).map(opt).join('')}`).join('');
   $('lens-options').querySelectorAll('input').forEach((i) => {
     i.addEventListener('change', () => setLens(i.value || null));
-    // a pick by pointer or Enter closes the menu (arrow keys only move through the options)
-    const done = () => { closeMenus(); $('lens-btn').focus({ preventScroll: true }); };
-    i.closest('label').addEventListener('click', (e) => { if (e.detail > 0) requestAnimationFrame(done); });
-    i.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); if (!i.checked) { i.checked = true; setLens(i.value || null); } done(); } });
+    // a pick leaves the menu open beside the analysis, so the next one is one click away
+    // (it closes with the Analysis button, Esc or a click elsewhere)
+    i.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); if (!i.checked) { i.checked = true; setLens(i.value || null); } } });
   });
   $('lens-btn').classList.toggle('is-on', !!state.lens);
 }
@@ -556,25 +560,28 @@ function circleAt(pt) {
   const R = Math.ceil(Math.hypot(Math.max(x, r.width - x), Math.max(y, r.height - y)));
   return { small: `circle(14px at ${x}px ${y}px)`, big: `circle(${R}px at ${x}px ${y}px)`, origin: `${pt.x - $('map-wrap').getBoundingClientRect().left}px ${pt.y - $('map-wrap').getBoundingClientRect().top}px` };
 }
+const STORY_FADE = 240; // ms: the story's crossfades between stage views
+// the story's move into a building (chapter 4): flight down to it, a beat on arrival, then the X-Ray opens out of it
+const STORY_FLIGHT = 1800, STORY_HOLD = 250, STORY_REVEAL = 800;
 function stopReveal() {
-  for (const el of [$('depth'), $('map-wrap')]) el.getAnimations().forEach((a) => { if (a.id === 'reveal') a.cancel(); });
+  for (const el of [$('depth'), $('map-wrap'), ...$('depth-body').querySelectorAll('.view')]) el.getAnimations().forEach((a) => { if (a.id === 'reveal') a.cancel(); });
 }
-function revealDepth(pt) {
+function revealDepth(pt, duration = REVEAL.open) {
   const d = $('depth'), c = circleAt(pt);
   d.style.visibility = '';
-  d.animate([{ clipPath: c.small, opacity: 0.35 }, { clipPath: c.big, opacity: 1 }], { duration: REVEAL.open, easing: REVEAL.ease, id: 'reveal' });
+  d.animate([{ clipPath: c.small, opacity: 0.35 }, { clipPath: c.big, opacity: 1 }], { duration, easing: REVEAL.ease, id: 'reveal' });
   const m = $('map-wrap');
   m.style.transformOrigin = c.origin;
-  m.animate([{ transform: 'scale(1)' }, { transform: 'scale(1.08)', opacity: 0.6 }], { duration: REVEAL.open, easing: REVEAL.ease, id: 'reveal' });
+  m.animate([{ transform: 'scale(1)' }, { transform: 'scale(1.08)', opacity: 0.6 }], { duration, easing: REVEAL.ease, id: 'reveal' });
 }
 function backToMap() {
   if (history.state?.fromMap) { history.back(); return; }
   navigate(lastExplore ?? encodeExplore({ ward: state.ward, selected: state.selected, lens: state.lens, period: state.period, mapShow: state.mapShow }));
 }
 
-function openDepth(kind, page = null, after) {
-  const prev = state.depth, prevPage = state.page;
-  if (prev === 'xray' && kind !== 'xray') disposeXray();
+function openDepth(kind, page = null, after, { reveal: revealMs = REVEAL.open } = {}) {
+  const prev = state.depth, prevPage = state.page, wasShown = !$('depth').hidden;
+  if (prev === 'xray' && kind !== 'xray') parkXray();
   state.depth = kind; state.page = page;
   document.body.dataset.depth = kind;
   if (page) document.body.dataset.page = page; else delete document.body.dataset.page;
@@ -582,13 +589,20 @@ function openDepth(kind, page = null, after) {
   const from = revealFrom; revealFrom = null;
   $('depth').hidden = false;
   $('depth').inert = false;
-  $('depth').classList.toggle('is-revealing', !!from); // no default fade: the reveal replaces it
-  if (from) { $('depth').style.visibility = 'hidden'; holdStage(REVEAL.open + 60); } // hold until the level has drawn; 3D waits for the motion
-  const reveal = () => { if (from && state.depth === kind) revealDepth(from); else $('depth').style.visibility = ''; };
+  // no default fade when the reveal replaces it, or when the level is already open (re-running the fade would
+  // flash the map through it between two levels)
+  $('depth').classList.toggle('is-revealing', !!from || (prev !== 'map' && wasShown));
+  if (from) { $('depth').style.visibility = 'hidden'; holdStage(revealMs + 60); } // hold until the level has drawn; 3D waits for the motion
+  const reveal = () => { if (from && state.depth === kind) revealDepth(from, revealMs); else $('depth').style.visibility = ''; };
   for (const id of ['map-wrap', 'rail-left', 'rail-right']) $(id).inert = true;
   if (document.body.classList.contains('story-detail')) $('rail-right').inert = false;
   const view = kind === 'page' ? page : kind;
   $('depth-body').querySelectorAll('.view').forEach((v) => (v.hidden = v.dataset.view !== view));
+  // story: one stage view replacing another (chart → X-Ray → comparison) fades in rather than cutting
+  if (story?.active() && prev !== 'map' && prev !== kind && !from && !reducedMotion()) {
+    $('depth').style.opacity = '';
+    $('depth-body').querySelector(`.view[data-view="${view}"]`)?.animate([{ opacity: 0 }, { opacity: 1 }], { duration: STORY_FADE, easing: 'ease-out', id: 'reveal' });
+  }
   tip.hide();
   closeMenus();
   const r = recOf(state.selected);
@@ -626,9 +640,16 @@ function closeDepth() {
   // focus goes back to the button that opened the level
   if (!story?.active() && (was === 'xray' || was === 'compare')) requestAnimationFrame(() => { if (state.depth === 'map') $('place').querySelector('[data-act=inspect]')?.focus({ preventScroll: true }); });
   const d = $('depth');
-  const done = () => { if (state.depth !== 'map') return; d.hidden = true; d.inert = false; if (was === 'xray') disposeXray(); };
+  const done = () => { if (state.depth !== 'map') return; d.hidden = true; d.inert = false; if (was === 'xray') parkXray(); };
   // Back from a building's X-Ray or comparison: the level closes back into the building on the map.
   const pt = !reducedMotion() && !story?.active() && (was === 'xray' || was === 'compare') && !d.hidden ? placeOrigin() : null;
+  // In the story the stage fades out over the map instead of vanishing in one frame (a newer chapter
+  // reopening the stage cancels it through stopReveal, since it shares the 'reveal' id).
+  if (!pt && story?.active() && !reducedMotion() && !d.hidden) {
+    d.inert = true;
+    d.animate([{ opacity: 1 }, { opacity: 0 }], { duration: STORY_FADE, easing: 'ease-out', id: 'reveal' }).finished.then(done, () => {});
+    return;
+  }
   if (!pt) { done(); return; }
   d.inert = true;
   const c = circleAt(pt);
@@ -748,6 +769,7 @@ function wireControls() {
   radios('movers-dir', (v) => { state.movers.dir = v; renderLens(context()); });
   $('problem-prev').addEventListener('click', () => { state.problems.page--; renderLens(context()); });
   $('problem-next').addEventListener('click', () => { state.problems.page++; renderLens(context()); });
+  // the × and the labelled back link both close the layer and return focus to what opened it
   $('lens-close').addEventListener('click', () => {
     setLens(null);
     (story?.active() ? document.querySelector('#story-panel [data-act=detail]') : $('lens-btn'))?.focus();
@@ -952,11 +974,11 @@ const app = {
     const seq = ++presentSeq;
     const live = () => seq === presentSeq && story?.active();
     const done = after && (() => { if (live()) after(); });
-    const frame = (to) => Atlas.wardsLoaded().then(() => {
+    const frame = (to, opts) => Atlas.wardsLoaded().then(() => {
       if (!live() || !to) return;
       if (to.kind === 'city') Atlas.showCity();
       if (to.kind === 'ward') Atlas.showWard(to.ward, { city: !!to.city });
-      if (to.kind === 'building') { const r = recOf(to.rsn); if (r) Atlas.showBuilding(r); }
+      if (to.kind === 'building') { const r = recOf(to.rsn); if (r) Atlas.showBuilding(r, undefined, opts); }
     });
     if (depth === 'map') {
       closeDepth();
@@ -968,13 +990,18 @@ const app = {
     if (via && state.depth !== depth && !reducedMotion()) {
       closeDepth();
       renderMapLevel();
-      frame(via);
-      setTimeout(() => {
-        if (!live()) return;
+      // An unhurried flight down to the building; once it has landed and the reader has had a beat to see
+      // where it is, the level opens out of it (a fallback timer covers a flight that never reports landing).
+      let opened = false;
+      const open = () => {
+        if (opened || !live()) return;
+        opened = true;
         const r = via.kind === 'building' && recOf(via.rsn);
         revealFrom = r?.lat != null ? Atlas.clientPointOf(r.lat, r.lon) : null;
-        openDepth(depth, null, done);
-      }, 1150);
+        openDepth(depth, null, done, { reveal: STORY_REVEAL });
+      };
+      frame(via, { duration: STORY_FLIGHT / 1000 }).then(() => Atlas.whenSettled()).then(() => setTimeout(open, STORY_HOLD));
+      setTimeout(open, STORY_FLIGHT + STORY_HOLD + 1200);
       return;
     }
     openDepth(depth, null, done);
@@ -994,6 +1021,7 @@ const app = {
 
   try {
     const data = await LL.loadAll((msg) => ($('status').textContent = msg));
+    await LL.yieldToPage();
     M = buildModel(data);
   } catch (err) {
     console.error(err);
