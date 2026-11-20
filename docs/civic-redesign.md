@@ -137,7 +137,7 @@ Performance:
 
 ## Beyond the Score
 
-A full-screen, zero-scroll guided story that runs on the real map and views. It moves down the same levels as free exploration: distribution → wards → categories → X-Ray → comparison → history. Each chapter is a route (`#/story/<id>`, with `#/story/aha` kept as an alias of `resolution`), so Back and Forward work.
+A full-screen, zero-scroll guided story that runs on the real map and views. It is laid out as a data storyboard (CSC316 week 7, after Brent Dykes): **Setting → Hook → Rising insights → Aha → Next step**. It was written backwards from the aha; each rising insight answers one question (Where? When? What? What's inside a 92?) and narrows things down toward it. Each chapter is a route (`#/story/<id>`, with `#/story/aha` an alias of the aha frame, `compare`), so Back and Forward work. The caption shows the storyboard arc (one dot per frame, the aha at the peak) and the stage name; `tests/story.test.mjs` checks the stages stay in order with exactly one aha.
 
 - **Entering** saves the reader's state: route, scoring system, ward, selection, view settings, compare pair and X-Ray state.
 - **Each chapter** applies temporary state: the current system, all of Toronto, then its own example.
@@ -145,7 +145,7 @@ A full-screen, zero-scroll guided story that runs on the real map and views. It 
 
 **One shell, no page scroll.** The shared header, then a stage that fills the rest of the viewport. Each chapter has one visual focus: the map, the X-Ray, the comparison, or a full-stage chart. A compact caption floats in one fixed safe area, bottom-left on desktop and a bottom sheet on phones. It holds:
 
-- "02 / 07";
+- the storyboard arc and stage ("Rising insight · Where?");
 - the headline;
 - one short narration with the finding;
 - at most one chapter action;
@@ -158,15 +158,16 @@ The caption's measured size (`--cap-w`, `--cap-h`) is the area every visual keep
 
 **Controls.** Back, Next (primary), Exit story, ←/→ keys (ignored while typing, in the map or in the 3D model), and Esc to close a detail view. Focus moves to the chapter title. A detail view focuses its own title and returns focus to its button when closed.
 
-| # | Chapter | Visual focus | Finding (computed when the page loads) | Action / detail |
+| # | Stage | Visual focus | Headline and finding (computed when the page loads) | Action / detail |
 |---|---|---|---|---|
-| 01 | Prologue | Score distribution (full stage) | Median latest score **92** (3,590 buildings, current system); middle half 87–96 | none |
-| 02 | Location | Ward map, the top ward centred among its neighbours | Highest lowest-10% share among wards with ≥ 50 buildings: **Davenport, 24 of 92 (26%)**, against 11% citywide | Detail: ward comparison layer |
-| 03 | Problems | Category bar chart (full stage) | **42%** of buildings had at least one shared-space item rated 0 or 1, the highest category; parking, grounds and waste next | Detail: common-problems layer |
-| 04 | Building | Building X-Ray (real 3D massing) | **200 Jameson Ave**, score 92: 6 of 45 rated items low, 5 in safety and records | Steps: open the cutaway, then focus on that category |
-| 05 | Compare | The two inspection profiles side by side | 200 Jameson Ave vs **77 Quebec Ave**: both 92, both in Parkdale–High Park; 6 items rated low vs none | none |
-| 06 | History | Evaluation timeline (full stage) | 77 Quebec Ave: 85 → 92 in the current system. The 2017–2023 scores are shown separately and never compared. Citywide: 64% of 3,216 re-inspections scored higher, 29% lower. | Detail: re-inspection changes layer |
-| 07 | Resolution | Three checks | "Explore a building yourself" leaves the story and focuses the address search on the map | none |
+| 01 | Setting | All evaluated buildings on the city map | "Every rental building gets one number": 3,590 buildings scored out of 100 under RentSafeTO; for most renters, that score is all they see | none |
+| 02 | Hook | Score distribution (full stage) | "Half of them scored 92 or more": middle half 87–96, a 9-point band. "What does a 92 actually tell you?" | none |
+| 03 | Rising insight · Where? | Ward map, the top ward centred among its neighbours | "Lower scores cluster in some wards": **Davenport, 24 of 92 (26%)** in the lowest 10%, against 11% citywide | Detail: ward comparison layer |
+| 04 | Rising insight · When? | Evaluation timeline (full stage) | "A score can change at the next inspection": 77 Quebec Ave 85 → 92 (current system only); 64% of 3,216 re-inspections scored higher, 29% lower | Detail: re-inspection changes layer |
+| 05 | Rising insight · What? | Category bar chart (full stage) | "The same problems keep coming up": shared spaces **42%**, then parking, grounds and waste; the score doesn't say which a building has | Detail: common-problems layer |
+| 06 | Rising insight · What's inside a 92? | Building X-Ray (real 3D massing) | **200 Jameson Ave**, score 92: 6 of 45 rated items low, 5 in safety and records | Steps: open the cutaway, then focus on that category |
+| 07 | **Aha** | The two inspection profiles side by side | "The score can't tell them apart. The inspection can.": 200 Jameson Ave vs **77 Quebec Ave**, both 92, both in Parkdale–High Park; 6 items rated low vs none | Detail: show every item |
+| 08 | Next step | Three checks: area → history → inspection | "Before you sign, look past the score"; "Explore a building yourself" leaves the story and focuses the address search | none |
 
 In the X-Ray chapter, the "Actual 3D massing" provenance and the caveat that interiors are illustrative always stay visible. The story never mixes the two scoring systems.
 
@@ -174,7 +175,7 @@ In the X-Ray chapter, the "Actual 3D massing" provenance and the caveat that int
 
 1. Take the median latest score.
 2. Take `sameScorePairs(…)[0]` at that score, from `fingerprint-model.js`: the building with the most low marks, next to the one with the fewest.
-3. Chapter 06 follows the second building, unless it has fewer than two evaluations in the current system.
+3. The When? frame (04) follows the second building, unless it has fewer than two evaluations in the current system.
 
 `tests/story.test.mjs` recomputes every number above from the raw ratings. The test also fails if the median moves away from 92, as a prompt to re-read the copy.
 

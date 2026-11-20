@@ -6,21 +6,20 @@
 // full-stage chart. Leaving the story, by Exit or by any link out, puts the saved state back.
 //
 // The caption floats in one fixed safe area (bottom-left; a bottom sheet on phones) and holds only:
-// "02 / 07", the headline, a 30–50-word narration with the one finding, at most one chapter action,
+// the storyboard arc and stage ("Rising insight · Where?"), the headline, a short narration with the one finding, at most one chapter action,
 // an optional "detail" view (one analysis layer, opened on request and closed back into the chapter),
 // and Back / Next / Exit. Nothing in the caption scrolls; every visual is sized to the stage.
 //
 // Every move goes through app.present(), which drops stale work when the reader changes chapter
 // mid-animation (a newer chapter always wins). Keys: ← / → between chapters, Esc closes a detail view.
 
-import { CHAPTERS, chapterIndex } from './chapters.js';
+import { CHAPTERS, STAGES, chapterIndex } from './chapters.js';
 import { drawVisual } from './visuals.js';
 import { clearAnnotation } from './annotation.js';
 import { animate, DUR } from '../motion.js';
 import * as S from './selectors.js';
 
 const KEEP = ['period', 'ward', 'selected', 'mapShow', 'lens', 'placeTab', 'problems', 'changes', 'movers', 'fp', 'xray'];
-const pad = (n) => String(n).padStart(2, '0');
 
 export function createStory(app) {
   let D = null;           // computed once per load (always the current scoring system, citywide)
@@ -99,12 +98,14 @@ export function createStory(app) {
   function renderPanel(c, d) {
     const n = CHAPTERS.length;
     const step = c.steps?.(d).find((s) => !done.has(s.id));
+    const stage = `${STAGES[c.stage]}${c.question ? ` · ${c.question(d)}` : ''}`;
     panel.innerHTML = `
       <div class="sc-top">
-        <p class="sc-count"><span class="visually-hidden">Chapter </span>${pad(index + 1)}<span aria-hidden="true"> / </span><span class="visually-hidden"> of </span>${pad(n)}</p>
+        ${arc(index)}
         <p class="sc-name">Beyond the Score <button type="button" class="info-btn" data-info="story" aria-label="About this story and its data">i</button></p>
         <button type="button" class="sc-exit" data-act="exit">Exit story <span aria-hidden="true">×</span></button>
       </div>
+      <p class="sc-stage is-${c.stage}"><span class="visually-hidden">Chapter ${index + 1} of ${n}: </span>${stage}</p>
       <h1 class="sc-title" id="story-title" tabindex="-1">${c.title(d)}</h1>
       <p class="sc-text">${c.text(d)}</p>
       <div class="sc-foot">
@@ -141,6 +142,27 @@ export function createStory(app) {
       step: (e) => body.forEach((el, i) => { el.style.opacity = String(Math.min(1, e * 1.4 - i * 0.08)); el.style.transform = `translateY(${(1 - e) * 6}px)`; }),
       done: () => body.forEach((el) => { el.style.opacity = ''; el.style.transform = ''; }),
     });
+  }
+
+  // The storyboard arc (setting → hook → rising insights → aha → next step), drawn as in the lecture's
+  // storyboards: flat through the setting and hook, climbing through the rising insights to the aha at the
+  // peak, then settling on the next step. One dot per chapter; chapters already seen are filled, the current
+  // one is larger. Decorative: the stage label below says the same thing in words.
+  function arc(current) {
+    const W = 132, H = 26, pad = 5;
+    const rising = CHAPTERS.filter((c) => c.stage === 'rising').length;
+    let r = 0;
+    const pts = CHAPTERS.map((c, i) => {
+      const x = pad + (i * (W - pad * 2)) / (CHAPTERS.length - 1);
+      let lift = 0;                                       // 0 = baseline, 1 = the peak
+      if (c.stage === 'rising') lift = ++r / (rising + 1);
+      if (c.stage === 'aha') lift = 1;
+      if (c.stage === 'next') lift = 0.45;
+      return [x, H - pad - lift * (H - pad * 2)];
+    });
+    const line = [...pts, [W, pts.at(-1)[1]]].map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join(' ');
+    const dots = pts.map(([x, y], i) => `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${i === current ? 4.5 : 3}" class="${i === current ? 'is-now' : i < current ? 'is-seen' : ''}${CHAPTERS[i].stage === 'aha' ? ' is-aha' : ''}"/>`).join('');
+    return `<svg class="sc-arc" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" aria-hidden="true" focusable="false"><polyline points="${line}"/>${dots}</svg>`;
   }
 
   // A detail is either one analysis layer (detail.lens) or a closer view of the chapter's own visual

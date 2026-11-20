@@ -13,7 +13,16 @@ body.is-story .atlas-main { grid-template-columns: minmax(0, 1fr); position: rel
   display: grid; gap: var(--space-3); padding: var(--space-5); background: var(--surface); border: var(--border); border-radius: var(--radius-md); box-shadow: var(--shadow-float); }
 .story-panel[hidden] { display: none; }
 .sc-top { display: flex; align-items: center; gap: var(--space-3); font-size: var(--text-sm); }
-.sc-count { font-family: var(--font-display); font-weight: var(--weight-bold); color: var(--accent); font-variant-numeric: tabular-nums; letter-spacing: var(--tracking-label); }
+/* the storyboard arc (controller.js arc()): the line in quiet ink, chapters seen filled, the current one in accent,
+   the aha marked with a ring so it reads as the peak without colour */
+.sc-arc { flex: none; display: block; overflow: visible; }
+.sc-arc polyline { fill: none; stroke: var(--axis); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.sc-arc circle { fill: var(--surface); stroke: var(--axis); stroke-width: 1.5; }
+.sc-arc circle.is-seen { fill: var(--muted); stroke: var(--muted); }
+.sc-arc circle.is-now { fill: var(--accent); stroke: var(--accent); }
+.sc-arc circle.is-aha { stroke-width: 2.5; }
+/* the stage label: the storyboard's names (Setting, Hook, Rising insight · Where?, Aha, Next step) */
+.sc-stage { font-size: var(--text-sm); font-weight: var(--weight-bold); color: var(--accent); letter-spacing: var(--tracking-label); margin-bottom: calc(var(--space-2) * -1); }
 .sc-name { display: flex; align-items: center; gap: var(--space-2); color: var(--muted); }
 .sc-exit { margin-left: auto; font: inherit; font-size: var(--text-sm); color: var(--ink-2); background: none; border: 0; padding: var(--space-1) 0; cursor: pointer; }
 .sc-exit:hover { color: var(--ink); }
