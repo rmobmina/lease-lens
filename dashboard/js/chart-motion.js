@@ -1,4 +1,3 @@
-import { reducedMotion } from './motion.js';
 // Chart motion: meaning-preserving updates for charts that redraw from scratch.
 //
 // The analysis charts rebuild their SVG on every render (a filter, a ward, a theme change, a map move).
@@ -14,6 +13,8 @@ import { reducedMotion } from './motion.js';
 // shrink from their baseline, labels travel with the bar end, new rows fade in. If nothing changed,
 // nothing moves, so the frequent re-renders that only repeat the same data are invisible.
 // A resized container is not a data change: it redraws without motion. Reduced motion: no animation.
+
+import { reducedMotion } from './motion.js';
 
 const EASE = 'cubic-bezier(0.2, 0.7, 0.2, 1)';
 const reduced = reducedMotion;
