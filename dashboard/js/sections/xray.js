@@ -708,7 +708,7 @@ function renderMethod() {
       <tbody>${XRAY_ZONES.map(row).join('')}</tbody></table></div>`)}
   ${sec('Rating definitions', `<p><b>Rated poorly</b> means 0 or 1 on the 0–3 scale (2023 – now) or 1 or 2 on the 1–5 scale (2017 – 2023), the same rule as the Common problems view.</p>
     <p>N/A items don't apply and are never counted; blank items were not recorded. Neither is ever treated as a pass or as a problem.</p>`)}
-  ${sec('Scoring systems', `<p><b>One inspection at a time.</b> The Inspection view shows one evaluation (by default the latest in the scoring system chosen in Layers). Select any point in the history and choose <i>Inspect this evaluation</i> to see that inspection instead.</p>
+  ${sec('Scoring systems', `<p><b>One inspection at a time.</b> The Inspection view shows one evaluation (by default the latest in the scoring system chosen in Filters). Select any point in the history and choose <i>Inspect this evaluation</i> to see that inspection instead.</p>
     <p><b>History.</b> The City changed its scoring system in 2023. Points are connected only within one scoring system, and change is measured only against the previous evaluation in the same system. The two systems use different items and scales and are never compared.</p>`)}
   ${sec('Building comparisons', `<p><b>Compare</b> uses latest evaluations from the same scoring system only. It looks for the same overall score first, then within 1, then within 2 points (labelled), and lists the most different inspection profiles first. With a ward filter on, matches come from that ward when there are any.</p>
     <p>Each category is compared on the same 0–100% scale: the share of its applicable items rated poorly in each building.</p>`)}

@@ -69,7 +69,7 @@ export const INFO = {
   },
   'map-wards': {
     title: 'Reading the ward map',
-    body: '<p>Each ward is shaded by the share of its evaluated buildings whose latest score is in Toronto’s lowest 10%. Red wards are above the citywide share, blue wards below it, grey about the same.</p><p>A dashed outline marks wards with fewer than 30 evaluated buildings, where a few buildings move the share a lot. Ward boundaries are the City’s 25-ward model.</p><p>“Lowest 10%” is a citywide cut-off on each building’s latest score in the scoring system chosen under Layers. The two systems are never mixed.</p>',
+    body: '<p>Each ward is shaded by the share of its evaluated buildings whose latest score is in Toronto’s lowest 10%. Red wards are above the citywide share, blue wards below it, grey about the same.</p><p>A dashed outline marks wards with fewer than 30 evaluated buildings, where a few buildings move the share a lot. Ward boundaries are the City’s 25-ward model.</p><p>“Lowest 10%” is a citywide cut-off on each building’s latest score in the scoring system chosen under Filters. The two systems are never mixed.</p>',
     more: { href: '#/about', label: 'About the data' },
   },
   'map-areas': {
@@ -81,8 +81,8 @@ export const INFO = {
     body: '<p>One mark per building, at the address point in the RentSafeTO record, coloured by its latest score in the chosen scoring system. Larger, darker red marks are the lowest 10%; light red the next 15%; grey the rest.</p><p>A selected building’s outline comes from the City’s 3D Massing data where its address matched one footprint reliably.</p>',
   },
   layers: {
-    title: 'Map layers and analysis',
-    body: '<p>The scoring system and the buildings shown apply to the map and to every analysis layer. One analysis layer opens at a time beside the map; it covers the selected ward, or all of Toronto when no ward is selected.</p>',
+    title: 'Map filters and analysis',
+    body: '<p>The filters (scoring system, buildings shown and ward) apply to the map and to every analysis layer. One analysis layer opens at a time beside the map; it covers the selected ward, or all of Toronto when no ward is selected.</p>',
   },
   categories: {
     title: 'Inspection categories',
