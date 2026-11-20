@@ -238,3 +238,36 @@ test('address search: long street words, punctuation and case match the City for
   assert.deepEqual(rankMatches(recs, 'no such road'), []);
   assert.ok(recs.every((r) => Object.keys(r).length === 1), 'records are not modified');
 });
+
+test('ward card: the lowest and highest lists show five buildings and never silently drop a tie', async () => {
+  const { wardExtremes } = await import('../dashboard/js/sections/building.js');
+  const pm = M.byPeriod.cur;
+  const byWard = d3.group(pm.latest, (r) => r.ward);
+  for (const [ward, rs] of byWard) {
+    for (const which of ['low', 'high']) {
+      const { shown, edge, tiedMore } = wardExtremes(rs, which);
+      assert.equal(shown.length, Math.min(5, rs.length), `${ward} ${which}`);
+      const best = which === 'high' ? d3.max(rs, (r) => r.score) : d3.min(rs, (r) => r.score);
+      assert.equal(shown[0].score, best, `${ward} ${which}: starts at the ward's ${which}est score`);
+      for (let i = 1; i < shown.length; i++) assert.ok(which === 'high' ? shown[i].score <= shown[i - 1].score : shown[i].score >= shown[i - 1].score);
+      // every building tied with the fifth is either shown or counted in the note
+      assert.equal(shown.filter((r) => r.score === edge).length + tiedMore, rs.filter((r) => r.score === edge).length, `${ward} ${which}: ties accounted for`);
+    }
+  }
+});
+
+test('ward card: the full list sorts every column both ways and keeps unrecorded values last', async () => {
+  const { sortWardRows } = await import('../dashboard/js/sections/building.js');
+  const rows = M.byPeriod.cur.latest.filter((r) => r.ward === M.byPeriod.cur.latest[0].ward);
+  for (const key of ['address', 'score', 'date', 'yearBuilt', 'storeys', 'units']) {
+    for (const dir of [1, -1]) {
+      const out = sortWardRows(rows, { key, dir });
+      assert.equal(out.length, rows.length, `${key}: nothing dropped`);
+      const vals = out.map((r) => r[key]);
+      const firstMissing = vals.findIndex((v) => v == null);
+      if (firstMissing >= 0) assert.ok(vals.slice(firstMissing).every((v) => v == null), `${key} ${dir}: not-recorded values last`);
+      if (key === 'score') for (let i = 1; i < out.length; i++) assert.ok(dir * (out[i].score - out[i - 1].score) >= 0, 'scores in order');
+    }
+  }
+});
+

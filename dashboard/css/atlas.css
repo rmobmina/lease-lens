@@ -111,6 +111,10 @@ body.has-building .title-card { display: none; }
 .place-more { margin-top: var(--space-4); padding-top: var(--space-3); border-top: var(--border); }
 .place-h3 { font-size: var(--text-base); font-weight: var(--weight-semibold); margin-top: var(--space-4); }
 .place-more > .place-h3:first-child { margin-top: 0; }
+/* the ward card's Lowest / Highest switch: its legend reads as the section heading; two equal halves */
+.ward-list-pick { margin-top: var(--space-4); display: grid; grid-template-columns: 1fr 1fr; }
+.ward-list-pick legend.place-h3 { grid-column: 1 / -1; margin: 0 0 var(--space-2); font-size: var(--text-base); color: var(--ink); }
+.ward-list { margin-top: var(--space-2); }
 .place-sub { font-size: var(--text-sm); color: var(--ink-2); margin-top: var(--space-1); }
 .place-more > .place-sub:first-child { margin-top: 0; }
 .place-note { font-size: var(--text-sm); color: var(--ink-2); margin-top: var(--space-3); }

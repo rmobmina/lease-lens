@@ -392,3 +392,42 @@ body.is-story .bx-panes { flex: 1; min-height: 0; }
 body.is-story .xr-bar-id { display: flex; align-items: baseline; gap: var(--space-2); min-width: 0; flex: 1 1 100%; }
 body.is-story .xr-bar-id > b { font-size: var(--text-md); font-weight: var(--weight-semibold); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 body.is-story .xr-bar-meta { display: inline-flex; gap: var(--space-2); font-size: var(--text-sm); color: var(--ink-2); white-space: nowrap; }
+<<<<<<< Updated upstream
+=======
+body.is-story .bx-back-link { display: none; }
+
+/* ---- every building in a ward (building.js openWardTable): a sortable, filterable table in a dialog ---------- */
+.ward-dialog { width: min(760px, calc(100vw - 32px)); height: min(85vh, 780px); }
+.ward-dialog .place-kicker { margin-bottom: var(--space-1); }
+.ward-table-tools { flex: none; display: flex; align-items: center; gap: var(--space-3); padding: var(--space-3) var(--space-5); border-bottom: var(--border); }
+.ward-table-tools input { flex: 1; min-width: 0; height: var(--control-h-sm); padding: 0 var(--space-3); font: inherit; font-size: var(--text-base); color: var(--ink);
+  background: var(--surface); border: var(--border-width) solid var(--border-control); border-radius: var(--radius-sm); }
+.ward-table-count { flex: none; font-size: var(--text-sm); color: var(--muted); font-variant-numeric: tabular-nums; }
+.ward-table { flex: 1; min-height: 0; padding-top: 0; }
+.ward-table table { width: 100%; border-collapse: collapse; font-size: var(--text-base); font-variant-numeric: tabular-nums; }
+.ward-table th, .ward-table td { text-align: left; padding: var(--space-2) var(--space-3) var(--space-2) 0; border-bottom: var(--border-width) solid var(--border-color); }
+.ward-table .is-num { text-align: right; }
+.ward-table thead th { position: sticky; top: 0; z-index: 1; background: var(--surface); padding-top: var(--space-3); border-bottom-color: var(--border-control); }
+.ward-table thead th button { font: inherit; font-size: var(--text-sm); font-weight: var(--weight-semibold); color: var(--muted); background: none; border: 0; padding: 0; cursor: pointer; white-space: nowrap; }
+.ward-table thead th button:hover, .ward-table thead th[aria-sort="ascending"] button, .ward-table thead th[aria-sort="descending"] button { color: var(--ink); }
+/* every heading sorts: ↕ (quiet) until it is the sort, then ▲ / ▼ in ink */
+.ward-table thead th button { display: inline-flex; align-items: center; gap: var(--space-1); }
+.ward-table .sort-mark { font-size: 0.85em; color: var(--axis); min-width: 0.9em; }
+.ward-table .sort-mark.is-on { color: var(--accent); }
+.ward-table thead th button:hover .sort-mark { color: var(--ink); }
+.ward-table thead th.is-num button { flex-direction: row; }
+.ward-table tbody th { font-weight: var(--weight-medium); }
+.ward-table tbody th .link-btn { text-align: left; color: var(--ink); text-decoration: none; }
+.ward-table tbody th .link-btn:hover { color: var(--accent); text-decoration: underline; }
+.ward-table tbody tr:hover { background: var(--surface-2); }
+.ward-table-tools { flex-wrap: wrap; }
+.ward-table-tools input { flex: 1 1 180px; }
+@media (max-width: 560px) {
+  /* phones: address, score, latest inspection, and whichever column the list is sorted by */
+  .ward-table [data-col="yearBuilt"], .ward-table [data-col="storeys"], .ward-table [data-col="units"] { display: none; }
+  .ward-table table[data-sort="yearBuilt"] [data-col="yearBuilt"], .ward-table table[data-sort="storeys"] [data-col="storeys"],
+  .ward-table table[data-sort="units"] [data-col="units"] { display: table-cell; }
+
+  .ward-table-tools, .ward-dialog .bx-dialog-head, .ward-dialog .bx-dialog-body { padding-left: var(--space-4); padding-right: var(--space-4); }
+}
+>>>>>>> Stashed changes
