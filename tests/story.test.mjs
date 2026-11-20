@@ -19,7 +19,7 @@ before(async () => {
   pm = M.byPeriod.cur;
 });
 
-test('prologue: the median latest score (current system) is 92, computed from the data', () => {
+test('hook (prologue): the median latest score (current system) is 92, computed from the data', () => {
   const d = S.scoreDistribution(pm);
   const scores = pm.latest.map((r) => r.score).sort((a, b) => a - b);
   assert.equal(d.n, scores.length);
@@ -30,7 +30,7 @@ test('prologue: the median latest score (current system) is 92, computed from th
   assert.ok(pm.latest.every((r) => r.era === 'cur'), 'only the current scoring system');
 });
 
-test('chapter 1: the highlighted ward is the highest share among wards with enough buildings', () => {
+test('Where? (location): the highlighted ward is the highest share among wards with enough buildings', () => {
   const w = S.wardContrast(pm);
   assert.ok(w.top, 'a ward qualifies');
   assert.ok(w.top.n >= S.WARD_MIN_BUILDINGS);
@@ -41,7 +41,7 @@ test('chapter 1: the highlighted ward is the highest share among wards with enou
   assert.ok(w.top.share > w.city, 'the ward really is above the citywide share');
 });
 
-test('chapter 2: category shares count only rated items; N/A and blanks never count as low or as a pass', () => {
+test('What? (problems): category shares count only rated items; N/A and blanks never count as low or as a pass', () => {
   const c = S.categoryShares(pm);
   for (const z of c.zones) {
     assert.ok(z.n > 0 && z.n <= pm.latest.length);
@@ -60,7 +60,7 @@ test('chapter 2: category shares count only rated items; N/A and blanks never co
   assert.ok(c.zones[0].share >= c.zones[1].share, 'sorted, so the story names the largest');
 });
 
-test('chapters 3–4: the example pair follows the documented rule and is not exaggerated', () => {
+test('What’s inside a 92? and the aha (building, compare): the example pair follows the documented rule and is not exaggerated', () => {
   const p = S.examplePair(pm);
   const median = S.scoreDistribution(pm).median;
   const [a, b] = sel.sameScorePairs(pm.latest, median, pm.cats)[0];
@@ -76,7 +76,7 @@ test('chapters 3–4: the example pair follows the documented rule and is not ex
   assert.equal(p.a.topZone.poor, d3.max(p.a.profile.zones, (z) => z.poor));
 });
 
-test('chapter 5: history is reported within one scoring system; the other system is never compared', () => {
+test('When? (history): history is reported within one scoring system; the other system is never compared', () => {
   const p = S.examplePair(pm);
   for (const r of [p.a.rec, p.b.rec]) {
     const h = S.historyIn(M, r.rsn, 'cur');
@@ -107,4 +107,20 @@ test('homepage atlas data: well-formed, inside its box, rentals point at real fo
     assert.ok(r.b.length && r.b.every((i) => Number.isInteger(i) && i >= 0 && i < doc.b.length));
   }
   assert.ok(doc.sources.some((s) => /3D Massing/.test(s)) && doc.sources.some((s) => /Centreline/.test(s)));
+});
+
+test('the story follows the storyboard: setting → hook → rising insights → one aha → next step', async () => {
+  globalThis.LLC ??= { fmt: { n: String }, hash: () => 0, tip: {} };   // ui.js expects the explorer's chart helpers (a browser global)
+  const { CHAPTERS, STAGES, chapterIndex } = await import('../dashboard/js/story/chapters.js');
+  const order = Object.keys(STAGES);
+  const stages = CHAPTERS.map((c) => c.stage);
+  for (let i = 1; i < stages.length; i++) assert.ok(order.indexOf(stages[i]) >= order.indexOf(stages[i - 1]), `stages in order: ${stages.join(' → ')}`);
+  for (const st of order) assert.ok(stages.includes(st), `has a ${st} frame`);
+  assert.equal(stages.filter((s) => s === 'aha').length, 1, 'exactly one aha');
+  const rising = CHAPTERS.filter((c) => c.stage === 'rising');
+  assert.ok(rising.length >= 2 && rising.length <= 4, '2–4 rising insights');
+  const D = { pair: { a: { rec: { score: 92 } } } };
+  for (const c of rising) assert.match(c.question(D), /\?$/, `${c.id}: one question per rising insight`);
+  assert.equal(CHAPTERS[chapterIndex('aha')].stage, 'aha', 'the old #/story/aha address opens the aha frame');
+  assert.ok(CHAPTERS.at(-1).final, 'the next step ends with an action');
 });

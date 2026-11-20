@@ -101,8 +101,8 @@ function history(el, D, app) {
 function steps(el, D) {
   const items = [
     { n: '01', title: 'Compare the area', text: 'How does the building’s ward compare with the city?', href: '#/explore?lens=wards', go: 'Explore the map' },
-    { n: '02', title: 'Read the inspection', text: 'Which items did inspectors rate low, not only the total?', href: `#/xray/${D.pair.a.rec.rsn}`, go: 'Open a Building X-Ray' },
-    { n: '03', title: 'Check the history', text: 'A score describes inspection day. Is it rising or falling?', href: '#/explore?lens=changes', go: 'Re-inspection changes' },
+    { n: '02', title: 'Check the history', text: 'A score describes inspection day. Is it rising or falling?', href: '#/explore?lens=changes', go: 'Re-inspection changes' },
+    { n: '03', title: 'Read the inspection', text: 'Which items did inspectors rate low, not only the total?', href: `#/xray/${D.pair.a.rec.rsn}`, go: 'Open a Building X-Ray' },
   ];
   el.innerHTML = `<ol class="story-steps">${items.map((s) => `
     <li><span class="story-step-n" aria-hidden="true">${s.n}</span>
