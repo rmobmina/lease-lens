@@ -1,7 +1,11 @@
-// Compare buildings: the one comparison view in LeaseLens (the project's novel view: the inspection fingerprint).
-// Each building's latest evaluation is laid out on the same grid: one square per inspection
-// item, grouped into five areas, coloured by the item's rating. Because every item sits in the
-// same place for every building, two fingerprints can be compared at a glance.
+// Compare buildings: the one comparison view in LeaseLens, a purpose-built side-by-side comparison.
+//
+// Two building summaries of equal width lead the page, one column per building: its address selector, overall
+// score, inspection date and a link to its inspection. One short observation from the data follows, then three
+// views of the same pair, always A on the left and B on the right:
+//   By category      paired bars per inspection area on one scale (fp-profile.js)
+//   Every item       one shared matrix: a row per inspection item, grouped by area; item · A · B (fp-rows.js)
+//   All of Toronto   the citywide context for every item (or the ward's, when a ward filter is on, and it says so)
 //
 // One layout, one pair of building selectors (A and B) and one comparison state (main.js state.fp), whichever
 // way the reader arrives; the entry point only supplies the first selection:
@@ -10,16 +14,18 @@
 //                                                    score in the same scoring system (the most different one),
 //                                                    or empty with a note when there is none
 //   the map's Compare mode        #/compare/<A>/<B>  exactly that pair, whatever their scores
-// Either building can be replaced through address search, including with a building of a different score;
-// both actual scores are always shown, and same-score wording is used only when the scores match.
-// All data work lives in ../fingerprint-model.js; this file only draws and handles input.
+// Either building can be replaced through address search, including with a building of a different score or one
+// evaluated only under the 2017 – 2023 system. Both actual scores are always shown. Scores and ratings are compared
+// only within one scoring system: a pair from the two systems lists each building's items side by side, each on its
+// own scale, and says so. All data work lives in ../fingerprint-model.js; this file only draws and handles input.
 
 import { enhanceSelect } from '../components/select.js';
 import { initSearch } from '../atlas/search.js';
 import { itemLabel } from '../model.js';
-import { itemStats, buildingProfile, sameScorePairs, sameScoreMatch, scoreOptions, cityFindings, SCALE_MAX, UNCOMMON_SHARE } from '../fingerprint-model.js';
+import { itemStats, buildingProfile, eraProfile, pairRows, rowMatches, pairObservation, sameScorePairs, sameScoreMatch, scoreOptions, cityFindings, SCALES, UNCOMMON_SHARE } from '../fingerprint-model.js';
 import { tip, pct, fmt, esc, titleCase, formatDate, cssVar, anchorEvent } from '../ui.js';
 import { renderProfile, refitProfile } from './fp-profile.js';
+import { rowsHtml, colHead, bindItemTips } from './fp-rows.js';
 import { reducedMotion } from '../motion.js';
 
 const $ = (id) => document.getElementById(id);
@@ -28,7 +34,7 @@ const PER_ROW = 13; // the largest group has 13 items, so each group fits on one
 const reduceMotion = reducedMotion;
 
 let layoutCache = { key: null, layout: null };
-const prevFill = { a: new Map(), b: new Map() }; // last colours drawn, so a change of building animates
+let searchCache = { key: null, list: [] };
 let wired = false;
 // One view at a time (By category · Every item · All of Toronto), swapped in place so the page fits the
 // window. Charts measure the panel they are drawn in, so the shown panel is redrawn when it changes.
@@ -36,9 +42,13 @@ const TABS = ['profile', 'items', 'city'];
 let tab = 'profile';
 let last = null;
 let shown = null; // the pair on screen, for the address suggestions
+// Every item: which rows to show, and which areas are open (one at a time under "Show all")
+let filter = 'all';
+let openAreas = null;
+let pairKey = '';
 
 const ratingColor = (v) => cssVar(`--fp-${v}`);
-const ratingText = (v) => `${v} of ${SCALE_MAX}`;
+const sysName = (r) => SCALES[r.era].system;
 
 export function renderFingerprint(ctx, M, state) {
   const { pm } = ctx;
@@ -51,77 +61,84 @@ export function renderFingerprint(ctx, M, state) {
   if (off) return;
 
   // The grid order and the "uncommon" reference always use all of Toronto, so a building's
-  // fingerprint looks the same whichever ward filter is on.
+  // items read the same way whichever ward filter is on.
   if (layoutCache.key !== pm) layoutCache = { key: pm, layout: itemStats(pm.latest, pm.cats, itemLabel) };
   const layout = layoutCache.layout;
+  const other = M.byPeriod.pre;
 
   // ---- which two buildings -------------------------------------------------
   // state.a / state.b are the reader's choices (or the entry point's); a B that is only suggested is never
-  // stored, so replacing A suggests again. The other scoring system is looked up only to explain why a
-  // building can't be lined up item by item.
+  // stored, so replacing A suggests again. A building evaluated only under the 2017 – 2023 system is found there.
   const pool = ctx.latest.length >= 2 ? ctx.latest : pm.latest;
   const options = scoreOptions(pool);
   if (!options.some((o) => o.score === state.score)) state.score = options.some((o) => o.score === 92) ? 92 : d3.median(options, (o) => o.score) | 0;
-  const other = M.byPeriod[pm.era === 'cur' ? 'pre' : 'cur'];
-  const elsewhere = (rsn) => (rsn && !pm.latestByRsn.has(rsn) ? other.latestByRsn.get(rsn) ?? null : null);
-  let a = state.a && pm.latestByRsn.get(state.a);
-  let b = state.b && pm.latestByRsn.get(state.b);
-  const aOld = elsewhere(state.a), bOld = elsewhere(state.b);
+  const find = (rsn) => (rsn ? pm.latestByRsn.get(rsn) ?? other.latestByRsn.get(rsn) ?? null : null);
+  let a = find(state.a);
+  let b = find(state.b);
   let pairs = [];
   let mode = 'example';
   let suggested = false;
   if (state.a || state.b) {
     mode = 'custom';
-    if (a && !state.b) { b = sameScoreMatch(a, pool.some((r) => r.rsn === a.rsn) ? pool : pm.latest, pm.cats) ?? sameScoreMatch(a, pm.latest, pm.cats); suggested = !!b; }
+    if (a && !state.b && a.era === pm.era) { b = sameScoreMatch(a, pool.some((r) => r.rsn === a.rsn) ? pool : pm.latest, pm.cats) ?? sameScoreMatch(a, pm.latest, pm.cats); suggested = !!b; }
   } else {
     pairs = sameScorePairs(pool, state.score, pm.cats);
     if (!pairs.length) pairs = sameScorePairs(pm.latest, state.score, pm.cats);
     [a, b] = pairs[state.pairIndex % Math.max(1, pairs.length)] ?? [];
   }
+  const profile = (r) => r && (r.era === pm.era ? buildingProfile(r, layout) : eraProfile(r, other.cats, itemLabel));
+  const pa = profile(a), pb = profile(b);
 
-  // ---- controls --------------------------------------------------------------
+  // ---- the two summaries and the examples control ------------------------------
   // The examples menu always shows the score on screen: the pair's score, or building A's when the reader chose
   // their own buildings (choosing a score from it goes back to matched pairs at that score).
-  const shownScore = mode === 'custom' && a ? a.score : state.score;
+  const shownScore = mode === 'custom' && a && a.era === pm.era ? a.score : state.score;
   const opts = options.some((o) => o.score === shownScore) ? options : [...options, { score: shownScore, n: 1 }].sort((x, y) => x.score - y.score);
   const sel = $('fp-score');
   sel.innerHTML = opts.map((o) => `<option value="${o.score}" ${o.score === shownScore ? 'selected' : ''}>${o.score} (${fmt.n(o.n)} building${o.n === 1 ? '' : 's'})</option>`).join('');
-  shown = { a, b, pool, pm };
+  shown = { a, b, pm, other };
   $('fp-next').hidden = mode === 'custom' || pairs.length < 2;
   $('fp-next').textContent = pairs.length > 1 ? `Show another pair (${(state.pairIndex % pairs.length) + 1} of ${pairs.length})` : '';
   $('fp-reset').hidden = mode !== 'custom';
-  $('fp-a').placeholder = a ? titleCase(a.address) : aOld ? titleCase(aOld.address) : 'Start typing an address…';
-  $('fp-b').placeholder = b ? titleCase(b.address) : bOld ? titleCase(bOld.address) : 'Start typing an address…';
-  $('fp-a-meta').innerHTML = pickMeta(a ?? aOld, pm, !a && aOld);
-  $('fp-b-meta').innerHTML = pickMeta(b ?? bOld, pm, !b && bOld, suggested ? 'Suggested: same score' : '');
+  for (const [slot, r] of [['a', a], ['b', b]]) {
+    $(`fp-${slot}`).placeholder = r ? titleCase(r.address) : 'Start typing an address…';
+    $(`fp-${slot}-name`).textContent = r ? titleCase(r.address) : '';
+    $(`fp-${slot}-meta`).innerHTML = summary(r, slot === 'b' && suggested ? 'Suggested: same score' : '');
+    document.querySelector(`.fp-card[data-slot="${slot}"]`).classList.toggle('is-empty', !r);
+  }
   $('fp-b-label').textContent = b && suggested ? 'Building B (suggested)' : 'Building B';
 
   // ---- intro numbers (computed, not typed) -------------------------------------
   const scores = pm.latest.map((r) => r.score).sort(d3.ascending);
   // the citywide spread lives in the title's ⓘ (read from this hidden source by the info popover)
   $('fp-spread').innerHTML = `<p>Half of Toronto's ${fmt.n(scores.length)} evaluated buildings score between <b>${d3.quantileSorted(scores, 0.25)}</b> and <b>${d3.quantileSorted(scores, 0.75)}</b>, so a score alone separates buildings very little.</p>`;
-  renderLegend();
+  renderLegend(pa, pb);
 
   // ---- the pair -------------------------------------------------------------------
-  const pa = a && buildingProfile(a, layout);
-  const pb = b && buildingProfile(b, layout);
-  // Without two buildings in this scoring system there is nothing to line up: say why and what to do, and
-  // keep the item views out of the way (never a score difference or item comparison across the two systems).
+  // Without two buildings there is nothing to line up: say what is missing and what to do, and keep the item
+  // views out of the way.
   const ready = !!(pa && pb);
   $('fp-pair').hidden = !ready;
-  $('fp-verdict').innerHTML = ready ? takeaway(pa, pb, suggested) : missing({ a, b, aOld, bOld, mode, pm, score: state.score });
+  $('fp-verdict').innerHTML = ready ? observation(pa, pb) : missing({ a, b, mode, pm, score: state.score });
   if (!ready) { $('fp-legend').hidden = true; $('fp-legend-btn').setAttribute('aria-expanded', 'false'); }
   renderProfile($('fp-profile'), pa, pb);
-  // the guided story shows the item grids without the tabs
   const story = document.body.classList.contains('is-story');
-  if (tab === 'items' || story) drawMatrix($('fp-matrix'), pa, pb, ctx, pm);
-  renderTable(layout, pa, pb);
+  if (ready) {
+    const key = `${a.rsn}|${b.rsn}`;
+    if (key !== pairKey) { pairKey = key; openAreas = null; if (filter === 'diff' && a.era !== b.era) filter = 'all'; }
+    if (tab === 'items' || story) drawMatrix($('fp-matrix'), pa, pb, ctx);
+    for (const slot of ['a', 'b']) ctx.registerShown?.(slot, (slot === 'a' ? a : b).rsn);
+  } else $('fp-matrix').innerHTML = '';
+  renderTable(pa, pb);
 
-  // ---- Toronto overview -------------------------------------------------------------
+  // ---- Toronto overview (or the ward's, labelled as such) ------------------------------
   if (tab === 'city' && !story) {
+    const wardName = ctx.ward ? pm.latest.find((r) => r.ward === ctx.ward)?.wardName ?? 'this ward' : null;
     const cityLayout = ctx.ward ? { groups: layout.groups, stats: itemStats(ctx.latest, pm.cats, itemLabel).stats } : layout;
-    renderCityNotes(cityLayout, ctx);
-    drawCity($('fp-city-chart'), cityLayout, ctx.latest.length);
+    const pop = { ward: wardName, n: ctx.ward ? ctx.latest.length : pm.latest.length };
+    $('fp-city-title').textContent = pop.ward ? `The same items, for the ${fmt.n(pop.n)} evaluated buildings in ${pop.ward}` : 'The same items, for every building in Toronto';
+    renderCityNotes(cityLayout, pop);
+    drawCity($('fp-city-chart'), cityLayout, pop);
   }
   renderMethod(pm, layout);
 }
@@ -149,29 +166,33 @@ function wire(ctx) {
   if (wired) return;
   wired = true;
   $('fp-score').addEventListener('change', (e) => ctx.setFp({ score: +e.target.value, pairIndex: 0, a: null, b: null }));
-  enhanceSelect($('fp-score'), { search: true, searchLabel: 'Search scores', placeholder: 'Find a score…' });
+  enhanceSelect($('fp-score'), { search: true, searchLabel: 'Search scores', placeholder: 'Find a score…', labelledBy: 'fp-score-label', className: 'fp-score-select' });
   $('fp-next').addEventListener('click', () => ctx.setFp((s) => ({ pairIndex: s.pairIndex + 1 })));
   $('fp-reset').addEventListener('click', () => ctx.setFp({ a: null, b: null, pairIndex: 0 }, '#/compare'));
-  // Building A / B: address search over the buildings evaluated under the scoring system on screen (scores
-  // from the two systems are never compared). Empty, a field suggests buildings with the same score as the
-  // other building; each option says whether its score matches.
+  // Building A / B: address search over every evaluated building (the latest evaluation of each; a building only
+  // evaluated before 2023 is listed with its system). Empty, a field suggests buildings with the same score as
+  // the other building; each option says how its score relates.
+  const searchable = () => {
+    if (!shown) return [];
+    if (searchCache.key !== shown.pm) searchCache = { key: shown.pm, list: [...shown.pm.latest, ...shown.other.latest.filter((r) => !shown.pm.latestByRsn.has(r.rsn))] };
+    return searchCache.list;
+  };
   const pick = (slot) => {
     const other = slot === 'a' ? 'b' : 'a';
-    const sameAs = (r) => shown?.[other] && r.score === shown[other].score && r.rsn !== shown[other].rsn;
+    const sameAs = (r) => shown?.[other] && r.era === shown[other].era && r.score === shown[other].score && r.rsn !== shown[other].rsn;
     initSearch($(`fp-${slot}`), $(`fp-${slot}-list`), {
-      source: () => shown?.pm.latest ?? [],
-      describe: (r) => `${esc(r.wardName)} · score <b class="tnum">${r.score}</b>${shown?.[other] ? (r.score === shown[other].score ? ' · same score' : ` · ${r.score > shown[other].score ? '+' : '−'}${Math.abs(r.score - shown[other].score)} vs ${slot === 'a' ? 'B' : 'A'}`) : ''}`,
+      source: searchable,
+      describe: (r) => {
+        const o = shown?.[other];
+        const rel = !o ? '' : r.era !== o.era ? ` · ${sysName(r)} system` : r.score === o.score ? ' · same score' : ` · ${r.score > o.score ? '+' : '−'}${Math.abs(r.score - o.score)} vs ${other.toUpperCase()}`;
+        return `${esc(r.wardName)} · score <b class="tnum">${r.score}</b>${!o && r.era !== shown?.pm.era ? ` · ${sysName(r)} system` : rel}`;
+      },
       suggest: () => {
         if (!shown?.[other]) return null;
-        const pool = shown.pm.latest.filter(sameAs);
-        return { label: `Also scored ${shown[other].score}`, records: d3.shuffle(pool.slice()).slice(0, 6) };
+        const pool = searchable().filter(sameAs);
+        return pool.length ? { label: `Also scored ${shown[other].score}`, records: d3.shuffle(pool.slice()).slice(0, 6) } : null;
       },
-      noMatch: (text) => {
-        const elsewhere = ctx.searchAll?.().some((r) => r.era !== shown?.pm.era && r.address.includes(text.toUpperCase()));
-        return elsewhere
-          ? 'Only evaluated under the other scoring system. Scores from the two systems aren’t compared; switch systems to see it.'
-          : 'No evaluated building matches that address.';
-      },
+      noMatch: () => 'No evaluated building matches that address.',
       // Replacing one building keeps the other. A B the reader chose stays, whatever its score; a B that was
       // only suggested is suggested again for the new A. Picking the building already in the other slot swaps nothing.
       onPick: (r) => {
@@ -194,6 +215,35 @@ function wire(ctx) {
     e.preventDefault();
     showTab(TABS[(next + TABS.length) % TABS.length], true);
   });
+  // Every item: the filter (a radio group: arrow keys move and select) and the areas (one open at a time under
+  // "Show all"; every matching area open under the other two filters)
+  const setFilter = (f, focus) => {
+    if (f === filter || $(`fp-filter-${f}`)?.disabled) return;
+    filter = f; openAreas = null;
+    if (last) renderFingerprint(...last);
+    document.querySelector('.fp-matrix-scroll')?.scrollTo({ top: 0 });
+    if (focus) $(`fp-filter-${f}`)?.focus();
+  };
+  $('fp-filter').addEventListener('click', (e) => { const b = e.target.closest('[data-filter]'); if (b) setFilter(b.dataset.filter); });
+  $('fp-filter').addEventListener('keydown', (e) => {
+    const on = [...$('fp-filter').querySelectorAll('[data-filter]:not(:disabled)')];
+    const i = on.findIndex((b) => b.dataset.filter === filter);
+    const d = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[e.key];
+    if (d == null || !on.length) return;
+    e.preventDefault();
+    setFilter(on[(i + d + on.length) % on.length].dataset.filter, true);
+  });
+  $('fp-matrix').addEventListener('click', (e) => {
+    const btn = e.target.closest('.fp-m-gbtn');
+    if (!btn) return;
+    const k = btn.dataset.key;
+    const open = new Set(openAreas ?? []);
+    if (open.has(k)) open.delete(k);
+    else { if (filter === 'all') open.clear(); open.add(k); }
+    openAreas = [...open];
+    syncAreas($('fp-matrix'));
+    btn.focus({ preventScroll: true });
+  });
   // the rating legend: a labelled disclosure beside the tabs
   $('fp-legend-btn').addEventListener('click', () => {
     const open = $('fp-legend').hidden;
@@ -210,152 +260,101 @@ function wire(ctx) {
   }
   // charts follow the panel's size
   let raf = 0;
-  new ResizeObserver(() => { cancelAnimationFrame(raf); raf = requestAnimationFrame(() => { if (!last || $('fp-main').closest('[hidden]')) return; if (tab === 'profile') refitProfile($('fp-profile')); else renderFingerprint(...last); }); })
+  new ResizeObserver(() => { cancelAnimationFrame(raf); raf = requestAnimationFrame(() => { if (!last || $('fp-main').closest('[hidden]')) return; if (tab === 'profile') refitProfile($('fp-profile')); else if (tab === 'city') renderFingerprint(...last); }); })
     .observe($('fp-panel-items').parentElement);
 }
 
-// ---- the takeaway ------------------------------------------------------------------------
-// One sentence under the selectors, from the data: the shared score, then who had items rated 0 or 1.
-function takeaway(pa, pb, suggested = false) {
+// ---- the summaries -------------------------------------------------------------------------
+// Under each building's address field: its overall score, when it was inspected, where it is, and its inspection.
+function summary(r, note = '') {
+  if (!r) return '<p class="fp-empty">No building chosen yet</p>';
+  return `${note ? `<p class="fp-pick-note">${esc(note)}</p>` : ''}
+    <p class="fp-big"><b class="tnum">${r.score}</b><span>/100</span></p>
+    <p class="fp-facts">Inspected ${formatDate(r.date)} · ${esc(r.wardName)}${r.era !== 'cur' ? ` · ${sysName(r)} system` : ''}</p>
+    <p class="fp-facts"><a href="#/xray/${r.rsn}">View inspection<span class="visually-hidden"> of ${esc(titleCase(r.address))}</span> <span aria-hidden="true">→</span></a></p>`;
+}
+
+// ---- the observation ------------------------------------------------------------------------
+// One short sentence from the data, only where it helps. Score wording only when the two systems are comparable.
+function observation(pa, pb) {
+  const o = pairObservation(pa, pb);
+  const P = { a: pa, b: pb };
   const name = (p) => `<b>${esc(titleCase(p.rec.address))}</b>`;
-  const n = (p) => p.low.length;
-  const items = (k) => (k === 1 ? 'an item' : `${k} items`);
-  const same = pa.rec.score === pb.rec.score;
-  const tag = same ? `<span class="fp-tag">${suggested ? 'Suggested match: same score' : 'Same score'}</span> ` : '<span class="fp-tag fp-tag-diff">Different scores</span> ';
-  const lead = same
-    ? `${tag}Both scored <b>${pa.rec.score}</b>.`
-    : `${tag}A scored <b>${pa.rec.score}</b> and B scored <b>${pb.rec.score}</b>, ${Math.abs(pa.rec.score - pb.rec.score)} point${Math.abs(pa.rec.score - pb.rec.score) === 1 ? '' : 's'} apart.`;
-  let tail;
-  if (!n(pa) && !n(pb)) tail = 'Neither had an item rated 0 or 1.';
-  else if (!n(pb)) tail = `Only ${name(pa)} had ${items(n(pa))} rated 0 or 1.`;
-  else if (!n(pa)) tail = `Only ${name(pb)} had ${items(n(pb))} rated 0 or 1.`;
-  else tail = `${name(pa)} had ${items(n(pa))} rated 0 or 1; ${name(pb)} had ${n(pb)}.`;
-  return `${lead} ${tail}`;
+  const lows = (p) => (p.low.length ? `${p.low.length} of ${p.rated}` : `none of ${p.rated}`);
+  const score = pa.rec.score;
+  if (o.kind === 'systems') return `${name(pa)} was scored under the ${sysName(pa.rec)} system and ${name(pb)} under the ${sysName(pb.rec)} system. The two rated different items on different scales, so their scores and ratings can’t be compared directly; each building’s items are listed side by side.`;
+  if (o.kind === 'scores') {
+    const hi = P[o.hi], lo = P[o.hi === 'a' ? 'b' : 'a'];
+    return `${name(hi)} scored ${o.points} point${o.points === 1 ? '' : 's'} higher and had ${lows(hi)} items rated low. ${name(lo)} had ${lows(lo)}.`;
+  }
+  if (o.kind === 'same-score-lows') {
+    const g = o.area;
+    const where = g ? ` The biggest gap is in ${esc(g.label.toLowerCase())}: ${g.a.low} of ${g.a.rated} against ${g.b.low} of ${g.b.rated}.` : '';
+    return `Both scored ${score}, but ${name(pa)} had ${lows(pa)} items rated low and ${name(pb)} had ${lows(pb)}.${where}`;
+  }
+  if (o.kind === 'same-score-items') return `Both scored ${score} and had ${pa.low.length} item${pa.low.length === 1 ? '' : 's'} rated low, but ${o.sharedLow ? `only ${o.sharedLow} of them on the same item` : 'never on the same item'}.`;
+  return o.diffRows ? `Both scored ${score}, with the same number of items rated low; inspectors rated ${o.diffRows} item${o.diffRows === 1 ? '' : 's'} differently.` : '';
 }
 
 // When there is no pair to draw: what is missing, and what the reader can do about it.
-function missing({ a, b, aOld, bOld, mode, pm, score }) {
-  const sys = pm.era === 'cur' ? '2023 – now' : '2017 – 2023';
-  const old = (r) => `<b>${esc(titleCase(r.address))}</b> was last evaluated in ${r.date.slice(0, 4)}, under the ${r.era === 'cur' ? '2023 – now' : '2017 – 2023'} scoring system (score ${r.score}). That system rated different items on a different scale, so its inspection can’t be lined up item by item, or its score compared, with one from the ${sys} system.`;
-  if (aOld) return `${old(aOld)} Choose a building evaluated under the ${sys} system as Building A.`;
-  if (bOld) return `${old(bOld)} Choose a building evaluated under the ${sys} system as Building B.`;
-  if (a && !b) return `<span class="fp-tag fp-tag-diff">No same-score match</span> No other building scored exactly <b>${a.score}</b> under the ${sys} system. Choose any building as Building B to compare, and both scores will be shown.`;
+function missing({ a, b, mode, pm, score }) {
+  const sys = SCALES[pm.era].system;
+  if (a && !b && a.era !== pm.era) return `<b>${esc(titleCase(a.address))}</b> was last evaluated in ${a.date.slice(0, 4)}, under the ${sysName(a)} scoring system. Choose a Building B to set beside it. Items from two systems are listed side by side, but their scores and ratings aren’t compared.`;
+  if (a && !b) return `No other building scored exactly <b>${a.score}</b> under the ${sys} system. Choose any building as Building B to compare; both scores will be shown.`;
   if (!a && b) return 'Choose Building A to compare.';
   return mode === 'example' ? `Fewer than two buildings scored ${score} under the ${sys} system, so there’s no example pair at that score. Choose another score or type two addresses.` : 'Choose two buildings to compare.';
 }
 
-// The line under each building's field: its actual score, where it is, when it was inspected, and its inspection.
-function pickMeta(r, pm, otherSystem, note = '') {
-  if (!r) return '';
-  const sys = otherSystem ? ` · ${r.era === 'cur' ? '2023 – now' : '2017 – 2023'} system` : '';
-  return `${note ? `<span class="fp-pick-note">${esc(note)}</span>` : ''}<span class="fp-pick-score"><b class="tnum">${r.score}</b>/100</span> · ${esc(r.wardName)} · ${formatDate(r.date)}${sys}
-    · <a href="#/xray/${r.rsn}">Inspection<span class="visually-hidden"> of ${esc(titleCase(r.address))}</span></a>`;
+// ---- every item: one shared matrix --------------------------------------------------------
+// One row per inspection item, grouped by area, with three columns: the item, Building A's rating and Building B's.
+// Items are matched by their inspection identifier, so each keeps its row even when only one building has a
+// rating. A filter narrows the rows; each area is a disclosure, so a long list opens one area at a time while
+// the column headers (which building is which) stay in view.
+function drawMatrix(table, pa, pb, ctx) {
+  const P = { a: pa, b: pb };
+  const groups = pairRows(pa, pb);
+  const rows = groups.flatMap((g) => g.rows);
+  const count = { all: rows.length, diff: rows.filter((r) => r.diff).length, low: rows.filter((r) => r.low).length };
+  const twoSystems = pa.era !== pb.era;
+  const LABEL = { all: 'Show all', diff: 'Rated differently', low: 'Rated low in either building' };
+  $('fp-filter').innerHTML = ['all', 'diff', 'low'].map((f) => {
+    const off = f === 'diff' && twoSystems;
+    return `<button type="button" role="radio" class="fp-filter-btn" id="fp-filter-${f}" data-filter="${f}" aria-checked="${filter === f}" tabindex="${filter === f ? 0 : -1}"
+      ${off ? 'disabled title="Needs ratings from the same scoring system on both sides"' : ''}>${LABEL[f]} <span class="fp-filter-n">${off ? '–' : count[f]}</span></button>`;
+  }).join('');
+
+  const shownGroups = groups.map((g) => ({ ...g, rows: g.rows.filter((r) => rowMatches(r, filter)) })).filter((g) => g.rows.length);
+  // which areas start open: under "Show all", the area where the two differ most (else the first); otherwise all
+  if (!openAreas) {
+    if (filter !== 'all') openAreas = shownGroups.map((g) => g.key);
+    else {
+      const best = d3.greatest(groups, (g) => Math.abs(g.a.low - g.b.low) * 100 + g.rows.filter((r) => r.diff).length);
+      openAreas = [(best && (best.a.low !== best.b.low || best.rows.some((r) => r.diff)) ? best : groups[0]).key];
+    }
+  }
+  const side = (g, slot) => (g[slot].rated ? `${slot.toUpperCase()} ${g[slot].low} of ${g[slot].rated} low` : `${slot.toUpperCase()} no rated items`);
+  table.innerHTML = `<caption class="visually-hidden">Every inspection item for ${esc(titleCase(pa.rec.address))} (A) and ${esc(titleCase(pb.rec.address))} (B), grouped by area${filter !== 'all' ? `, ${LABEL[filter].toLowerCase()} only` : ''}</caption>
+    <colgroup><col class="fp-m-col-item" /><col class="fp-m-col-r" /><col class="fp-m-col-r" /></colgroup>
+    <thead><tr><th scope="col" class="fp-m-h-item">Inspection item</th><th scope="col" class="fp-m-h">${colHead(P, 'a')}</th><th scope="col" class="fp-m-h">${colHead(P, 'b')}</th></tr></thead>
+    ${shownGroups.length ? shownGroups.map((g) => `<tbody class="fp-m-group" data-key="${g.key}">
+      <tr class="fp-m-grow"><th scope="colgroup" colspan="3"><button type="button" class="fp-m-gbtn" data-key="${g.key}" aria-expanded="false">
+        <span class="fp-m-glabel">${esc(g.label)}</span><span class="fp-m-gcount">${side(g, 'a')} · ${side(g, 'b')}${filter !== 'all' ? ` · ${g.rows.length} shown` : ''}</span><span class="pf-chev" aria-hidden="true"></span></button></th></tr>
+      ${rowsHtml(g.rows, P)}
+    </tbody>`).join('') : `<tbody><tr><td colspan="3" class="fp-m-none">${filter === 'diff' ? 'No item was rated differently: both buildings got the same rating on every item rated in both.' : 'Neither building had an item rated low.'}</td></tr></tbody>`}`;
+  syncAreas(table);
+  bindItemTips(table, groups, P, $('fp-live'));
 }
 
-// ---- every item: one shared matrix --------------------------------------------------------
-// A row per inspection category and a column per building, so the same category reads straight across.
-// Each column header holds the building's address, inspection date and facts (once); each cell holds the
-// category's count of items rated 0 or 1, its item tiles (same order for every building) and, beside them,
-// the names of the items rated low. Names and tiles share the item's details (hover, focus, tap).
-function drawMatrix(table, pa, pb, ctx, pm) {
-  if (!pa || !pb) { table.innerHTML = '<tbody><tr><td class="card-text">No pair to show.</td></tr></tbody>'; return; }
-  const P = { a: pa, b: pb };
-  const evals = (r) => pm.recs.filter((d) => d.rsn === r.rsn).length;
-  const head = (slot) => {
-    const r = P[slot].rec, k = evals(r);
-    const facts = [`Ward ${+r.ward} · ${esc(r.wardName)}`, r.yearBuilt ? `built ${r.yearBuilt}` : null, r.storeys ? `${r.storeys} storeys` : null, r.units ? `${r.units} units` : null].filter(Boolean);
-    return `<th scope="col" class="fp-m-head">
-      <span class="card-label">Building ${slot.toUpperCase()}</span>
-      <a class="fp-name" href="#/explore?b=${r.rsn}">${esc(titleCase(r.address))}</a>
-      <span class="fp-meta">Inspected ${formatDate(r.date)}${k > 1 ? ` · latest of ${k} evaluations since 2023` : ''}</span>
-      <span class="fp-meta">${facts.join(' · ')}</span>
-      ${r.reactive != null && r.reactive < 0 ? `<span class="fp-meta">Includes a reactive adjustment of ${r.reactive} points</span>` : ''}
-    </th>`;
-  };
-  const who = (slot) => `${slot.toUpperCase()} · ${esc(titleCase(P[slot].rec.address))}`;
-  const cell = (slot, gi) => {
-    const g = P[slot].groups[gi];
-    const lows = g.items.filter((i) => i.low).sort((x, y) => x.rating - y.rating);
-    return `<td class="fp-m-cell" data-slot="${slot}" data-group="${gi}">
-      <span class="fp-m-who">${who(slot)}</span>
-      <span class="fp-m-count${g.low ? ' is-low' : ''}">${g.rated ? `<b>${g.low}</b> of ${g.rated} rated 0–1` : 'Not rated'}</span>
-      <div class="fp-m-body">
-        <div class="fp-m-tiles"></div>
-        ${lows.length ? `<ul class="fp-m-lows" aria-label="Rated 0 or 1">${lows.map((i) => `
-          <li><button type="button" class="fp-m-low" data-col="${esc(i.col)}"><span class="fp-chip" style="background:${ratingColor(i.rating)}" aria-hidden="true">${i.rating}</span><span class="fp-m-low-name">${esc(i.stat.label)}${i.uncommon ? '<span class="fp-ring" title="Uncommon low mark" aria-hidden="true"></span><span class="visually-hidden">, uncommon low mark</span>' : ''}</span></button></li>`).join('')}</ul>` : ''}
-      </div>
-    </td>`;
-  };
-  table.innerHTML = `<caption class="visually-hidden">Every inspection item, by category, for ${esc(titleCase(pa.rec.address))} and ${esc(titleCase(pb.rec.address))}</caption>
-    <colgroup><col class="fp-m-col-cat" /><col /><col /></colgroup>
-    <thead><tr><th scope="col" class="fp-m-cat-head">Inspection category</th>${head('a')}${head('b')}</tr></thead>
-    <tbody>${pa.groups.map((g, gi) => `<tr><th scope="row" class="fp-m-cat">${esc(g.label)}</th>${cell('a', gi)}${cell('b', gi)}</tr>`).join('')}</tbody>`;
-
-  // the tiles: one small grid per category and building, wrapping inside its own column
-  for (const slot of ['a', 'b']) {
-    const p = P[slot], r = p.rec;
-    const old = prevFill[slot];
-    const animate = !reduceMotion() && old.size && old.get('__rsn') !== r.rsn;
-    table.querySelectorAll(`.fp-m-cell[data-slot="${slot}"]`).forEach((td) => {
-      const g = p.groups[+td.dataset.group];
-      const box = td.querySelector('.fp-m-tiles');
-      drawTiles(box, g, r, pm, animate ? old : null);
-    });
-    prevFill[slot] = new Map([['__rsn', r.rsn], ...p.groups.flatMap((g) => g.items).filter((i) => i.status === 'rated').map((i) => [i.col, ratingColor(i.rating)])]);
-    ctx.registerShown?.(slot, r.rsn);
-  }
-
-  // the names of low-rated items open the same details as their tiles (keyboard, hover and touch)
-  table.querySelectorAll('.fp-m-low').forEach((btn) => {
-    const slot = btn.closest('.fp-m-cell').dataset.slot;
-    const it = P[slot].groups.flatMap((g) => g.items).find((i) => i.col === btn.dataset.col);
-    const show = () => { hotCol(it.col); tip.show(cellTip(it, P[slot].rec, pm), anchorEvent(btn)); $('fp-live').textContent = cellSpoken(it); };
-    const hide = () => { hotCol(null); tip.hide(); };
-    btn.addEventListener('mouseenter', show);
-    btn.addEventListener('mouseleave', hide);
-    btn.addEventListener('focus', show);
-    btn.addEventListener('blur', hide);
-    btn.addEventListener('click', show);
+function syncAreas(table) {
+  const open = new Set(openAreas ?? []);
+  const story = document.body.classList.contains('is-story');
+  table.querySelectorAll('.fp-m-group').forEach((tb) => {
+    const on = story || open.has(tb.dataset.key);   // the guided story shows every area
+    tb.classList.toggle('is-open', on);
+    tb.querySelector('.fp-m-gbtn').setAttribute('aria-expanded', String(on));
+    tb.querySelectorAll('.fp-m-row').forEach((tr) => { tr.hidden = !on; });
   });
 }
-
-function drawTiles(box, g, r, pm, old) {
-  box.innerHTML = '';
-  const width = Math.max(80, box.clientWidth);
-  const size = Math.round(Math.max(16, Math.min(22, 18 * (parseFloat(getComputedStyle(document.documentElement).fontSize) / 16 || 1))));
-  const perRow = Math.max(1, Math.floor((width + GAP) / (size + GAP)));
-  const flat = g.items.map((it, i) => ({ it, x: (i % perRow) * (size + GAP) + 2, y: Math.floor(i / perRow) * (size + GAP) + 2 }));
-  const height = Math.max(1, Math.ceil(g.items.length / perRow)) * (size + GAP) + 2;
-  const svg = d3.select(box).append('svg').attr('width', Math.min(width, perRow * (size + GAP) + 2)).attr('height', height)
-    .attr('role', 'img').attr('aria-label', `${g.label}, ${titleCase(r.address)}: ${g.low} of ${g.rated} items rated 0 or 1.`);
-  const cells = svg.append('g').attr('class', 'fp-cells').selectAll('g').data(flat).join('g')
-    .attr('class', (d) => `fp-cell ${d.it.status}`).attr('data-col', (d) => d.it.col)
-    .attr('transform', (d) => `translate(${d.x},${d.y})`);
-  cells.append('rect').attr('class', 'fp-hit').attr('x', -GAP / 2).attr('y', -GAP / 2).attr('width', size + GAP).attr('height', size + GAP);
-  const sq = cells.append('rect').attr('class', 'fp-sq').attr('width', size).attr('height', size).attr('rx', 2);
-  sq.filter((d) => d.it.status === 'rated')
-    .attr('fill', (d) => (old?.has(d.it.col) ? old.get(d.it.col) : ratingColor(d.it.rating)))
-    .transition().duration(old ? 380 : 0).attr('fill', (d) => ratingColor(d.it.rating));
-  // N/A and blank: an empty outline, never a coloured (problem-looking) square
-  sq.filter((d) => d.it.status !== 'rated').attr('fill', 'none').attr('x', 0.5).attr('y', 0.5).attr('width', size - 1).attr('height', size - 1);
-  // the digit repeats the colour for low marks, so they don't depend on colour vision
-  cells.filter((d) => d.it.low).append('text').attr('class', 'fp-digit').attr('x', size / 2).attr('y', size / 2 + 4).attr('text-anchor', 'middle').text((d) => d.it.rating);
-  cells.filter((d) => d.it.uncommon).append('rect').attr('class', 'fp-uncommon').attr('x', -2).attr('y', -2).attr('width', size + 4).attr('height', size + 4).attr('rx', 3);
-  bindCells(svg, cells, flat, (d) => cellTip(d.it, r, pm), (d) => cellSpoken(d.it), `${g.label}, ${titleCase(r.address)}`);
-}
-
-function cellTip(it, r, pm) {
-  const s = it.stat;
-  const val = it.status === 'rated' ? `<b>${ratingText(it.rating)}</b>${it.rating === SCALE_MAX ? ' (top mark)' : ''}`
-    : it.status === 'na' ? 'N/A, doesn\'t apply here (not counted)' : 'Not recorded (blank)';
-  return `<div class="tt-title">${esc(s.label)}</div>
-    <div class="tt-sub">${esc(s.groupLabel)} · City item name: ${esc(s.official)}</div>
-    <dl><dt>Rating</dt><dd>${val}</dd>
-      <dt>Inspected</dt><dd>${formatDate(r.date)}</dd>
-      <dt>Toronto</dt><dd>${pct(s.lowShare, 1)} rated 0–1 · ${pct(s.belowTopShare)} rated 2 or lower</dd></dl>
-    ${it.uncommon ? `<p class="tt-hint"><b>Uncommon:</b> fewer than ${pct(UNCOMMON_SHARE)} of buildings get a mark this low here.</p>` : ''}`;
-}
-const cellSpoken = (it) => `${it.stat.label}, ${it.stat.groupLabel}: ${it.status === 'rated' ? `rated ${ratingText(it.rating)}` : it.status === 'na' ? 'not applicable' : 'not recorded'}${it.uncommon ? ', uncommon low mark' : ''}.`;
 
 // Hover, focus and arrow keys. One tab stop per chart; arrows move between items.
 // Hovering an item highlights the same item in every chart on the page (linked comparison).
@@ -401,7 +400,8 @@ function bindCells(svg, cells, flat, tipHtml, spoken, label = 'Inspection items'
 }
 
 // ---- Toronto overview: the same grid, each square a 100% column of ratings ----------------
-function drawCity(box, layout, n) {
+function drawCity(box, layout, pop) {
+  const n = pop.n;
   box.innerHTML = '';
   const width = Math.max(280, box.clientWidth);
   const wide = width >= 760;
@@ -428,7 +428,7 @@ function drawCity(box, layout, n) {
     height = y;
   }
   const svg = d3.select(box).append('svg').attr('viewBox', `0 0 ${width} ${height}`).attr('width', width).attr('height', height)
-    .attr('role', 'img').attr('aria-label', `How ${fmt.n(n)} buildings were rated on each inspection item, grouped by area. Each column shows the share of buildings at each rating.`);
+    .attr('role', 'img').attr('aria-label', `How ${fmt.n(n)} buildings${pop.ward ? ` in ${pop.ward}` : ' in Toronto'} were rated on each inspection item, grouped by area. Each column shows the share of buildings at each rating.`);
 
   // group titles
   for (const g of layout.groups) {
@@ -462,57 +462,59 @@ function drawCity(box, layout, n) {
   svg.append('line').attr('class', 'fp-base').attr('x1', 0).attr('x2', width).attr('y1', (wide ? 34 : 0) + colH + 0.5).attr('y2', (wide ? 34 : 0) + colH + 0.5).attr('hidden', wide ? null : true);
 
   const flat = pos.map((p) => ({ ...p, it: { stat: layout.stats.get(p.col) } }));
-  bindCells(svg, cols, flat, (d) => cityTip(d.it.stat, n), (d) => `${d.it.stat.label}: ${pct(d.it.stat.lowShare)} rated 0 or 1, ${pct(d.it.stat.belowTopShare)} rated 2 or lower, across ${fmt.n(d.it.stat.rated)} buildings.`);
+  bindCells(svg, cols, flat, (d) => cityTip(d.it.stat, n, pop), (d) => `${d.it.stat.label}: ${pct(d.it.stat.lowShare)} rated 0 or 1, ${pct(d.it.stat.belowTopShare)} rated 2 or lower, across ${fmt.n(d.it.stat.rated)} buildings.`);
 }
 
-function cityTip(s, n) {
+function cityTip(s, n, pop) {
   const row = (v) => `<dt><span class="swatch bar" style="background:${ratingColor(v)}"></span> ${v}</dt><dd>${pct(s.dist[v] / s.rated, 1)} (${fmt.n(s.dist[v])})</dd>`;
-  return `<div class="tt-title">${esc(s.label)}</div><div class="tt-sub">${esc(s.groupLabel)} · ${fmt.n(s.rated)} buildings rated it</div>
+  return `<div class="tt-title">${esc(s.label)}</div><div class="tt-sub">${esc(s.groupLabel)} · ${fmt.n(s.rated)} ${pop.ward ? `${esc(pop.ward)} ` : ''}buildings rated it</div>
     <dl>${[3, 2, 1, 0].map(row).join('')}<dt>N/A</dt><dd>${fmt.n(s.na)} of ${fmt.n(n)} buildings (not counted)</dd></dl>`;
 }
 
-function renderCityNotes(layout, ctx) {
+// The two callouts under the chart. Whose buildings they describe is always named: Toronto's, or the ward's
+// (with how many buildings) when a ward filter is on.
+function renderCityNotes(layout, pop) {
   const f = cityFindings(layout);
-  const where = ctx.ward ? `In ${esc(ctx.pm.latest.find((r) => r.ward === ctx.ward)?.wardName ?? 'this ward')}` : 'Across Toronto';
+  const where = pop.ward ? `Among ${esc(pop.ward)}’s ${fmt.n(pop.n)} evaluated buildings` : `Across Toronto’s ${fmt.n(pop.n)} evaluated buildings`;
+  const whose = pop.ward ? `${esc(pop.ward)} buildings` : 'buildings';
   const list = (xs, key) => xs.map((s) => `${esc(s.label.toLowerCase())} (${pct(s[key])})`);
   const and = (a) => (a.length > 1 ? `${a.slice(0, -1).join(', ')} and ${a.at(-1)}` : a[0] ?? '');
   $('fp-city-notes').innerHTML = `
     <p><b>${where}, the same few items keep getting marked down.</b> The physical items most often rated below the top mark (2 or lower) are ${and(list(f.belowTop, 'belowTopShare'))}.</p>
-    ${f.recordsLow.length ? `<p><b>Paperwork counts too.</b> ${and(f.recordsLow.map((s) => `${pct(s.lowShare)} of buildings got a 0 or 1 for their ${esc(s.label.toLowerCase())}`))}. A building can look fine in the lobby and still be missing the records the City requires.</p>` : ''}`;
+    ${f.recordsLow.length ? `<p><b>Paperwork counts too.</b> ${and(f.recordsLow.map((s) => `${pct(s.lowShare)} of ${whose} got a 0 or 1 for their ${esc(s.label.toLowerCase())}`))}. A building can look fine in the lobby and still be missing the records the City requires.</p>` : ''}`;
 }
 
 // ---- legend, table, method --------------------------------------------------------------------
-function renderLegend() {
-  const sw = (v, label) => `<span class="key"><span class="fp-key" style="background:${ratingColor(v)}">${v <= 1 ? v : ''}</span>${label}</span>`;
+function renderLegend(pa, pb) {
+  const two = pa && pb && pa.era !== pb.era;
+  const chip = (cls, v, label) => `<span class="key"><span class="fp-r-num ${cls}">${v}</span>${label}</span>`;
+  const miss = (cls, word, label) => `<span class="key"><span class="fp-r-miss is-${cls}">${word}</span>${label}</span>`;
   $('fp-legend').innerHTML = `
-    ${sw(3, '3 · top mark')}${sw(2, '2')}${sw(1, '1 · low')}${sw(0, '0 · lowest')}
-    <span class="key"><span class="fp-key fp-key-na"></span>N/A · doesn't apply; not counted as a problem or in the score</span>
-    <span class="key"><span class="fp-key fp-key-ring" style="background:${ratingColor(1)}">1</span>uncommon low mark (fewer than ${pct(UNCOMMON_SHARE)} of Toronto buildings)</span>`;
+    ${chip('r-top', 3, 'top mark')}${chip('r-mid', 2, '')}${chip('r-low', 1, 'low')}${chip('r-lowest', 0, 'lowest (a real rating)')}
+    ${two ? '<span class="key">The 2017 – 2023 system rated 1 to 5; 1 or 2 counts as low there.</span>' : ''}
+    ${miss('na', 'N/A', 'doesn’t apply; not counted')}${miss('blank', 'No rating recorded', '')}${two ? miss('absent', 'Not in this scoring system', '') : ''}`;
 }
 
-function renderTable(layout, pa, pb) {
-  const cellTxt = (p, col) => {
-    if (!p) return '–';
-    const i = p.groups.flatMap((g) => g.items).find((x) => x.col === col);
-    return i.status === 'rated' ? `${i.rating}${i.uncommon ? ' (uncommon)' : ''}` : i.status === 'na' ? 'N/A' : 'blank';
-  };
-  $('fp-table-head').innerHTML = `<tr><th scope="col">Item</th><th scope="col">Area</th><th scope="col">${pa ? esc(titleCase(pa.rec.address)) : 'A'}</th><th scope="col">${pb ? esc(titleCase(pb.rec.address)) : 'B'}</th><th scope="col">Toronto, rated 0–1</th></tr>`;
-  $('fp-table-body').innerHTML = layout.groups.flatMap((g) => g.items.map((col) => {
-    const s = layout.stats.get(col);
-    return `<tr><th scope="row">${esc(s.label)}</th><td>${esc(g.label)}</td><td>${cellTxt(pa, col)}</td><td>${cellTxt(pb, col)}</td><td>${pct(s.lowShare, 1)}</td></tr>`;
-  })).join('');
+// The full list, as a plain table in a dialog: every item, both ratings, and how often Toronto rated it low.
+function renderTable(pa, pb) {
+  if (!pa || !pb) { $('fp-table-head').innerHTML = ''; $('fp-table-body').innerHTML = '<tr><td>Choose two buildings to compare.</td></tr>'; return; }
+  const txt = (c, S) => (c.status === 'rated' ? `${c.rating} of ${S.max}${c.low ? ' (low)' : ''}` : { na: 'N/A', blank: 'No rating recorded', absent: 'Not in this scoring system' }[c.status]);
+  $('fp-table-head').innerHTML = `<tr><th scope="col">Item</th><th scope="col">Area</th><th scope="col">A · ${esc(titleCase(pa.rec.address))}</th><th scope="col">B · ${esc(titleCase(pb.rec.address))}</th><th scope="col">Toronto, rated 0–1</th></tr>`;
+  $('fp-table-body').innerHTML = pairRows(pa, pb).flatMap((g) => g.rows.map((r) => `<tr><th scope="row">${esc(r.label)}</th><td>${esc(g.label)}</td><td>${txt(r.a, pa.scale)}</td><td>${txt(r.b, pb.scale)}</td><td>${r.stat.rated ? pct(r.stat.lowShare, 1) : '–'}</td></tr>`)).join('');
 }
 
 function renderMethod(pm, layout) {
   const nItems = layout.stats.size;
   $('fp-method').innerHTML = `<ul>
-    <li><b>Source.</b> City of Toronto Open Data, <a href="https://open.toronto.ca/dataset/apartment-building-evaluation/" target="_blank" rel="noopener">Apartment Building Evaluations</a>, 2023–current file (RentSafeTO). Evaluations from ${formatDate(pm.dates[0])} to ${formatDate(pm.dates[1])}.</li>
-    <li><b>One building, one inspection.</b> Each fingerprint shows a building's most recent evaluation. Earlier inspections are not averaged in. ${fmt.n(pm.latest.length)} buildings.</li>
-    <li><b>Ratings.</b> Inspectors rate up to ${nItems} items from 0 to 3. The data doesn't publish a word for each value, so we show the number. 3 is the top mark: the overall score rises with the average item rating. We call 0 or 1 a <b>low mark</b> (the two lowest values) and say “below the top mark” for 2 or lower. We never call an item “failed”.</li>
-    <li><b>N/A is not a problem.</b> N/A means the item doesn't apply (no pool, no elevator). It is left out of every count and drawn as an empty outline. The City's own “areas evaluated” count matches the number of items that are not N/A.</li>
-    <li><b>Percentages.</b> Share of buildings = buildings with that rating ÷ buildings where the item was rated (N/A excluded). “Uncommon” means fewer than ${pct(UNCOMMON_SHARE)} of rated buildings got a 0 or 1 on that item.</li>
-    <li><b>Groups.</b> The five areas are our grouping of the City's item names, chosen so a renter can picture where each item is. Within each area, items are ordered from most to least often low-rated across Toronto, so every fingerprint uses the same layout.</li>
-    <li><b>Example pairs.</b> For a chosen score, we pair the building with the most low marks with one at the same score that has the fewest, and step through further pairs in the same way. When you pick a building yourself, the comparison is the building at the same score whose ratings differ most.</li>
-    <li><b>Limits.</b> Ratings describe common areas on inspection day, not individual units, rents or how the landlord responds. The 2017–2023 system used different items and a 1–5 scale, so it isn't shown here.</li>
+    <li><b>Source.</b> City of Toronto Open Data, <a href="https://open.toronto.ca/dataset/apartment-building-evaluation/" target="_blank" rel="noopener">Apartment Building Evaluations</a>, 2023–current file (RentSafeTO), and the 2017–2023 file for buildings evaluated only then. Current evaluations from ${formatDate(pm.dates[0])} to ${formatDate(pm.dates[1])}.</li>
+    <li><b>One building, one inspection.</b> Each building is shown with its most recent evaluation. Earlier inspections are not averaged in. ${fmt.n(pm.latest.length)} buildings in the current system.</li>
+    <li><b>Ratings.</b> Inspectors rate up to ${nItems} items from 0 to 3. The data doesn't publish a word for each value, so we show the number. 3 is the top mark: the overall score rises with the average item rating. We call 0 or 1 a <b>low rating</b>. A 0 is a real rating, never a missing one. We never call an item “failed”.</li>
+    <li><b>Missing is not a problem.</b> N/A means the item doesn't apply (no pool, no elevator); “No rating recorded” means the cell is empty. Neither is counted, in the shares or their denominators. The City's own “areas evaluated” count matches the number of items that are not N/A.</li>
+    <li><b>Matching items.</b> Items are matched by the City's item name, so each item keeps one row. “Rated differently” needs a real rating on both sides from the same scoring system.</li>
+    <li><b>Two scoring systems.</b> The 2017–2023 system rated 20 different items from 1 to 5 (1 or 2 counts as low). Only one item name (graffiti) appears in both, on different scales. A building evaluated only then can be set beside a current one: its items are listed in the same five areas, marked “Not in this scoring system” on the other side, and no score or rating is compared across the two.</li>
+    <li><b>Percentages.</b> Share of an area = items rated low ÷ items rated in that area. Toronto shares = buildings with that rating ÷ buildings where the item was rated. “Uncommon” means fewer than ${pct(UNCOMMON_SHARE)} of rated buildings got a 0 or 1 on that item.</li>
+    <li><b>Areas.</b> The five areas are our grouping of the City's item names, chosen so a renter can picture where each item is. Within each area, items are ordered from most to least often low-rated across Toronto.</li>
+    <li><b>Example pairs.</b> For a chosen score, we pair the building with the most low ratings with one at the same score that has the fewest. From a building's inspection, Building B is the building with exactly the same score whose ratings differ most.</li>
+    <li><b>Limits.</b> Ratings describe common areas on inspection day, not individual units, rents or how the landlord responds.</li>
   </ul>`;
 }

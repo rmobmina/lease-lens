@@ -12,18 +12,20 @@ body.is-story .atlas-main { grid-template-columns: minmax(0, 1fr); position: rel
 .story-panel { position: absolute; z-index: 1100; left: var(--gut); bottom: var(--gut); width: min(380px, calc(100% - var(--gut) * 2));
   display: grid; gap: var(--space-3); padding: var(--space-5); background: var(--surface); border: var(--border); border-radius: var(--radius-md); box-shadow: var(--shadow-float); }
 .story-panel[hidden] { display: none; }
-.sc-top { display: flex; align-items: center; gap: var(--space-3); font-size: var(--text-sm); }
+/* the header: step counter and the story's ⓘ on the left, Exit on the right */
+.sc-top { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); font-size: var(--text-sm); }
+.sc-lead { display: flex; align-items: center; gap: var(--space-1); }
 /* the step counter ("2/7"): fixed width, so the caption's top line never shifts between steps */
-.sc-count { flex: none; min-width: 3.2em; font-size: var(--text-base); color: var(--muted); font-variant-numeric: tabular-nums; }
+.sc-count { flex: none; font-size: var(--text-base); color: var(--muted); font-variant-numeric: tabular-nums; }
 .sc-count b { color: var(--ink); font-weight: var(--weight-bold); }
-.sc-name { display: flex; align-items: center; gap: var(--space-2); color: var(--muted); }
-.sc-exit { margin-left: auto; font: inherit; font-size: var(--text-sm); color: var(--ink-2); background: none; border: 0; padding: var(--space-1) 0; cursor: pointer; }
+.sc-exit { flex: none; font: inherit; font-size: var(--text-sm); color: var(--ink-2); background: none; border: 0; padding: var(--space-1) 0; cursor: pointer; }
 .sc-exit:hover { color: var(--ink); }
 .sc-exit span { font-size: var(--text-lg); line-height: 1; margin-left: var(--space-1); }
 .sc-title { font-family: var(--font-display); font-size: clamp(24px, 2vw, 30px); font-weight: var(--weight-bold); line-height: 1.1; letter-spacing: var(--tracking-display); outline: none; text-wrap: balance; }
-.sc-text { font-size: var(--text-md); line-height: var(--leading-body); color: var(--ink-2); }
-/* the copy keeps one height across steps (story/controller.js reserveCopy), so nothing below or above it moves */
-.sc-copy { display: grid; align-content: start; gap: var(--space-3); }
+.sc-text { font-size: var(--text-md); line-height: var(--leading-body); color: var(--ink-2); text-wrap: pretty; }
+/* the question leads; the answer follows in short blocks (set up · notice · bridge), each its own paragraph */
+.sc-copy { display: grid; align-content: start; gap: var(--space-2); }
+.sc-title { margin-bottom: var(--space-1); }
 .sc-foot { display: flex; align-items: flex-end; justify-content: space-between; gap: var(--space-3); margin-top: var(--space-1); }
 .sc-act { flex: 1; display: grid; justify-items: start; align-content: end; gap: var(--space-1); min-width: 0; }
 .sc-action, .sc-detail { font: inherit; font-size: var(--text-base); font-weight: var(--weight-semibold); color: var(--accent); background: none; border: 0; padding: var(--space-1) 0; cursor: pointer; text-align: left; }
@@ -87,26 +89,30 @@ body.is-story .xr-side { min-height: 0; overflow-y: auto; }
 /* the category list and its "View all items" list swap in place, as in Explore (building.css) */
 body.is-story .xr-section, body.is-story .xr-method, body.is-story .xr-head { display: none; }
 
-/* the comparison: the two inspection profiles, side by side, nothing else */
+/* the comparison: the two building summaries (names and scores, no address fields) and the paired bars */
 body.is-story .fp-view { display: flex; align-items: center; }
 body.is-story .fp-wrap { width: 100%; max-width: 1120px; margin: 0 auto; }
-body.is-story .fp-verdict, body.is-story .fp-controls, body.is-story .fp-table,
+body.is-story .fp-verdict, body.is-story .fp-examples, body.is-story .fp-table, body.is-story .fp-filter,
 body.is-story .fp-city, body.is-story .fp-method-block, body.is-story .fp-intro, body.is-story .fp-items-title { display: none; }
-/* the chapter shows the paired profile; "Show every item" swaps it for the two full item grids */
+body.is-story .fp-search, body.is-story .fp-card-head .info-btn, body.is-story .fp-pick-note, body.is-story .fp-facts:last-child { display: none; }
+body.is-story .fp-card-name { display: block; }
+body.is-story .fp-sum { margin-bottom: var(--space-4); }
+/* the chapter shows the paired bars; "Show every item" swaps them for the shared item matrix */
 body.is-story:not(.story-items) .fp-matrix-scroll, body.is-story:not(.story-items) .fp-legend { display: none; }
 /* "Show every item": the matrix fills the stage and scrolls inside itself (the one place the story scrolls) */
 body.is-story.story-items .fp-wrap { height: 100%; }
 body.is-story.story-items .fp-wrap, body.is-story.story-items .fp-main, body.is-story.story-items .fp-pair, body.is-story.story-items .fp-panels, body.is-story.story-items #fp-panel-items { display: flex !important; flex-direction: column; min-height: 0; max-height: 100%; }
 body.is-story.story-items .fp-main, body.is-story.story-items .fp-pair, body.is-story.story-items .fp-panels, body.is-story.story-items #fp-panel-items { flex: 1; }
 body.is-story.story-items #fp-panel-profile { display: none !important; }
-body.is-story .fp-m-head .fp-meta:nth-of-type(n+2) { display: none; } /* the caption has the facts */
 body.is-story.story-items .fp-profile { display: none; }
 body.is-story .fp-profile { margin: 0; }
 body.is-story .fp-view { align-items: safe center; }
 @media (max-width: 760px) {
-  /* the caption already states both totals; the chart keeps names, scores and the five rows */
-  body.is-story .pf-total, body.is-story .pf-cap, body.is-story .pf-tag { display: none; }
-  body.is-story .pf-h { padding-bottom: var(--space-2); }
+  /* the caption already states both totals; the chart keeps the names, scores and the five rows */
+  body.is-story .pf-cap, body.is-story .fp-facts { display: none; }
+  body.is-story .fp-sum { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-2); margin-bottom: var(--space-2); }
+  body.is-story .fp-card { padding: var(--space-2); }
+  body.is-story .fp-card-name { font-size: var(--text-base); }
 }
 
 /* ---- the one detail view: an analysis layer, above the stage, scrolling inside itself ---------------- */
@@ -135,7 +141,6 @@ body.story-detail .lens { max-height: 100%; }
   body.is-story { --gut: var(--space-3); --safe-left: var(--gut); --safe-bottom: calc(var(--cap-h, 240px) + var(--gut)); }
   .story-panel { left: 0; right: 0; bottom: 0; width: auto; border-radius: var(--radius-md) var(--radius-md) 0 0; border-bottom: 0;
     padding: var(--space-4) var(--space-4) calc(var(--space-3) + env(safe-area-inset-bottom)); gap: var(--space-2); }
-  .sc-name { display: none; }
   .sc-title { font-size: 21px; }
   .sc-text { font-size: calc(15px * var(--text-scale)); line-height: 1.45; }
   body.is-story .rail-left { display: none; }

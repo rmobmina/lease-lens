@@ -6,11 +6,12 @@
 // full-stage chart. Leaving the story, by Exit or by any link out, puts the saved state back.
 //
 // The caption floats in one fixed safe area (bottom-left; a bottom sheet on phones) and holds only:
-// a step counter ("2/7"), the step's question as its heading, a short answer, at most one step action,
-// an optional "detail" view (one analysis layer, opened on request and closed back into the step),
-// and Back / Next / Exit. Nothing in the caption scrolls; every visual is sized to the stage. The caption's
-// box, the counter and the navigation never move between steps (the copy area keeps the height of the
-// longest step), so only the words change.
+// a header (the step counter "2/7" and the story's ⓘ on the left, Exit on the right), the step's question as
+// its heading, a short answer in a few one-purpose blocks, at most one step action, an optional "detail" view
+// (one analysis layer, opened on request and closed back into the step), and Back / Next. Nothing in the
+// caption scrolls; every visual is sized to the stage. The caption is anchored at its bottom edge, so Back /
+// Next never move; it is as tall as the step's own copy (no empty band under a short answer) and eases to
+// the new height between steps. The stage keeps clear of the tallest step (--cap-h), so it never reflows.
 //
 // Every move goes through app.present(), which drops stale work when the reader changes step
 // mid-animation (a newer step always wins): a flight, a chart waiting to draw, a highlight waiting for the
@@ -107,16 +108,19 @@ export function createStory(app) {
 
   function renderPanel(c, d) {
     const n = CHAPTERS.length;
+    const fromH = panel.offsetHeight;
     const step = c.steps?.(d).find((s) => !done.has(s.id));
     panel.innerHTML = `
       <div class="sc-top">
-        <p class="sc-count" aria-hidden="true"><b>${index + 1}</b>/${n}</p>
-        <p class="sc-name">Beyond the Score <button type="button" class="info-btn" data-info="story" aria-label="About this story and its data">i</button></p>
+        <div class="sc-lead">
+          <p class="sc-count" aria-hidden="true"><b>${index + 1}</b>/${n}</p>
+          <button type="button" class="info-btn" data-info="story" aria-label="About this story and its data">i</button>
+        </div>
         <button type="button" class="sc-exit" data-act="exit">Exit story <span aria-hidden="true">×</span></button>
       </div>
       <div class="sc-copy">
         <h1 class="sc-title" id="story-title" tabindex="-1"><span class="visually-hidden">Step ${index + 1} of ${n}: </span>${c.title(d)}</h1>
-        <p class="sc-text">${c.text(d)}</p>
+        ${copyBlocks(c, d)}
       </div>
       <div class="sc-foot">
         <div class="sc-act">
@@ -131,6 +135,12 @@ export function createStory(app) {
         </div>
       </div>`;
     reserveCopy(d);
+    // the caption eases to its new height; its bottom edge (and so Back / Next) stays put
+    const toH = panel.offsetHeight;
+    panel.getAnimations().forEach((a) => a.cancel());
+    if (fromH && Math.abs(fromH - toH) > 1 && !reducedMotion()) {
+      panel.animate([{ height: `${fromH}px`, overflow: 'hidden' }, { height: `${toH}px`, overflow: 'hidden' }], { duration: DUR.panel, easing: 'cubic-bezier(0.2, 0.7, 0.2, 1)' });
+    }
     panel.querySelectorAll('[data-act]').forEach((b) => b.addEventListener('click', () => {
       const act = b.dataset.act;
       if (act === 'next') go(index + 1);
@@ -155,9 +165,12 @@ export function createStory(app) {
     });
   }
 
-  // The copy box keeps the height of the longest step's question and answer at the current width,
-  // text size and font, so the counter, title and Back / Next never shift between steps. Measured
-  // off-screen with the real styles; re-measured whenever the width or a Display setting changes.
+  // The answer as short blocks, one purpose each (chapters.js).
+  const copyBlocks = (c, d) => [].concat(c.text(d)).map((t) => `<p class="sc-text">${t}</p>`).join('');
+
+  // The tallest step's question and answer at the current width, text size and font, measured off-screen with
+  // the real styles (re-measured whenever the width or a Display setting changes). The caption itself fits its
+  // own step; this only sizes the stage's safe area (--cap-h), so the visual never reflows between steps.
   let reserveKey = '', reserveH = 0, reserveActH = 0;
 
   function reserveCopy(d) {
@@ -169,7 +182,7 @@ export function createStory(app) {
       Object.assign(probe.style, { position: 'absolute', visibility: 'hidden', left: '0', top: '0', width: `${copy.clientWidth}px`, minHeight: '0' });
       panel.append(probe);
       reserveH = Math.max(...CHAPTERS.map((ch) => {
-        probe.innerHTML = `<h1 class="sc-title">${ch.title(d)}</h1><p class="sc-text">${ch.text(d)}</p>`;
+        probe.innerHTML = `<h1 class="sc-title">${ch.title(d)}</h1>${copyBlocks(ch, d)}`;
         return probe.offsetHeight;
       }));
       probe.remove();
@@ -191,10 +204,11 @@ export function createStory(app) {
       }
       reserveKey = key;
     }
-    copy.style.minHeight = reserveH ? `${reserveH}px` : '';
+    // the caption fits its own step (copy and action row); the stage keeps clear of the tallest one
     const act = panel.querySelector('.sc-act');
-    if (act) act.style.minHeight = reserveActH ? `${reserveActH}px` : '';
+    capH = Math.round(panel.offsetHeight - copy.offsetHeight - (act?.offsetHeight ?? 0) + Math.max(reserveH, copy.offsetHeight) + Math.max(reserveActH, act?.offsetHeight ?? 0));
   }
+  let capH = 0;
 
   // A detail is either one analysis layer (detail.lens) or a closer view of the chapter's own visual
   // (detail.toggle: a body class, e.g. the comparison's full item grids).
@@ -224,7 +238,7 @@ export function createStory(app) {
     if (panel.hidden) return;
     if (panel.querySelector('.sc-copy')) reserveCopy(data());
     document.body.style.setProperty('--cap-w', `${Math.round(panel.offsetWidth)}px`);
-    document.body.style.setProperty('--cap-h', `${Math.round(panel.offsetHeight)}px`);
+    document.body.style.setProperty('--cap-h', `${Math.max(capH, Math.round(panel.offsetHeight))}px`);
   }).observe(panel);
 
   // Full-stage visuals follow the size of the stage (window resize, rotation, zoom).

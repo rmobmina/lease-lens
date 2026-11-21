@@ -12,8 +12,8 @@
 //   falling   6  and a score is a snapshot: it changes from one inspection to the next
 //   next      7  what to check before signing a lease
 //
-// Every body follows the same pattern: a direct answer first, one thing to notice in the visual, then (where
-// it helps) a short bridge to the next question. Technical terms are explained the first time they appear.
+// Every body is a list of short blocks, each with one job: set up the question (a direct answer first), say what
+// to notice in the visual, or bridge to the next step. Technical terms are explained the first time they appear.
 //
 // `depth` is where the step happens ('map', 'xray', 'compare', or 'story' for a full-stage visual); on the
 // map, `mapTo` frames it and `reveal` adds its highlight once the camera has arrived. All numbers come from
@@ -41,17 +41,27 @@ export const STAGES = { setting: 'Setting', hook: 'Hook', rising: 'Rising insigh
 //   via      a map position to travel through first (the X-Ray step flies to the building, then opens it)
 //   detail   { lens, label }: one analysis layer, opened only on request, closed back into the step
 //   steps    step actions shown one at a time (each reveals the next)
+//   text     (D) => [blocks]: one short paragraph each
 export const CHAPTERS = [
   {
     id: 'setting', stage: 'setting', depth: 'map',
     mapTo: () => ({ kind: 'city' }),
     title: () => 'What does a building’s score tell you?',
-    text: (D) => `Say you’ve found an apartment you like. The building scores ${D.dist.median} out of 100. That tells you how it did overall on a RentSafeTO evaluation, the City’s inspection of its shared spaces and records. The map covers all ${fmt.n(D.dist.n)} buildings evaluated since 2023. What would you want to know before booking a viewing?`,
+    // the apartment leads; which buildings the map covers is in the caption's ⓘ (content/info.js, story)
+    text: (D) => [
+      `Say you’ve found an apartment you like. Its building scored ${D.dist.median} out of 100.`,
+      'That’s its RentSafeTO score: how the building did on the City’s inspection of its shared spaces and records.',
+      'What would you want to know before booking a viewing?',
+    ],
   },
   {
     id: 'prologue', stage: 'hook', depth: 'story', visual: 'distribution',
     title: (D) => `How does a ${D.dist.median} compare with other buildings?`,
-    text: (D) => `It’s right in the middle: half of all buildings scored ${D.dist.median} or more. Notice how the bars bunch up on the right. The middle half of buildings sit between ${D.dist.q1} and ${D.dist.q3}, a band just ${D.dist.q3 - D.dist.q1} points wide. With scores this close, the number alone can’t tell buildings apart. So where else can you look?`,
+    text: (D) => [
+      `It’s right in the middle: half of all ${fmt.n(D.dist.n)} buildings scored ${D.dist.median} or more.`,
+      `Notice how the bars bunch up on the right. The middle half of buildings sit between ${D.dist.q1} and ${D.dist.q3}, a band just ${D.dist.q3 - D.dist.q1} points wide.`,
+      'With scores this close, the number alone can’t tell buildings apart. So where else can you look?',
+    ],
   },
   {
     id: 'location', stage: 'rising', depth: 'map',
@@ -60,8 +70,13 @@ export const CHAPTERS = [
     title: () => 'Does it matter where you look?',
     text: (D) => {
       const w = D.ward.top;
-      if (!w) return 'Yes. Low scores are not spread evenly across the city’s wards. Notice the colours: red wards have more than their share of low scores, blue wards fewer.';
-      return `Yes. In ${esc(w.name)}, ${w.low10} of ${w.n} evaluated buildings (${pct(w.share)}) are in the city’s lowest-scoring 10%, with a score of ${D.ward.t10} or below. That’s ${times(w.share, D.ward.city)} the citywide ${pct(D.ward.city)}. Notice the colours: red wards have more than their share of low scores, blue wards fewer. Next, look inside one building.`;
+      const notice = 'Notice the colours: red wards have more than their share of low scores, blue wards fewer.';
+      if (!w) return ['Yes. Low scores are not spread evenly across the city’s wards.', notice];
+      return [
+        `Yes. In ${esc(w.name)}, ${w.low10} of ${w.n} evaluated buildings (${pct(w.share)}) are in the city’s lowest-scoring 10%, with a score of ${D.ward.t10} or below. That’s ${times(w.share, D.ward.city)} the citywide ${pct(D.ward.city)}.`,
+        notice,
+        'Next, look inside one building.',
+      ];
     },
     detail: { lens: 'wards', label: 'Compare all wards' },
   },
@@ -73,9 +88,10 @@ export const CHAPTERS = [
     text: (D) => {
       const a = D.pair.a, z = a.topZone;
       const lead = `${addr(a.rec)} scored ${a.rec.score}, the city’s middle score. Inspectors rate each item out of 3, and a 0 or 1 counts as low.`;
-      if (!a.lows.length) return `${lead} Here, none of its ${a.rated} rated items was low. Would another ${a.rec.score} look the same?`;
+      const bridge = `Would another ${a.rec.score} look the same?`;
+      if (!a.lows.length) return [lead, `Here, none of its ${a.rated} rated items was low.`, bridge];
       const where = z ? ` Notice where they cluster: ${z.poor} are in ${esc(z.label.toLowerCase())}${z.key === 'records' ? ', the plans, logs and notices a landlord must keep' : ''}.` : '';
-      return `${lead} Here, ${a.lows.length} of its ${a.rated} rated items were low.${where} Would another ${a.rec.score} look the same?`;
+      return [lead, `Here, ${a.lows.length} of its ${a.rated} rated items were low.${where}`, bridge];
     },
     steps: (D) => [
       { id: 'cutaway', label: 'Open the cutaway', run: (app) => app.setXray({ mode: 'cutaway' }) },
@@ -91,7 +107,12 @@ export const CHAPTERS = [
       const { a, b } = D.pair;
       const n = (x) => (x.lows.length ? `${x.lows.length} item${x.lows.length === 1 ? '' : 's'}` : 'no items');
       const where = D.pair.sameWard ? `, both in ${esc(a.rec.wardName)},` : '';
-      return `Yes. ${addr(a.rec)} and ${addr(b.rec)}${where} both scored ${D.pair.score}. Inspectors rated ${n(a)} low at the first and ${n(b)} at the second. Notice the red bars: they appear on one side only. The score can’t tell these two apart, but the inspection can.`;
+      const oneSided = !a.lows.length !== !b.lows.length;
+      return [
+        `Yes. ${addr(a.rec)} and ${addr(b.rec)}${where} both scored ${D.pair.score}.`,
+        `Notice the red bars${oneSided ? `: they appear for ${a.lows.length ? 'the first' : 'the second'} building only` : ''}. Inspectors rated ${n(a)} low at the first and ${n(b)} at the second.`,
+        'The score can’t tell these two apart, but the inspection can.',
+      ];
     },
     detail: { toggle: 'story-items', label: 'Show every item' },
   },
@@ -104,14 +125,21 @@ export const CHAPTERS = [
       const line = pts.length >= 2
         ? `Often, yes. ${addr(r)} scored ${pts.at(-2).rec.score} in ${monthYear(pts.at(-2).rec.date)}, then ${pts.at(-1).rec.score} in ${monthYear(pts.at(-1).rec.date)}.`
         : `${addr(r)} has one evaluation under the current system, so there’s no change to see yet.`;
-      return `${line} Across ${fmt.n(D.re.n)} re-inspections (a building’s next evaluation), ${pct(D.re.up / D.re.n)} scored higher and ${pct(D.re.down / D.re.n)} lower. Notice the dashed line: scores from the system used before 2023 are shown but never joined to newer ones, because the two systems measure different things.`;
+      return [
+        line,
+        'Notice the dashed line: scores from the system used before 2023 are shown but never joined to newer ones, because the two systems measure different things.',
+        `Across ${fmt.n(D.re.n)} re-inspections (a building’s next evaluation), ${pct(D.re.up / D.re.n)} scored higher and ${pct(D.re.down / D.re.n)} lower. A score is a snapshot.`,
+      ];
     },
     detail: { lens: 'changes', label: 'All re-inspections' },
   },
   {
     id: 'resolution', stage: 'next', depth: 'story', visual: 'steps',
     title: () => 'What should you check before signing a lease?',
-    text: () => 'Three things the score alone won’t tell you: how the building’s ward compares with the city, which way its score is moving, and which items inspectors rated low. Each check below links to the part of LeaseLens that answers it. Start with a building you’re considering.',
+    text: () => [
+      'Three things the score alone won’t tell you: how the building’s ward compares with the city, which way its score is moving, and which items inspectors rated low.',
+      'Each check below links to the part of LeaseLens that answers it. Start with a building you’re considering.',
+    ],
     final: { label: 'Explore a building yourself' },
   },
 ];

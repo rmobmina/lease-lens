@@ -209,3 +209,60 @@ test('no native <select> popups remain in the dashboard: every select is enhance
     .map((f) => readFile(new URL(`../dashboard/js/${f}`, import.meta.url), 'utf8')))).join('\n');
   for (const id of ids) assert.match(js, new RegExp(`enhanceSelect\\(\\$\\('${id}'\\)`), `#${id} uses the shared Select`);
 });
+
+test('Every item: one row per inspection item, matched by identifier; a 0 is a rating; missing states are kept apart', async () => {
+  const { itemLabel } = await import('../dashboard/js/model.js');
+  const pre = M.byPeriod.pre;
+  // a real 0 rating, beside a building with the same score
+  const zero = pm.latest.find((r) => Object.values(r.ratings).includes(0));
+  const other = pm.latest.find((r) => r.rsn !== zero.rsn);
+  const groups = F.pairRows(profileOf(zero), profileOf(other));
+  const rows = groups.flatMap((g) => g.rows);
+  assert.equal(rows.length, pm.cats.length, 'same system: exactly one row per item');
+  assert.equal(new Set(rows.map((r) => r.col)).size, rows.length, 'no item appears twice');
+  const z = rows.find((r) => r.a.rating === 0);
+  assert.equal(z.a.status, 'rated');
+  assert.ok(z.a.low && z.low, 'a 0 is a low rating, never a missing one');
+  for (const r of rows) {
+    for (const s of ['a', 'b']) {
+      const rec = s === 'a' ? zero : other;
+      const want = rec.ratings[r.col] != null ? 'rated' : rec.naCats.includes(r.col) ? 'na' : 'blank';
+      assert.equal(r[s].status, want, `${r.col} ${s}`);
+    }
+    assert.equal(r.diff, r.a.status === 'rated' && r.b.status === 'rated' && r.a.rating !== r.b.rating, 'rated differently needs real ratings on both sides');
+    assert.equal(r.low, r.a.low || r.b.low, 'low in either building, whatever the other side holds');
+  }
+  // the area counts never include N/A or missing ratings
+  for (const g of groups) assert.equal(g.a.rated, g.rows.filter((r) => r.a.status === 'rated').length, g.key);
+  // two scoring systems: each system's own items, the other side "not in this scoring system", nothing compared
+  const old = pre.latest.find((r) => !pm.latestByRsn.has(r.rsn));
+  const ep = F.eraProfile(old, pre.cats, itemLabel);
+  const cross = F.pairRows(profileOf(zero), ep).flatMap((g) => g.rows);
+  assert.equal(cross.length, new Set([...pm.cats, ...pre.cats]).size, 'every item of both systems, shared identifiers once');
+  assert.ok(cross.every((r) => !r.diff && !r.comparable), 'no rating is compared across the two systems');
+  assert.ok(cross.some((r) => r.a.status === 'absent') && cross.some((r) => r.b.status === 'absent'));
+  assert.ok(ep.groups.find((g) => g.key === 'records').rated === 0, 'the old system had no record items: “No rated items”');
+  assert.equal(F.pairObservation(profileOf(zero), ep).kind, 'systems', 'no score wording across systems');
+});
+
+test('Compare observation: score wording only for comparable systems; equal scores point at a real difference', () => {
+  const { a, b } = S.examplePair(pm);
+  const o = F.pairObservation(profileOf(a.rec), profileOf(b.rec));
+  assert.equal(o.kind, 'same-score-lows');
+  assert.ok(o.area && o.area.a.low !== o.area.b.low, 'the area it names really differs');
+  const lo = pm.latest.find((r) => r.score < a.rec.score);
+  const d = F.pairObservation(profileOf(a.rec), profileOf(lo));
+  assert.deepEqual([d.kind, d.hi, d.points], ['scores', 'a', a.rec.score - lo.score]);
+});
+
+test('ward ranking: an icon-only reverse-sort button whose name and tooltip say the next action', async () => {
+  const src = await readFile(new URL('../dashboard/js/sections/building.js', import.meta.url), 'utf8');
+  assert.match(src, /class="ward-sort" data-act="ward-flip"[^>]*aria-label="\$\{RANK\[wardList\]\.next\}" data-tip="\$\{RANK\[wardList\]\.next\}">\$\{SORT_ICON\}<\/button>/);
+  assert.match(src, /low: \{ label: 'Lowest scores', next: 'Show highest scores' \}/);
+  assert.match(src, /high: \{ label: 'Highest scores', next: 'Show lowest scores' \}/);
+  assert.doesNotMatch(src, /Show highest<\/|flip: 'Show/, 'no text link left');
+  const css = await readFile(new URL('../dashboard/css/atlas.css', import.meta.url), 'utf8');
+  assert.match(css, /\.ward-sort \{[^}]*width: 44px; height: 44px;/, 'a 44 × 44 hit area');
+  assert.match(css, /\.ward-sort-icon \{[^}]*width: 20px; height: 20px;/);
+  assert.match(css, /\.ward-sort:focus-visible \{ outline: var\(--focus-ring\)/);
+});

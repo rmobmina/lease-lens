@@ -133,10 +133,14 @@ let wardOpen = null;
 // The ranked preview shows one end of the ward's scores: 'low' (lowest first, the default whenever a ward is
 // opened) or 'high'. It resets to 'low' when the ward changes.
 let wardList = 'low', wardListWard = null;
+// `next` names what the reverse-sort button will do (its tooltip and accessible name), never the current state
 const RANK = {
-  low: { label: 'Lowest scores', flip: 'Show highest' },
-  high: { label: 'Highest scores', flip: 'Show lowest' },
+  low: { label: 'Lowest scores', next: 'Show highest scores' },
+  high: { label: 'Highest scores', next: 'Show lowest scores' },
 };
+// two vertical arrows pointing opposite ways: reads as "reverse the sort"
+const SORT_ICON = `<svg class="ward-sort-icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false">
+  <path d="M6.5 16V4M3.5 7l3-3 3 3M13.5 4v12M10.5 13l3 3 3-3" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
 
 // The ward's buildings at one end of the score range: the whole eligible list is sorted first, then the first
 // `n` taken (five by default), then a note for any others tied with the last one shown, so a cut-off never
@@ -194,7 +198,7 @@ function renderWardCard(box, ctx, M, opts) {
       <p class="place-sub">Median score <b>${row.median}</b> · rank ${row.rank} of ${ch.rows.length} wards by this share</p>
       <div class="ward-rank-head">
         <h3 class="place-h3" id="ward-rank-label">${RANK[wardList].label}</h3>
-        <button type="button" class="link-btn ward-flip" data-act="ward-flip" aria-controls="ward-list">${RANK[wardList].flip}</button>
+        <button type="button" class="ward-sort" data-act="ward-flip" aria-controls="ward-list" aria-label="${RANK[wardList].next}" data-tip="${RANK[wardList].next}">${SORT_ICON}</button>
       </div>
       <div class="ward-list" id="ward-list" role="region" aria-labelledby="ward-rank-label" aria-live="polite">${wardListHtml(inWard, pm, LIST_N)}</div>
       <p class="place-link"><button type="button" class="link-btn" data-act="ward-all" aria-haspopup="dialog">See all ${fmt.n(inWard.length)} buildings and scores</button></p>
@@ -216,12 +220,13 @@ function renderWardCard(box, ctx, M, opts) {
     while (n > LIST_MIN && !box.hidden && !list.closest('[hidden]') && box.scrollHeight > box.clientHeight + 1) list.innerHTML = wardListHtml(inWard, pm, --n);
     list.querySelectorAll('[data-rsn]').forEach((b) => b.addEventListener('click', () => opts.onSelect(b.dataset.rsn)));
   };
-  // One switch: it flips the preview between the two ends, and its own label says what it will show next.
-  // Only the label, the switch and the rows change, so focus stays on the switch.
+  // One reverse-sort button: it flips the preview between the two ends of the fully sorted list. The heading, the
+  // tooltip and the accessible name change together; only they and the rows change, so focus stays on the button.
   box.querySelector('[data-act="ward-flip"]').addEventListener('click', (e) => {
     wardList = wardList === 'low' ? 'high' : 'low';
     box.querySelector('#ward-rank-label').textContent = RANK[wardList].label;
-    e.currentTarget.textContent = RANK[wardList].flip;
+    e.currentTarget.setAttribute('aria-label', RANK[wardList].next);
+    e.currentTarget.dataset.tip = RANK[wardList].next;
     drawList();
   });
   if (open) requestAnimationFrame(drawList);   // measured once the card has its real size

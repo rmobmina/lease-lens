@@ -441,13 +441,27 @@
               </div>
 
               <div id="fp-main" class="fp-main">
-                <div class="fp-controls" role="group" aria-label="Choose buildings to compare">
-                  <label class="field fp-field-score"><span class="field-label">Same-score examples</span><select id="fp-score"></select></label>
-                  <div class="field fp-pick"><label class="field-label" for="fp-a">Building A</label><div class="search fp-search"><input id="fp-a" type="text" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="fp-a-list" aria-describedby="fp-a-meta" autocomplete="off" spellcheck="false" placeholder="Start typing an address…" /><ul id="fp-a-list" class="search-list" role="listbox" aria-label="Buildings for A" hidden></ul></div><p class="fp-pick-meta" id="fp-a-meta"></p></div>
-                  <div class="field fp-pick"><span class="fp-label-row"><label class="field-label" for="fp-b" id="fp-b-label">Building B</label><button type="button" class="info-btn" data-info="compare-match" aria-label="How Building B is suggested">i</button></span><div class="search fp-search"><input id="fp-b" type="text" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="fp-b-list" aria-describedby="fp-b-meta" autocomplete="off" spellcheck="false" placeholder="Start typing an address…" /><ul id="fp-b-list" class="search-list" role="listbox" aria-label="Buildings for B" hidden></ul></div><p class="fp-pick-meta" id="fp-b-meta"></p></div>
-                  <div class="fp-actions">
-                    <button type="button" class="btn" id="fp-next"></button>
-                    <button type="button" class="btn btn-quiet" id="fp-reset" hidden>Back to example pairs</button>
+                <!-- The same-score examples: a secondary control, one compact line above the pair. -->
+                <div class="fp-examples" role="group" aria-labelledby="fp-score-label">
+                  <span class="fp-examples-label" id="fp-score-label">Same-score examples</span>
+                  <select id="fp-score"></select>
+                  <button type="button" class="btn btn-sm" id="fp-next"></button>
+                  <button type="button" class="link-btn" id="fp-reset" hidden>Back to example pairs</button>
+                </div>
+                <!-- Two building summaries of equal width, one column each: the address selector, the overall score, the
+                     inspection date and a link to the inspection. -->
+                <div class="fp-sum" role="group" aria-label="Choose buildings to compare">
+                  <div class="fp-card" data-slot="a">
+                    <div class="fp-card-head"><label class="fp-card-tag" for="fp-a">Building A</label></div>
+                    <p class="fp-card-name" id="fp-a-name" aria-hidden="true"></p>
+                    <div class="search fp-search"><input id="fp-a" type="text" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="fp-a-list" aria-describedby="fp-a-meta" autocomplete="off" spellcheck="false" placeholder="Start typing an address…" /><ul id="fp-a-list" class="search-list" role="listbox" aria-label="Buildings for A" hidden></ul></div>
+                    <div class="fp-pick-meta" id="fp-a-meta"></div>
+                  </div>
+                  <div class="fp-card" data-slot="b">
+                    <div class="fp-card-head"><label class="fp-card-tag" for="fp-b" id="fp-b-label">Building B</label><button type="button" class="info-btn" data-info="compare-match" aria-label="How Building B is suggested">i</button></div>
+                    <p class="fp-card-name" id="fp-b-name" aria-hidden="true"></p>
+                    <div class="search fp-search"><input id="fp-b" type="text" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="fp-b-list" aria-describedby="fp-b-meta" autocomplete="off" spellcheck="false" placeholder="Start typing an address…" /><ul id="fp-b-list" class="search-list" role="listbox" aria-label="Buildings for B" hidden></ul></div>
+                    <div class="fp-pick-meta" id="fp-b-meta"></div>
                   </div>
                 </div>
 
@@ -474,14 +488,15 @@
                   </div>
                   <div class="fp-panel" role="tabpanel" id="fp-panel-items" aria-labelledby="fp-tab-items" hidden>
                     <h2 class="visually-hidden fp-items-title">Every item, side by side</h2>
-                    <!-- one shared matrix: a row per inspection category, a column per building (fingerprint.js drawMatrix) -->
+                    <div class="fp-filter" role="radiogroup" aria-label="Which items to show" id="fp-filter"></div>
+                    <!-- one shared matrix: a row per inspection item, grouped by area; item, Building A, Building B (fingerprint.js drawMatrix) -->
                     <div class="fp-matrix-scroll"><table class="fp-matrix" id="fp-matrix"></table></div>
                     <p class="visually-hidden" id="fp-live" aria-live="polite"></p>
                   </div>
                   <div class="fp-panel" role="tabpanel" id="fp-panel-city" aria-labelledby="fp-tab-city" hidden>
                     <section class="fp-city" aria-labelledby="fp-city-title">
                       <h2 id="fp-city-title" class="fp-h2">The same items, for every building in Toronto</h2>
-                      <p class="fp-city-sub">One column per item, in the same order. Colours show the share of buildings at each rating, lowest marks at the bottom.</p>
+                      <p class="fp-city-sub" id="fp-city-sub">One column per item, in the same order. Colours show the share of buildings at each rating, lowest marks at the bottom. Select a column, or tab to the chart and use the arrow keys, for its item and shares.</p>
                       <div id="fp-city-chart" class="chart fp-city-chart"></div>
                       <div class="fp-city-notes" id="fp-city-notes"></div>
                     </section>

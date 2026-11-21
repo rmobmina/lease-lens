@@ -19,27 +19,21 @@ body:not(.is-story) .fp-intro { flex: none; max-width: none; margin: 0; }
 body:not(.is-story) .fp-intro h1 { font-size: clamp(26px, 2.1vw, 32px); line-height: var(--leading-tight); }
 body:not(.is-story) .fp-intro .lede { margin-top: var(--space-1); font-size: var(--text-base); line-height: var(--leading-body); color: var(--ink-2); max-width: none; }
 body:not(.is-story) .fp-main:not([hidden]), body:not(.is-story) .fp-pair:not([hidden]) { flex: 1; min-height: 0; display: flex; flex-direction: column; }
-body:not(.is-story) .fp-controls { flex: none; margin-top: var(--space-4); padding: 0 0 var(--space-3); border-top: 0; }
-body:not(.is-story) .fp-verdict { flex: none; margin: 0; max-width: 78ch; font-size: var(--text-base); line-height: var(--leading-body); }
+body:not(.is-story) .fp-sum { flex: none; }
+body:not(.is-story) .fp-examples { margin-top: var(--space-3); }
+body:not(.is-story) .fp-examples, body:not(.is-story) .fp-verdict { flex: none; }
 .fp-nav { margin-top: var(--space-3); }
 .fp-nav .bx-method-btn + .bx-method-btn { margin-left: 0; }
 .fp-panels { flex: 1; min-height: 0; display: grid; grid-template: minmax(0, 1fr) / minmax(0, 1fr); margin-top: var(--space-4); }
 .fp-panel { grid-area: 1 / 1; min-height: 0; min-width: 0; display: flex; flex-direction: column; }
 .fp-panel[hidden] { display: none; }
 
-/* By category: the profile table, its open category listing the low-rated items in two columns */
+/* By category: the area rows share the panel's height; an opened area's items scroll inside the panel */
 body:not(.is-story) .fp-profile { margin: 0; }
-body:not(.is-story) .fp-profile .pf-list { display: flex; flex-wrap: wrap; gap: var(--space-1) var(--space-4); }
-body:not(.is-story) .fp-profile .pf-list li { margin: 0; }
-body:not(.is-story) .fp-profile .pf-items-a .pf-list { justify-content: flex-end; }
-.pf-more { color: var(--muted); font-size: var(--text-sm); }
-body:not(.is-story) .fp-profile .pf-items > td { padding: var(--space-2) var(--space-4); }
-body:not(.is-story) .fp-profile .pf-h { padding-bottom: var(--space-2); }
-body:not(.is-story) .fp-profile .pf-name { font-size: var(--text-lg); }
-body:not(.is-story) .fp-profile .pf-score b { font-size: 26px; }
-body:not(.is-story) .fp-profile .pf-cell { height: var(--pf-h, 40px); }
+body:not(.is-story) #fp-panel-profile { overflow-y: auto; }
 
-/* Every item: two buildings side by side; in each, the grid and, beside it, the low marks and notes */
+/* Every item: the filters, then one matrix on a white surface that scrolls inside the panel (its column headers
+   stay in view, so both buildings are always labelled) */
 /* the rating legend: opened from "Item ratings" beside the tabs */
 .fp-legend { flex: none; margin: var(--space-3) 0 0; padding: var(--space-3) var(--space-4); background: var(--surface); border: var(--border); border-radius: var(--radius-md); }
 .fp-legend-btn[aria-expanded="true"] { color: var(--accent); background: var(--accent-soft); }
@@ -48,33 +42,7 @@ body:not(.is-story) .fp-profile .pf-cell { height: var(--pf-h, 40px); }
 
 /* every item: one shared matrix on a white surface; it scrolls inside the panel, never sideways */
 .fp-matrix-scroll { flex: 1; min-height: 0; overflow: auto; overflow-x: hidden; background: var(--surface); border: var(--border); border-radius: var(--radius-md); }
-.fp-matrix { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: var(--text-sm); }
-.fp-m-col-cat { width: 19%; }
-.fp-matrix th, .fp-matrix td { text-align: left; vertical-align: top; padding: var(--space-3) var(--space-4); border-bottom: var(--border-width) solid var(--border-color); min-width: 0; }
-.fp-matrix tbody tr:last-child > * { border-bottom: 0; }
-.fp-matrix thead th { position: sticky; top: 0; z-index: 1; background: var(--surface); border-bottom: var(--border-width) solid var(--border-control); font-weight: var(--weight-regular, 400); }
-.fp-m-cat-head { font-size: var(--text-xs); font-weight: var(--weight-semibold) !important; color: var(--muted); vertical-align: bottom !important; }
-.fp-m-head { display: table-cell; }
-.fp-m-head > * { display: block; }
-.fp-m-head .fp-name { font-family: var(--font-display); font-size: var(--text-lg); font-weight: var(--weight-bold); letter-spacing: var(--tracking-heading); line-height: var(--leading-snug); color: var(--ink); text-decoration: none; margin-top: 2px; overflow-wrap: anywhere; }
-.fp-m-head .fp-name:hover { text-decoration: underline; }
-.fp-m-head .fp-meta { font-size: var(--text-sm); color: var(--muted); margin-top: 2px; }
-.fp-m-cat { font-weight: var(--weight-semibold); color: var(--ink); }
-.fp-m-who { display: none; }
-.fp-m-count { display: block; color: var(--muted); font-variant-numeric: tabular-nums; }
-.fp-m-count b { font-weight: var(--weight-regular, 400); }
-.fp-m-count.is-low { color: var(--ink); }
-.fp-m-count.is-low b { font-weight: var(--weight-bold); }
-.fp-m-count.is-low::before { content: ""; display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--fp-1); margin-right: var(--space-2); vertical-align: 1px; }
-.fp-m-body { display: flex; flex-wrap: wrap; align-items: flex-start; gap: var(--space-2) var(--space-4); margin-top: var(--space-2); min-width: 0; }
-.fp-m-tiles { flex: 1 1 140px; min-width: 0; max-width: 100%; }
-.fp-m-tiles svg { display: block; overflow: visible; }
-.fp-m-lows { flex: 1 1 150px; min-width: 0; list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
-.fp-m-low { display: flex; align-items: center; gap: var(--space-2); width: 100%; font: inherit; font-size: var(--text-sm); color: var(--ink); text-align: left; background: none; border: 0; border-radius: var(--radius-sm); padding: 2px var(--space-1); cursor: pointer; }
-.fp-m-low:hover, .fp-m-low.is-hot { background: var(--accent-soft); }
-.fp-m-low:focus-visible { outline: var(--focus-ring); outline-offset: 1px; }
-.fp-m-low .fp-chip { flex: none; }
-.fp-m-low-name { min-width: 0; overflow-wrap: anywhere; }
+.fp-matrix thead th { position: sticky; top: 0; z-index: 1; background: var(--surface); border-bottom: var(--border-width) solid var(--border-control); }
 
 /* All of Toronto: the city grid takes the height, its two notes sit below it */
 body:not(.is-story) .fp-city { flex: 1; min-height: 0; display: flex; flex-direction: column; margin: 0; padding: 0; border: 0; }
@@ -142,18 +110,12 @@ body.is-story .fp-panels { display: block; }
 @media (max-height: 800px) {
   /* the intro sentence is context, not a control: on short windows the title alone leads (its ⓘ explains) */
   body:not(.is-story) .fp-intro .lede { display: none; }
-  body:not(.is-story) .fp-profile .pf-cell { height: var(--pf-h, 32px); }
-  body:not(.is-story) .fp-profile .pf-score { margin-top: 0; }
-  body:not(.is-story) .fp-profile .pf-score b { font-size: 22px; }
-  body:not(.is-story) .fp-profile .pf-name { margin-top: 0; }
-  /* the verdict above already gives each building's count; the header keeps name and score */
-  body:not(.is-story) .fp-profile .pf-tag { display: none; }
-  /* once a category is open, "select an area to see its items" has done its job */
-  body:not(.is-story) .fp-profile .pf:has(.pf-items:not([hidden])) .pf-cap { display: none; }
-  body:not(.is-story) .fp-profile .pf-cap { padding-top: var(--space-2); font-size: var(--text-xs); }
-  body:not(.is-story) .fp-verdict { font-size: var(--text-base); }
+  body:not(.is-story) .fp-profile .pf-cap { padding-top: var(--space-1); font-size: var(--text-xs); }
+  .fp-card { padding: var(--space-2) var(--space-3) var(--space-3); gap: var(--space-1); }
+  .fp-big b { font-size: 26px; }
+  .fp-verdict { margin-top: var(--space-2); }
   body:not(.is-story) .fp-view:not([hidden]), .depth .page-view:not([hidden]) { padding: var(--space-4) var(--space-5); }
-  body:not(.is-story) .fp-controls { margin-top: var(--space-3); padding-bottom: var(--space-2); }
+  body:not(.is-story) .fp-examples { margin-top: var(--space-2); margin-bottom: var(--space-2); }
   .fp-panels { margin-top: var(--space-3); }
   .page.about .steps-row li { padding: var(--space-2) 0; }
   .page.about .disclosure > summary { padding: var(--space-2) 0; }
@@ -171,18 +133,9 @@ body.is-story .fp-panels { display: block; }
   .help-grid { grid-template-columns: 1fr; gap: var(--space-5); }
   /* the three tabs keep their row; Table and Method drop to the line below */
   .fp-nav { flex-wrap: wrap; row-gap: 0; }
-  .fp-matrix, .fp-matrix tbody, .fp-matrix tr, .fp-matrix td, .fp-matrix th { display: block; width: auto; }
-  .fp-matrix colgroup, .fp-m-cat-head { display: none !important; }
-  .fp-matrix thead { display: block; position: static; }
-  .fp-matrix thead tr { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 9em), 1fr)); gap: var(--space-3); padding: var(--space-3); border-bottom: var(--border-width) solid var(--border-control); }
-  .fp-matrix thead th { position: static; padding: 0; border: 0; }
-  .fp-m-head .fp-name { font-size: var(--text-md); }
-  .fp-matrix tbody tr { border-bottom: var(--border-width) solid var(--border-color); padding: var(--space-3) var(--space-3); }
-  .fp-matrix tbody tr:last-child { border-bottom: 0; }
-  .fp-matrix th, .fp-matrix td { border: 0; padding: 0; }
-  .fp-m-cat { font-size: var(--text-md); }
-  .fp-m-cell { margin-top: var(--space-3); padding-left: var(--space-3) !important; border-left: var(--border-width-strong, 3px) solid var(--border-color) !important; }
-  .fp-m-who { display: block; font-size: var(--text-xs); font-weight: var(--weight-semibold); color: var(--muted); margin-bottom: 2px; overflow-wrap: anywhere; }
+  /* the page scrolls as a whole: the matrix shows its full height, its header still sticks */
+  .fp-matrix-scroll { overflow: visible; }
+  body:not(.is-story) #fp-panel-profile { overflow: visible; }
   .fp-nav .xr-tabs { flex: 1 0 100%; gap: var(--space-4); }
   .fp-nav .bx-method-btn:first-of-type { margin-left: 0; }
 }

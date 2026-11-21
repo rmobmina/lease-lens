@@ -138,4 +138,21 @@ test('story caption: a compact step counter, and no visible stage labels or stor
   assert.match(src, /class="sc-count"[^>]*><b>\$\{index \+ 1\}<\/b>\/\$\{n\}/, 'the caption shows the step counter (1/7)');
   assert.match(src, /Step \$\{index \+ 1\} of \$\{n\}/, 'screen readers hear "Step 1 of 7"');
   assert.doesNotMatch(src, /sc-stage|sc-arc|stageLabel/, 'no stage label or storyline graphic in the caption');
+  assert.doesNotMatch(src, /Beyond the Score <button|class="sc-name"/, 'no visible story name in the caption');
+  assert.match(src, /<div class="sc-lead">\s*<p class="sc-count"[^]*?data-info="story"[^]*?<\/div>\s*<button type="button" class="sc-exit"/, 'counter and ⓘ on the left, Exit on the right');
+});
+
+test('story copy: every step answers in one to three short blocks, the question kept to its heading', async () => {
+  const { CHAPTERS } = await import('../dashboard/js/story/chapters.js');
+  const S = await import('../dashboard/js/story/selectors.js');
+  const D = { pm, dist: S.scoreDistribution(pm), ward: S.wardContrast(pm), pair: S.examplePair(pm), re: S.reinspections(pm) };
+  D.hist = S.historyIn(M, D.pair.b.rec.rsn, 'cur'); D.histRec = D.pair.b.rec;
+  for (const c of CHAPTERS) {
+    const blocks = c.text(D);
+    assert.ok(Array.isArray(blocks) && blocks.length >= 1 && blocks.length <= 3, `${c.id}: 1–3 blocks`);
+    for (const b of blocks) assert.ok(b.split(/\s+/).length <= 45, `${c.id}: a short block (${b.split(/\s+/).length} words)`);
+  }
+  // step 1 leads with the apartment; which buildings the map covers lives in the ⓘ
+  assert.match(CHAPTERS[0].text(D)[0], /^Say you’ve found an apartment/);
+  assert.doesNotMatch(CHAPTERS[0].text(D).join(' '), /evaluated since 2023/);
 });
