@@ -1,5 +1,5 @@
 /* "Beyond the Score": a full-screen, zero-scroll guided story.
-   One shell at every chapter: the shared header, then a stage that fills the rest of the viewport.
+   One shell at every step: the shared header, then a stage that fills the rest of the viewport.
    The visual (map, X-Ray, comparison or a full-stage chart) owns the stage; a compact caption floats
    in one fixed safe area (bottom-left; a bottom sheet on phones) and every visual keeps clear of it.
    The caption's size is measured into --cap-w / --cap-h (story/controller.js), so nothing is guessed.
@@ -13,26 +13,19 @@ body.is-story .atlas-main { grid-template-columns: minmax(0, 1fr); position: rel
   display: grid; gap: var(--space-3); padding: var(--space-5); background: var(--surface); border: var(--border); border-radius: var(--radius-md); box-shadow: var(--shadow-float); }
 .story-panel[hidden] { display: none; }
 .sc-top { display: flex; align-items: center; gap: var(--space-3); font-size: var(--text-sm); }
-/* the storyboard arc (controller.js arc()): the line in quiet ink, chapters seen filled, the current one in accent,
-   the aha marked with a ring so it reads as the peak without colour */
-.sc-arc { flex: none; display: block; overflow: visible; }
-.sc-arc polyline { fill: none; stroke: var(--axis); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
-.sc-arc circle { fill: var(--surface); stroke: var(--axis); stroke-width: 1.5; }
-.sc-arc circle.is-seen { fill: var(--muted); stroke: var(--muted); }
-.sc-arc circle.is-now { fill: var(--accent); stroke: var(--accent); }
-.sc-arc circle.is-aha { stroke-width: 2.5; }
-/* the stage label: the storyboard's names (Setting, Hook, Rising insight · Where?, Aha, Next step) */
-.sc-stage { font-size: var(--text-sm); font-weight: var(--weight-bold); color: var(--accent); letter-spacing: var(--tracking-label); margin-bottom: calc(var(--space-2) * -1); }
+/* the step counter ("2/7"): fixed width, so the caption's top line never shifts between steps */
+.sc-count { flex: none; min-width: 3.2em; font-size: var(--text-base); color: var(--muted); font-variant-numeric: tabular-nums; }
+.sc-count b { color: var(--ink); font-weight: var(--weight-bold); }
 .sc-name { display: flex; align-items: center; gap: var(--space-2); color: var(--muted); }
 .sc-exit { margin-left: auto; font: inherit; font-size: var(--text-sm); color: var(--ink-2); background: none; border: 0; padding: var(--space-1) 0; cursor: pointer; }
 .sc-exit:hover { color: var(--ink); }
 .sc-exit span { font-size: var(--text-lg); line-height: 1; margin-left: var(--space-1); }
 .sc-title { font-family: var(--font-display); font-size: clamp(24px, 2vw, 30px); font-weight: var(--weight-bold); line-height: 1.1; letter-spacing: var(--tracking-display); outline: none; text-wrap: balance; }
 .sc-text { font-size: var(--text-md); line-height: var(--leading-body); color: var(--ink-2); }
-/* the copy keeps one height across chapters (story/controller.js reserveCopy), so nothing below or above it moves */
+/* the copy keeps one height across steps (story/controller.js reserveCopy), so nothing below or above it moves */
 .sc-copy { display: grid; align-content: start; gap: var(--space-3); }
 .sc-foot { display: flex; align-items: flex-end; justify-content: space-between; gap: var(--space-3); margin-top: var(--space-1); }
-.sc-act { display: grid; justify-items: start; gap: var(--space-1); min-width: 0; }
+.sc-act { flex: 1; display: grid; justify-items: start; align-content: end; gap: var(--space-1); min-width: 0; }
 .sc-action, .sc-detail { font: inherit; font-size: var(--text-base); font-weight: var(--weight-semibold); color: var(--accent); background: none; border: 0; padding: var(--space-1) 0; cursor: pointer; text-align: left; }
 .sc-action:hover, .sc-detail:hover { text-decoration: underline; text-underline-offset: 3px; }
 .sc-detail { font-weight: var(--weight-medium); color: var(--ink-2); }
@@ -43,7 +36,7 @@ body.is-story .atlas-main { grid-template-columns: minmax(0, 1fr); position: rel
 .sc-back:disabled { opacity: 0.35; cursor: default; }
 
 /* ---- what the story hides: tools, the place card, the depth bar (the caption is the navigation) ---- */
-body.is-story .title-card, body.is-story .tools, body.is-story .pop-panel, body.is-story #place, body.is-story .depth-bar { display: none !important; }
+body.is-story .title-card, body.is-story .tools, body.is-story .pop-panel, body.is-story #place, body.is-story #pick-card, body.is-story .depth-bar { display: none !important; }
 /* the legend leaves the caption's corner: bottom-right, beside the zoom buttons */
 body.is-story .rail-left { left: auto; right: 64px; width: auto; top: auto; bottom: var(--gut); }
 body.is-story .legend-card { margin: 0; }
@@ -60,6 +53,13 @@ body.is-story .story-visual { width: 100%; max-width: 1040px; height: 100%; max-
 .story-visual-title { font-size: var(--text-base); font-weight: var(--weight-semibold); color: var(--ink-2); margin-bottom: var(--space-3); }
 .story-visual svg { display: block; max-width: 100%; height: auto; overflow: visible; }
 svg .story-band { fill: var(--accent-soft); }
+/* Step 2: the chart arrives plain, then its highlights (the middle-half band, the median bar and their labels)
+   come in once it is on screen. Display › Reduced motion turns these off with every other animation. */
+.story-view .story-band, .story-view .story-reveal { animation: story-reveal 420ms 320ms cubic-bezier(0.2, 0.7, 0.2, 1) both; }
+.story-view .story-median { animation: story-median 420ms 320ms cubic-bezier(0.2, 0.7, 0.2, 1) both; }
+@keyframes story-reveal { from { opacity: 0; } to { opacity: 1; } }
+@keyframes story-median { from { fill: var(--chart-neutral); } to { fill: var(--accent); } }
+@media (prefers-reduced-motion: reduce) { .story-view .story-band, .story-view .story-reveal, .story-view .story-median { animation: none; } }
 .story-cats .cat-label { font: var(--weight-medium) var(--text-base) var(--font-ui); fill: var(--ink-2); }
 .story-cats .cat-track { fill: var(--grid); }
 .story-cats .cat-bar { fill: var(--chart-neutral); }
@@ -96,8 +96,8 @@ body.is-story .fp-city, body.is-story .fp-method-block, body.is-story .fp-intro,
 body.is-story:not(.story-items) .fp-matrix-scroll, body.is-story:not(.story-items) .fp-legend { display: none; }
 /* "Show every item": the matrix fills the stage and scrolls inside itself (the one place the story scrolls) */
 body.is-story.story-items .fp-wrap { height: 100%; }
-body.is-story.story-items .fp-wrap, body.is-story.story-items .fp-main, body.is-story.story-items .fp-panels, body.is-story.story-items #fp-panel-items { display: flex !important; flex-direction: column; min-height: 0; max-height: 100%; }
-body.is-story.story-items .fp-main, body.is-story.story-items .fp-panels, body.is-story.story-items #fp-panel-items { flex: 1; }
+body.is-story.story-items .fp-wrap, body.is-story.story-items .fp-main, body.is-story.story-items .fp-pair, body.is-story.story-items .fp-panels, body.is-story.story-items #fp-panel-items { display: flex !important; flex-direction: column; min-height: 0; max-height: 100%; }
+body.is-story.story-items .fp-main, body.is-story.story-items .fp-pair, body.is-story.story-items .fp-panels, body.is-story.story-items #fp-panel-items { flex: 1; }
 body.is-story.story-items #fp-panel-profile { display: none !important; }
 body.is-story .fp-m-head .fp-meta:nth-of-type(n+2) { display: none; } /* the caption has the facts */
 body.is-story.story-items .fp-profile { display: none; }

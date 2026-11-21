@@ -176,6 +176,14 @@ export function sameScorePairs(latest, score, cats) {
 
 // For a building chosen by the reader: another building with the same score and the most
 // different profile. Falls back to the nearest score (within 1 point) if no exact match.
+// The suggested partner for a building the reader brought (from its Building Inspection, or typed in): a
+// building with exactly the same overall score in the same scoring system, the one whose ratings differ most.
+// No exact match means no suggestion (null): the comparison then waits for the reader to choose Building B.
+export function sameScoreMatch(rec, latest, cats) {
+  const pool = latest.filter((r) => r.rsn !== rec.rsn && r.era === rec.era && r.score === rec.score);
+  return pool.length ? d3.greatest(pool, (r) => profileDistance(rec, r, cats)) : null;
+}
+
 export function contrastFor(rec, latest, cats) {
   for (const tol of [0, 1]) {
     const pool = latest.filter((r) => r.rsn !== rec.rsn && Math.abs(r.score - rec.score) <= tol);

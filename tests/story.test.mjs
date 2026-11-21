@@ -109,28 +109,33 @@ test('homepage atlas data: well-formed, inside its box, rentals point at real fo
   assert.ok(doc.sources.some((s) => /3D Massing/.test(s)) && doc.sources.some((s) => /Centreline/.test(s)));
 });
 
-test('the story follows the storyboard: setting → hook → rising insights → one aha → next step', async () => {
+test('the story is seven questions, with the storytelling arc underneath: setting → hook → rising → one aha → falling → next step', async () => {
   globalThis.LLC ??= { fmt: { n: String }, hash: () => 0, tip: {} };   // ui.js expects the explorer's chart helpers (a browser global)
   const { CHAPTERS, STAGES, chapterIndex } = await import('../dashboard/js/story/chapters.js');
+  assert.equal(CHAPTERS.length, 7, 'seven steps (the counter reads 1/7 … 7/7)');
   const order = Object.keys(STAGES);
   const stages = CHAPTERS.map((c) => c.stage);
   for (let i = 1; i < stages.length; i++) assert.ok(order.indexOf(stages[i]) >= order.indexOf(stages[i - 1]), `stages in order: ${stages.join(' → ')}`);
-  for (const st of order) assert.ok(stages.includes(st), `has a ${st} frame`);
+  for (const st of order) assert.ok(stages.includes(st), `has a ${st} step`);
   assert.equal(stages.filter((s) => s === 'aha').length, 1, 'exactly one aha');
-  const rising = CHAPTERS.filter((c) => c.stage === 'rising');
-  assert.ok(rising.length >= 2 && rising.length <= 4, '2–4 rising insights');
-  const D = { pair: { a: { rec: { score: 92 } } } };
-  for (const c of rising) assert.match(c.question(D), /\?$/, `${c.id}: one question per rising insight`);
-  assert.equal(CHAPTERS[chapterIndex('aha')].stage, 'aha', 'the old #/story/aha address opens the aha frame');
-  assert.ok(CHAPTERS.at(-1).final, 'the next step ends with an action');
+  const D = { dist: { median: 92 }, pair: { a: { rec: { score: 92 } } } };
+  for (const c of CHAPTERS) {
+    const t = c.title(D);
+    assert.match(t, /\?$/, `${c.id}: the heading is a question ("${t}")`);
+    assert.ok(t.split(/\s+/).length <= 10, `${c.id}: a short question heading ("${t}")`);
+  }
+  assert.equal(CHAPTERS[chapterIndex('aha')].stage, 'aha', 'the old #/story/aha address opens the aha step');
+  assert.equal(CHAPTERS[chapterIndex('problems')].id, 'building', 'the retired problems step lands on the inspection step');
+  assert.ok(CHAPTERS.at(-1).final, 'the last step ends with an action');
 });
 
-test('story caption: the storyboard arc and stage label are drawn (guards against merges dropping them)', async () => {
+test('story caption: a compact step counter, and no visible stage labels or storyline graphic', async () => {
   const src = await readFile(new URL('../dashboard/js/story/controller.js', import.meta.url), 'utf8');
   // every helper the caption calls must be defined in the controller (a missing one crashes the story at run time)
-  for (const fn of ['arc', 'stageLabel', 'reserveCopy']) {
+  for (const fn of ['reserveCopy']) {
     if (new RegExp(`\\b${fn}\\(`).test(src)) assert.match(src, new RegExp(`(function ${fn}\\(|const ${fn} = )`), `controller.js calls ${fn}() but does not define it`);
   }
-  assert.match(src, /\$\{arc\(index\)\}/, 'the caption draws the storyboard arc');
-  assert.match(src, /class="sc-stage/, 'the caption shows the storyboard stage');
+  assert.match(src, /class="sc-count"[^>]*><b>\$\{index \+ 1\}<\/b>\/\$\{n\}/, 'the caption shows the step counter (1/7)');
+  assert.match(src, /Step \$\{index \+ 1\} of \$\{n\}/, 'screen readers hear "Step 1 of 7"');
+  assert.doesNotMatch(src, /sc-stage|sc-arc|stageLabel/, 'no stage label or storyline graphic in the caption');
 });

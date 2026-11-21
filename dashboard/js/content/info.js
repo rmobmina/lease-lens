@@ -60,8 +60,8 @@ export const INFO = {
     body: '<p>Inspectors rate each item 0–3 (2023 – now) or 1–5 (2017 – 2023). LeaseLens counts the two lowest marks as <b>rated poorly</b>. A category’s share is its poorly rated items ÷ its applicable items. N/A and blank items are never counted, as a problem or as a pass.</p>',
   },
   'compare-match': {
-    title: 'How is the other building chosen?',
-    body: '<p>Only latest evaluations from the same scoring system are compared. Buildings with the same overall score come first; if there are none, the closest within 1, then 2 points. The list runs from the most different inspection profile to the least, within the selected ward when it has a match.</p>',
+    title: 'How is Building B suggested?',
+    body: '<p>When you bring one building, we suggest another with exactly the same overall score in the same scoring system, choosing the one whose item ratings differ most. If none matches exactly, nothing is suggested. You can type any address as Building B, and both scores are always shown.</p>',
   },
   'history-systems': {
     title: 'Why aren’t older scores compared?',

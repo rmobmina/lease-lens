@@ -1,13 +1,23 @@
-// Inspection fingerprint (the project's novel view): what lies underneath one RentSafeTO score.
+// Compare buildings: the one comparison view in LeaseLens (the project's novel view: the inspection fingerprint).
 // Each building's latest evaluation is laid out on the same grid: one square per inspection
 // item, grouped into five areas, coloured by the item's rating. Because every item sits in the
 // same place for every building, two fingerprints can be compared at a glance.
+//
+// One layout, one pair of building selectors (A and B) and one comparison state (main.js state.fp), whichever
+// way the reader arrives; the entry point only supplies the first selection:
+//   Same score, different story   #/compare          an example pair with the same score
+//   a building's inspection       #/compare/<A>      that building as A; B is a building with exactly the same
+//                                                    score in the same scoring system (the most different one),
+//                                                    or empty with a note when there is none
+//   the map's Compare mode        #/compare/<A>/<B>  exactly that pair, whatever their scores
+// Either building can be replaced through address search, including with a building of a different score;
+// both actual scores are always shown, and same-score wording is used only when the scores match.
 // All data work lives in ../fingerprint-model.js; this file only draws and handles input.
 
 import { enhanceSelect } from '../components/select.js';
 import { initSearch } from '../atlas/search.js';
 import { itemLabel } from '../model.js';
-import { itemStats, buildingProfile, sameScorePairs, contrastFor, scoreOptions, cityFindings, SCALE_MAX, UNCOMMON_SHARE } from '../fingerprint-model.js';
+import { itemStats, buildingProfile, sameScorePairs, sameScoreMatch, scoreOptions, cityFindings, SCALE_MAX, UNCOMMON_SHARE } from '../fingerprint-model.js';
 import { tip, pct, fmt, esc, titleCase, formatDate, cssVar, anchorEvent } from '../ui.js';
 import { renderProfile, refitProfile } from './fp-profile.js';
 import { reducedMotion } from '../motion.js';
@@ -46,16 +56,23 @@ export function renderFingerprint(ctx, M, state) {
   const layout = layoutCache.layout;
 
   // ---- which two buildings -------------------------------------------------
+  // state.a / state.b are the reader's choices (or the entry point's); a B that is only suggested is never
+  // stored, so replacing A suggests again. The other scoring system is looked up only to explain why a
+  // building can't be lined up item by item.
   const pool = ctx.latest.length >= 2 ? ctx.latest : pm.latest;
   const options = scoreOptions(pool);
   if (!options.some((o) => o.score === state.score)) state.score = options.some((o) => o.score === 92) ? 92 : d3.median(options, (o) => o.score) | 0;
+  const other = M.byPeriod[pm.era === 'cur' ? 'pre' : 'cur'];
+  const elsewhere = (rsn) => (rsn && !pm.latestByRsn.has(rsn) ? other.latestByRsn.get(rsn) ?? null : null);
   let a = state.a && pm.latestByRsn.get(state.a);
   let b = state.b && pm.latestByRsn.get(state.b);
+  const aOld = elsewhere(state.a), bOld = elsewhere(state.b);
   let pairs = [];
   let mode = 'example';
-  if (a) {
+  let suggested = false;
+  if (state.a || state.b) {
     mode = 'custom';
-    if (!b) b = contrastFor(a, pool.some((r) => r.rsn === a.rsn) ? pool : pm.latest, pm.cats);
+    if (a && !state.b) { b = sameScoreMatch(a, pool.some((r) => r.rsn === a.rsn) ? pool : pm.latest, pm.cats) ?? sameScoreMatch(a, pm.latest, pm.cats); suggested = !!b; }
   } else {
     pairs = sameScorePairs(pool, state.score, pm.cats);
     if (!pairs.length) pairs = sameScorePairs(pm.latest, state.score, pm.cats);
@@ -63,7 +80,7 @@ export function renderFingerprint(ctx, M, state) {
   }
 
   // ---- controls --------------------------------------------------------------
-  // The score menu always shows the score on screen: the pair's score, or building A's when the reader chose
+  // The examples menu always shows the score on screen: the pair's score, or building A's when the reader chose
   // their own buildings (choosing a score from it goes back to matched pairs at that score).
   const shownScore = mode === 'custom' && a ? a.score : state.score;
   const opts = options.some((o) => o.score === shownScore) ? options : [...options, { score: shownScore, n: 1 }].sort((x, y) => x.score - y.score);
@@ -73,8 +90,11 @@ export function renderFingerprint(ctx, M, state) {
   $('fp-next').hidden = mode === 'custom' || pairs.length < 2;
   $('fp-next').textContent = pairs.length > 1 ? `Show another pair (${(state.pairIndex % pairs.length) + 1} of ${pairs.length})` : '';
   $('fp-reset').hidden = mode !== 'custom';
-  $('fp-a').placeholder = a ? titleCase(a.address) : 'Start typing an address…';
-  $('fp-b').placeholder = b ? titleCase(b.address) : 'Start typing an address…';
+  $('fp-a').placeholder = a ? titleCase(a.address) : aOld ? titleCase(aOld.address) : 'Start typing an address…';
+  $('fp-b').placeholder = b ? titleCase(b.address) : bOld ? titleCase(bOld.address) : 'Start typing an address…';
+  $('fp-a-meta').innerHTML = pickMeta(a ?? aOld, pm, !a && aOld);
+  $('fp-b-meta').innerHTML = pickMeta(b ?? bOld, pm, !b && bOld, suggested ? 'Suggested: same score' : '');
+  $('fp-b-label').textContent = b && suggested ? 'Building B (suggested)' : 'Building B';
 
   // ---- intro numbers (computed, not typed) -------------------------------------
   const scores = pm.latest.map((r) => r.score).sort(d3.ascending);
@@ -85,7 +105,12 @@ export function renderFingerprint(ctx, M, state) {
   // ---- the pair -------------------------------------------------------------------
   const pa = a && buildingProfile(a, layout);
   const pb = b && buildingProfile(b, layout);
-  $('fp-verdict').innerHTML = pa && pb ? takeaway(pa, pb) : 'Not enough buildings with this score to compare.';
+  // Without two buildings in this scoring system there is nothing to line up: say why and what to do, and
+  // keep the item views out of the way (never a score difference or item comparison across the two systems).
+  const ready = !!(pa && pb);
+  $('fp-pair').hidden = !ready;
+  $('fp-verdict').innerHTML = ready ? takeaway(pa, pb, suggested) : missing({ a, b, aOld, bOld, mode, pm, score: state.score });
+  if (!ready) { $('fp-legend').hidden = true; $('fp-legend-btn').setAttribute('aria-expanded', 'false'); }
   renderProfile($('fp-profile'), pa, pb);
   // the guided story shows the item grids without the tabs
   const story = document.body.classList.contains('is-story');
@@ -147,10 +172,14 @@ function wire(ctx) {
           ? 'Only evaluated under the other scoring system. Scores from the two systems aren’t compared; switch systems to see it.'
           : 'No evaluated building matches that address.';
       },
-      onPick: (r) => ctx.setFp((s) => (slot === 'a'
-        // a new A gets a same-score partner, unless the reader chose a B with that score themselves
-        ? { a: r.rsn, b: s.b && s.b !== r.rsn && shown?.b?.rsn === s.b && shown.b.score === r.score ? s.b : null }
-        : { a: s.a ?? shown?.a?.rsn, b: r.rsn })),
+      // Replacing one building keeps the other. A B the reader chose stays, whatever its score; a B that was
+      // only suggested is suggested again for the new A. Picking the building already in the other slot swaps nothing.
+      onPick: (r) => {
+        if (shown?.[other]?.rsn === r.rsn) { $('fp-status').textContent = `${titleCase(r.address)} is already Building ${other.toUpperCase()}.`; return; }
+        ctx.setFp((s) => (slot === 'a'
+          ? { a: r.rsn, b: s.b && s.b !== r.rsn ? s.b : null }
+          : { a: s.a ?? shown?.a?.rsn, b: r.rsn }));
+      },
     });
   };
   pick('a');
@@ -187,19 +216,40 @@ function wire(ctx) {
 
 // ---- the takeaway ------------------------------------------------------------------------
 // One sentence under the selectors, from the data: the shared score, then who had items rated 0 or 1.
-function takeaway(pa, pb) {
+function takeaway(pa, pb, suggested = false) {
   const name = (p) => `<b>${esc(titleCase(p.rec.address))}</b>`;
   const n = (p) => p.low.length;
   const items = (k) => (k === 1 ? 'an item' : `${k} items`);
-  const lead = pa.rec.score === pb.rec.score
-    ? `Both scored <b>${pa.rec.score}</b>.`
-    : `They scored <b>${pa.rec.score}</b> and <b>${pb.rec.score}</b>, so this isn’t a same-score comparison.`;
+  const same = pa.rec.score === pb.rec.score;
+  const tag = same ? `<span class="fp-tag">${suggested ? 'Suggested match: same score' : 'Same score'}</span> ` : '<span class="fp-tag fp-tag-diff">Different scores</span> ';
+  const lead = same
+    ? `${tag}Both scored <b>${pa.rec.score}</b>.`
+    : `${tag}A scored <b>${pa.rec.score}</b> and B scored <b>${pb.rec.score}</b>, ${Math.abs(pa.rec.score - pb.rec.score)} point${Math.abs(pa.rec.score - pb.rec.score) === 1 ? '' : 's'} apart.`;
   let tail;
   if (!n(pa) && !n(pb)) tail = 'Neither had an item rated 0 or 1.';
   else if (!n(pb)) tail = `Only ${name(pa)} had ${items(n(pa))} rated 0 or 1.`;
   else if (!n(pa)) tail = `Only ${name(pb)} had ${items(n(pb))} rated 0 or 1.`;
   else tail = `${name(pa)} had ${items(n(pa))} rated 0 or 1; ${name(pb)} had ${n(pb)}.`;
   return `${lead} ${tail}`;
+}
+
+// When there is no pair to draw: what is missing, and what the reader can do about it.
+function missing({ a, b, aOld, bOld, mode, pm, score }) {
+  const sys = pm.era === 'cur' ? '2023 – now' : '2017 – 2023';
+  const old = (r) => `<b>${esc(titleCase(r.address))}</b> was last evaluated in ${r.date.slice(0, 4)}, under the ${r.era === 'cur' ? '2023 – now' : '2017 – 2023'} scoring system (score ${r.score}). That system rated different items on a different scale, so its inspection can’t be lined up item by item, or its score compared, with one from the ${sys} system.`;
+  if (aOld) return `${old(aOld)} Choose a building evaluated under the ${sys} system as Building A.`;
+  if (bOld) return `${old(bOld)} Choose a building evaluated under the ${sys} system as Building B.`;
+  if (a && !b) return `<span class="fp-tag fp-tag-diff">No same-score match</span> No other building scored exactly <b>${a.score}</b> under the ${sys} system. Choose any building as Building B to compare, and both scores will be shown.`;
+  if (!a && b) return 'Choose Building A to compare.';
+  return mode === 'example' ? `Fewer than two buildings scored ${score} under the ${sys} system, so there’s no example pair at that score. Choose another score or type two addresses.` : 'Choose two buildings to compare.';
+}
+
+// The line under each building's field: its actual score, where it is, when it was inspected, and its inspection.
+function pickMeta(r, pm, otherSystem, note = '') {
+  if (!r) return '';
+  const sys = otherSystem ? ` · ${r.era === 'cur' ? '2023 – now' : '2017 – 2023'} system` : '';
+  return `${note ? `<span class="fp-pick-note">${esc(note)}</span>` : ''}<span class="fp-pick-score"><b class="tnum">${r.score}</b>/100</span> · ${esc(r.wardName)} · ${formatDate(r.date)}${sys}
+    · <a href="#/xray/${r.rsn}">Inspection<span class="visually-hidden"> of ${esc(titleCase(r.address))}</span></a>`;
 }
 
 // ---- every item: one shared matrix --------------------------------------------------------

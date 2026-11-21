@@ -256,6 +256,20 @@ test('ward card: the lowest and highest lists show five buildings and never sile
   }
 });
 
+test('ward card: a shorter preview still comes from the correct end of the whole sorted ward list', async () => {
+  const { wardExtremes } = await import('../dashboard/js/sections/building.js');
+  const pm = M.byPeriod.cur;
+  for (const [, rs] of d3.group(pm.latest, (r) => r.ward)) {
+    for (const n of [3, 4, 5]) {
+      const low = wardExtremes(rs, 'low', n).shown.map((r) => r.score);
+      const high = wardExtremes(rs, 'high', n).shown.map((r) => r.score);
+      const sorted = rs.map((r) => r.score).sort((a, b) => a - b);
+      assert.deepEqual(low, sorted.slice(0, n), 'lowest n of the full list');
+      assert.deepEqual(high, sorted.slice(-n).reverse(), 'highest n of the full list');
+    }
+  }
+});
+
 test('ward card: the full list sorts every column both ways and keeps unrecorded values last', async () => {
   const { sortWardRows } = await import('../dashboard/js/sections/building.js');
   const rows = M.byPeriod.cur.latest.filter((r) => r.ward === M.byPeriod.cur.latest[0].ward);

@@ -18,7 +18,7 @@ body:not(.is-story) .fp-view > .fp-wrap { flex: 1; width: 100%; max-width: 1360p
 body:not(.is-story) .fp-intro { flex: none; max-width: none; margin: 0; }
 body:not(.is-story) .fp-intro h1 { font-size: clamp(26px, 2.1vw, 32px); line-height: var(--leading-tight); }
 body:not(.is-story) .fp-intro .lede { margin-top: var(--space-1); font-size: var(--text-base); line-height: var(--leading-body); color: var(--ink-2); max-width: none; }
-body:not(.is-story) .fp-main:not([hidden]) { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+body:not(.is-story) .fp-main:not([hidden]), body:not(.is-story) .fp-pair:not([hidden]) { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 body:not(.is-story) .fp-controls { flex: none; margin-top: var(--space-4); padding: 0 0 var(--space-3); border-top: 0; }
 body:not(.is-story) .fp-verdict { flex: none; margin: 0; max-width: 78ch; font-size: var(--text-base); line-height: var(--leading-body); }
 .fp-nav { margin-top: var(--space-3); }

@@ -49,8 +49,9 @@
   <!-- One header on every route: the same wordmark, navigation, Display settings and height. -->
   <header class="site-bar" id="site-bar">
     <a class="wordmark" href="#/" aria-label="LeaseLens home">
-      <img class="logo logo-light" src="assets/brand/lockup.png" alt="" width="140" height="40" />
-      <img class="logo logo-dark" src="assets/brand/lockup-dark.png" alt="" width="140" height="40" />
+      <img class="logo logo-light" src="assets/brand/leaselens-mark.png" alt="" width="128" height="128" />
+      <img class="logo logo-dark" src="assets/brand/leaselens-mark-dark.png" alt="" width="128" height="128" />
+      <span class="wordmark-text" aria-hidden="true">LeaseLens</span>
     </a>
     <div class="search" role="search">
       <label class="visually-hidden" for="search">Search an address</label>
@@ -172,6 +173,21 @@
 
           <aside class="card place" id="place" aria-labelledby="place-title" tabindex="-1" hidden></aside>
 
+          <!-- Compare mode: choose Building A and B on the map (or with the address search), then compare them -->
+          <section class="card place pick-card" id="pick-card" aria-labelledby="pick-title" hidden>
+            <header class="place-head">
+              <div><p class="place-kicker">Compare mode</p><h2 id="pick-title" tabindex="-1">Compare buildings</h2></div>
+              <button type="button" class="icon-button place-close" id="pick-close" aria-label="Leave compare mode" title="Leave compare mode (Esc)">×</button>
+            </header>
+            <p class="place-sub pick-help" id="pick-help"></p>
+            <ol class="pick-slots" id="pick-slots" aria-label="Buildings to compare"></ol>
+            <div class="place-actions pick-actions">
+              <button type="button" class="btn btn-primary" id="pick-go" aria-describedby="pick-need">Compare</button>
+              <p class="pick-need" id="pick-need"></p>
+            </div>
+            <p class="visually-hidden" id="pick-live" aria-live="polite"></p>
+          </section>
+
           <section class="card legend-card" id="legend" aria-label="Map legend"></section>
         </div>
 
@@ -180,6 +196,7 @@
           <div class="tools" role="group" aria-label="Map tools">
             <button type="button" class="tool" id="lens-btn" aria-expanded="false" aria-controls="lens-menu">Analysis</button>
             <button type="button" class="tool" id="layers-btn" aria-expanded="false" aria-controls="layers-panel">Filters</button>
+            <button type="button" class="tool" id="compare-btn" aria-pressed="false">Compare</button>
           </div>
 
           <div class="card pop-panel" id="lens-menu" hidden>
@@ -330,9 +347,10 @@
               <div class="bx-nav">
                 <div class="xr-tabs" role="tablist" aria-label="Building views">
                   <button type="button" role="tab" id="xr-tab-model" aria-controls="xr-pane-model" data-xr-tab="model">Inspection</button>
-                  <button type="button" role="tab" id="xr-tab-compare" aria-controls="xr-pane-compare" data-xr-tab="compare">Compare</button>
                   <button type="button" role="tab" id="xr-tab-history" aria-controls="xr-history" data-xr-tab="history">History</button>
                 </div>
+                <!-- the comparison is one shared view (Compare buildings), opened with this building as Building A -->
+                <button type="button" class="bx-compare-btn" id="xr-compare-open">Compare with another building <span aria-hidden="true">→</span></button>
                 <button type="button" class="bx-method-btn" id="xr-method-open" aria-haspopup="dialog">Methodology</button>
               </div>
 
@@ -380,11 +398,6 @@
                   </aside>
                 </div>
 
-                <!-- Compare: this building against one with the same (or the closest) overall score -->
-                <section class="xr-section xr-pane bx-compare" id="xr-pane-compare" role="tabpanel" aria-labelledby="xr-tab-compare" hidden>
-                  <div id="xr-compare" class="bx-cmp"></div>
-                </section>
-
                 <!-- History: one headline, one key change, one large timeline -->
                 <section class="xr-section xr-pane bx-history" id="xr-history" role="tabpanel" aria-labelledby="xr-tab-history" hidden>
                   <header class="bx-pane-head">
@@ -411,12 +424,14 @@
             </div>
           </section>
 
-          <!-- Compare buildings: same score, different story --------------------------------------- -->
+          <!-- Compare buildings: the one comparison view. Opened from "Same score, different story" (#/compare, an
+               example pair), from a building's inspection (#/compare/<RSN>: that building as A, a same-score B
+               suggested) and from the map's Compare mode (#/compare/<A>/<B>: exactly that pair). -------------- -->
           <section class="view fp-view" data-view="compare" aria-labelledby="fp-title" hidden>
             <div class="fp-wrap">
               <header class="fp-intro">
-                <h1 id="fp-title">Same score, different story <button type="button" class="info-btn" data-info="low-mark" data-info-from="fp-spread" aria-label="What a low mark is, and how scores spread across Toronto">i</button></h1>
-                <p class="lede">Lay the inspection items side by side and two buildings with the same score can look nothing alike.</p>
+                <h1 id="fp-title">Compare buildings <button type="button" class="info-btn" data-info="low-mark" data-info-from="fp-spread" aria-label="What a low mark is, and how scores spread across Toronto">i</button></h1>
+                <p class="lede">Lay two buildings’ inspection items side by side. Even buildings with the same score can look nothing alike.</p>
                 <div id="fp-spread" class="info-source" hidden></div>
               </header>
 
@@ -427,9 +442,9 @@
 
               <div id="fp-main" class="fp-main">
                 <div class="fp-controls" role="group" aria-label="Choose buildings to compare">
-                  <label class="field fp-field-score"><span class="field-label">Overall score</span><select id="fp-score"></select></label>
-                  <div class="field fp-pick"><label class="field-label" for="fp-a">Building A</label><div class="search fp-search"><input id="fp-a" type="text" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="fp-a-list" autocomplete="off" spellcheck="false" placeholder="Start typing an address…" /><ul id="fp-a-list" class="search-list" role="listbox" aria-label="Buildings for A" hidden></ul></div></div>
-                  <div class="field fp-pick"><label class="field-label" for="fp-b">Building B</label><div class="search fp-search"><input id="fp-b" type="text" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="fp-b-list" autocomplete="off" spellcheck="false" placeholder="Start typing an address…" /><ul id="fp-b-list" class="search-list" role="listbox" aria-label="Buildings for B" hidden></ul></div></div>
+                  <label class="field fp-field-score"><span class="field-label">Same-score examples</span><select id="fp-score"></select></label>
+                  <div class="field fp-pick"><label class="field-label" for="fp-a">Building A</label><div class="search fp-search"><input id="fp-a" type="text" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="fp-a-list" aria-describedby="fp-a-meta" autocomplete="off" spellcheck="false" placeholder="Start typing an address…" /><ul id="fp-a-list" class="search-list" role="listbox" aria-label="Buildings for A" hidden></ul></div><p class="fp-pick-meta" id="fp-a-meta"></p></div>
+                  <div class="field fp-pick"><span class="fp-label-row"><label class="field-label" for="fp-b" id="fp-b-label">Building B</label><button type="button" class="info-btn" data-info="compare-match" aria-label="How Building B is suggested">i</button></span><div class="search fp-search"><input id="fp-b" type="text" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="fp-b-list" aria-describedby="fp-b-meta" autocomplete="off" spellcheck="false" placeholder="Start typing an address…" /><ul id="fp-b-list" class="search-list" role="listbox" aria-label="Buildings for B" hidden></ul></div><p class="fp-pick-meta" id="fp-b-meta"></p></div>
                   <div class="fp-actions">
                     <button type="button" class="btn" id="fp-next"></button>
                     <button type="button" class="btn btn-quiet" id="fp-reset" hidden>Back to example pairs</button>
@@ -437,8 +452,10 @@
                 </div>
 
                 <p class="fp-verdict" id="fp-verdict" aria-live="polite"></p>
+                <p class="visually-hidden" id="fp-status" aria-live="polite"></p>
 
                 <!-- One view at a time, swapped in place: the page never grows taller than the window. -->
+                <div class="fp-pair" id="fp-pair">
                 <div class="bx-nav fp-nav">
                   <div class="xr-tabs" role="tablist" aria-label="Comparison views">
                     <button type="button" role="tab" id="fp-tab-profile" aria-controls="fp-panel-profile" data-fp-tab="profile">By category</button>
@@ -469,6 +486,7 @@
                       <div class="fp-city-notes" id="fp-city-notes"></div>
                     </section>
                   </div>
+                </div>
                 </div>
 
                 <dialog class="bx-dialog fp-dialog" id="fp-table-dialog" aria-labelledby="fp-table-title">

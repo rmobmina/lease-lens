@@ -41,7 +41,7 @@ function distribution(el, D) {
     .attr('role', 'img').attr('aria-label', `Bar chart of latest scores. Median ${median}; the middle half of buildings scored ${q1} to ${q3}.`);
   svg.append('rect').attr('class', 'story-band').attr('x', x(q1)).attr('width', x(q3) + x.bandwidth() - x(q1))
     .attr('y', m.top - 18).attr('height', H - m.bottom - m.top + 18);
-  svg.append('text').attr('class', 'annot-sub').attr('x', x(q3) + x.bandwidth()).attr('y', m.top - 24).attr('text-anchor', 'end').text(`Middle half: ${q1}–${q3}`);
+  svg.append('text').attr('class', 'annot-sub story-reveal').attr('x', x(q3) + x.bandwidth()).attr('y', m.top - 24).attr('text-anchor', 'end').text(`Middle half: ${q1}–${q3}`);
   svg.append('g').attr('class', 'grid').attr('transform', `translate(${m.left},0)`)
     .call(d3.axisLeft(y).ticks(4).tickSize(-(W - m.left - m.right)).tickFormat(''));
   svg.append('g').attr('class', 'axis').attr('transform', `translate(${m.left},0)`).call(d3.axisLeft(y).ticks(4).tickSizeOuter(0));
@@ -51,11 +51,12 @@ function distribution(el, D) {
   svg.append('g').selectAll('rect').data(bins.filter((d) => d.score >= lo)).join('rect')
     .attr('x', (d) => x(d.score)).attr('width', x.bandwidth()).attr('y', (d) => y(d.n)).attr('height', (d) => y(0) - y(d.n))
     .attr('fill', (d) => (d.score === median ? cssVar('--accent') : cssVar('--chart-neutral')))
+    .attr('class', (d) => (d.score === median ? 'story-median' : null))
     .on('mouseenter', (ev, d) => tip.show(`<b>Score ${d.score}</b><br>${fmt.n(d.n)} buildings`, ev))
     .on('mousemove', (ev) => tip.move(ev)).on('mouseleave', () => tip.hide());
   const mx = x(median) + x.bandwidth() / 2;
   const mb = bins.find((d) => d.score === median);
-  svg.append('text').attr('class', 'annot').attr('x', mx - 8).attr('y', y(mb.n) + 4).attr('text-anchor', 'end').text(`Median ${median}`);
+  svg.append('text').attr('class', 'annot story-reveal').attr('x', mx - 8).attr('y', y(mb.n) + 4).attr('text-anchor', 'end').text(`Median ${median}`);
 }
 
 // ---- problems: share of buildings with a low-rated item, by category ----------------------------

@@ -12,9 +12,10 @@ body[data-layer="work"] { overflow: hidden; }
 .site-bar { flex: none; height: var(--header-h); display: flex; align-items: center; gap: var(--space-5); padding: 0 var(--space-5);
   background: var(--surface); border-bottom: var(--border); position: relative; z-index: 1200; view-transition-name: site-bar; /* stays put while pages change */ }
 .wordmark { flex: none; font-family: var(--font-display); font-size: var(--text-xl); font-weight: var(--weight-bold); letter-spacing: var(--tracking-heading); color: var(--ink); text-decoration: none; line-height: 1; }
-.wordmark { display: inline-flex; align-items: center; }
-.wordmark .logo { display: block; height: 34px; width: auto; }
-/* the lockup has dark ink: the light-ink version shows whenever the dark theme is on */
+.wordmark { display: inline-flex; align-items: center; gap: 8px; }
+.wordmark .logo { display: block; height: 30px; width: auto; }
+.wordmark-text { font-size: var(--text-xl); }
+/* the mark has dark ink: the light-ink version shows whenever the dark theme is on (the name follows --ink) */
 .logo-dark { display: none !important; }
 :root[data-theme="dark"] .logo-light { display: none !important; }
 :root[data-theme="dark"] .logo-dark { display: block !important; }
@@ -111,10 +112,15 @@ body.has-building .title-card { display: none; }
 .place-more { margin-top: var(--space-4); padding-top: var(--space-3); border-top: var(--border); }
 .place-h3 { font-size: var(--text-base); font-weight: var(--weight-semibold); margin-top: var(--space-4); }
 .place-more > .place-h3:first-child { margin-top: 0; }
-/* the ward card's Lowest / Highest switch: its legend reads as the section heading; two equal halves */
-.ward-list-pick { margin-top: var(--space-4); display: grid; grid-template-columns: 1fr 1fr; }
-.ward-list-pick legend.place-h3 { grid-column: 1 / -1; margin: 0 0 var(--space-2); font-size: var(--text-base); color: var(--ink); }
-.ward-list { margin-top: var(--space-2); }
+/* the ward card's ranked preview: its heading ("Lowest scores" / "Highest scores") and the one switch on a line */
+.ward-rank-head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-3); flex-wrap: wrap; margin-top: var(--space-4); }
+.ward-rank-head .place-h3 { margin: 0; }
+.ward-flip { font-size: var(--text-sm); font-weight: var(--weight-semibold); white-space: nowrap; }
+.ward-list { margin-top: var(--space-1); }
+/* address · date · score in fixed columns, so every row lines up whatever the date's length */
+.place .ward-rank button { grid-template-columns: minmax(0, 1fr) 6.6em 3em; font-variant-numeric: tabular-nums; }
+.ward-rank .nl-km { text-align: right; white-space: nowrap; }
+.ward-rank .nl-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .place-sub { font-size: var(--text-sm); color: var(--ink-2); margin-top: var(--space-1); }
 .place-more > .place-sub:first-child { margin-top: 0; }
 .place-note { font-size: var(--text-sm); color: var(--ink-2); margin-top: var(--space-3); }
@@ -133,6 +139,18 @@ body.has-building .title-card { display: none; }
 .ward-vs { display: grid; gap: var(--space-1); margin-top: var(--space-3); font-size: var(--text-sm); font-variant-numeric: tabular-nums; }
 .ward-vs-row { display: grid; grid-template-columns: 72px minmax(0, 1fr) 36px; align-items: center; gap: var(--space-2); }
 .ward-vs-k { color: var(--muted); }
+/* Short screens and large Display text: with the ward details open, the headline finding tightens up so the ranked
+   preview, the full-list link and the analysis actions fit (the preview itself also drops rows, building.js); if
+   they still don't, the card scrolls, so nothing is ever out of reach. */
+@media (max-height: 820px) and (min-width: 761px) {
+  .place:has(.ward-more:not([hidden])) .ward-stat { margin-top: var(--space-2); }
+  .place:has(.ward-more:not([hidden])) .stat-num { font-size: 32px; }
+  .place:has(.ward-more:not([hidden])) .stat-cap { margin-top: var(--space-1); }
+  .place:has(.ward-more:not([hidden])) .ward-vs { margin-top: var(--space-2); }
+  .place:has(.ward-more:not([hidden])) .place-actions { margin-top: var(--space-3); }
+  .place:has(.ward-more:not([hidden])) .place-more { margin-top: var(--space-3); }
+  .place:has(.ward-more:not([hidden])) .place .near-list button, .place:has(.ward-more:not([hidden])) .ward-rank button { padding-block: 6px; }
+}
 .ward-vs-row b { text-align: right; font-weight: var(--weight-semibold); color: var(--ink); }
 .ward-vs-track { height: 8px; background: var(--grid); border-radius: 2px; overflow: hidden; }
 .ward-vs-bar { display: block; height: 100%; width: var(--w); background: var(--ch-2); border-radius: 2px; transform-origin: left; animation: bar-grow var(--dur-chart) var(--ease-out); }
@@ -258,7 +276,35 @@ body.has-lens .leaflet-bottom.leaflet-right { right: min(456px, calc(40% + 16px)
 .ward-label small { display: block; font-weight: var(--weight-medium); font-size: var(--text-xs); color: var(--ink-2); }
 .leaflet-tooltip.sel-label { background: var(--accent); color: var(--accent-ink); border: 0; border-radius: var(--radius-sm); font: 600 calc(12.5px * var(--text-scale))/1.3 var(--font-ui); padding: var(--space-1) var(--space-2); box-shadow: var(--shadow-float); white-space: nowrap; }
 .leaflet-tooltip.sel-label::before { border-top-color: var(--accent); }
+.leaflet-tooltip-bottom.sel-label::before { border-top-color: transparent; border-bottom-color: var(--accent); }
 .sel-label b { margin-left: var(--space-1); font-variant-numeric: tabular-nums; }
+/* Compare mode: the letter leads each label, so A and B read without colour */
+.pick-tag { display: inline-grid; place-items: center; min-width: 1.4em; height: 1.4em; border-radius: 50%; background: var(--accent-ink); color: var(--accent); font-weight: var(--weight-bold); }
+
+/* ---- Compare mode card: two slots (A, B), the one waiting for a building marked, then Compare ---------------- */
+.pick-card[hidden] { display: none; }
+.pick-help { margin-top: var(--space-2); }
+.pick-slots { list-style: none; margin: var(--space-3) 0 0; padding: 0; display: grid; gap: var(--space-2); }
+.pick-slot { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: var(--space-1) var(--space-3); align-items: center; padding: var(--space-2) var(--space-3);
+  border: var(--border-width) dashed var(--border-control); border-radius: var(--radius-sm); }
+.pick-slot.is-full { border-style: solid; border-color: var(--border-color); }
+.pick-slot.is-now { border: 2px solid var(--accent); background: var(--accent-soft); }
+.pick-letter { display: grid; place-items: center; width: 28px; height: 28px; border-radius: 50%; background: var(--surface-2); color: var(--ink); font-weight: var(--weight-bold); }
+.pick-slot.is-full .pick-letter, .pick-slot.is-now .pick-letter { background: var(--accent); color: var(--accent-ink); }
+.pick-name { font-weight: var(--weight-semibold); overflow-wrap: anywhere; }
+.pick-empty { font-weight: var(--weight-medium); color: var(--ink-2); }
+.pick-slot.is-now .pick-empty { color: var(--accent); }
+.pick-meta { font-size: var(--text-sm); color: var(--ink-2); }
+.pick-now { color: var(--accent); font-weight: var(--weight-semibold); }
+.pick-btns { grid-column: 2; display: flex; gap: var(--space-4); }
+.pick-btns:empty { display: none; }
+.pick-btns .link-btn { font-size: var(--text-sm); font-weight: var(--weight-semibold); }
+.pick-btns .link-btn[aria-pressed="true"] { text-decoration: underline; text-underline-offset: 3px; }
+.pick-actions .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+.pick-need { font-size: var(--text-sm); color: var(--ink-2); }
+.pick-need:empty { display: none; }
+/* while choosing, the legend gives the card its room */
+body.is-picking .legend-card { display: none; }
 .sel-ring { animation: sel-in 0.3s ease-out; transform-box: fill-box; transform-origin: center; }
 .leaflet-selection-pane { transition: opacity 0.25s ease-out; }
 .leaflet-container.is-flying .leaflet-selection-pane { opacity: 0; transition: none; }
@@ -292,7 +338,8 @@ h1[tabindex="-1"]:focus:not(:focus-visible), h2[tabindex="-1"]:focus:not(:focus-
 /* ---- small screens: the rails become a top card and bottom sheets ----------------------------------------------- */
 @media (max-width: 760px) {
   .site-bar { gap: var(--space-2); padding: 0 var(--space-3) 0 var(--space-4); }
-  .wordmark .logo { height: 28px; }
+  .wordmark .logo { height: 26px; }
+  .wordmark-text { font-size: var(--text-lg); }
   .search { flex: 1 1 auto; }
   .menu-button { display: block; flex: none; }
   .theme-toggle .tt-label { display: none; }

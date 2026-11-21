@@ -402,8 +402,24 @@ function zoomIntoCluster(c) {
 }
 
 // ---- selection: ring, footprint and one label ------------------------------------------------------------------
+// Compare mode adds its two choices: each building ringed and labelled with its letter (A, B), its address and score.
+function drawPicks() {
+  const accent = cssVar('--accent'), z = map.getZoom();
+  for (const { rec, label } of D?.picks ?? []) {
+    if (rec?.lat == null) continue;
+    L.circleMarker([rec.lat, rec.lon], { pane: 'selection', radius: z >= 15 ? 13 : 10, color: accent, weight: 3, fill: false, interactive: false, className: 'sel-ring pick-ring' }).addTo(selLayer);
+    L.circleMarker([rec.lat, rec.lon], { pane: 'selection', radius: 4, color: cssVar('--surface'), weight: 1.5, fillColor: accent, fillOpacity: 1, interactive: false }).addTo(selLayer);
+    // A's label above its building, B's below, so two neighbours' labels never cover each other
+    const below = label === 'B';
+    L.tooltip({ permanent: true, direction: below ? 'bottom' : 'top', offset: [0, below ? 14 : -14], className: 'sel-label pick-label', pane: 'selection', interactive: false })
+      .setLatLng([rec.lat, rec.lon])
+      .setContent(`<span class="pick-tag">${label}</span>${z >= 12 ? ` ${esc(titleCase(rec.address))} <b>${rec.score}</b>` : ''}`).addTo(selLayer);
+  }
+}
+
 function drawSelection() {
   selLayer.clearLayers();
+  drawPicks();
   const rec = D?.selected && (D.pm.latestByRsn.get(D.selected) ?? D.selectedRec);
   if (!rec || rec.lat == null) return;
   const accent = cssVar('--accent');
@@ -451,7 +467,8 @@ export function showCity() {
   map.flyToBounds(b, { paddingTopLeft: i.paddingTopLeft, paddingBottomRight: i.paddingBottomRight, maxZoom: 11.5, ...motion() });
 }
 
-export function showWard(ward, { city = false } = {}) {
+// duration (s): a slower, deliberate flight (the guided story); otherwise it follows the distance
+export function showWard(ward, { city = false, duration } = {}) {
   const b = wardBoundsOf(ward);
   if (!b) return;
   const i = insets();
@@ -459,7 +476,7 @@ export function showWard(ward, { city = false } = {}) {
   // Normally land just inside the cluster level so the ward's buildings start to separate; with
   // city: true, stay on the ward map and centre the ward among its neighbours (the guided story).
   const z = city ? Math.min(fit, ZOOM.areaOut - 0.5) : Math.max(ZOOM.areaIn, Math.min(fit, 13.5));
-  flyTo(b.getCenter(), z);
+  flyTo(b.getCenter(), z, duration);
 }
 
 // duration (s): a slower, deliberate flight (the guided story); otherwise it follows the distance

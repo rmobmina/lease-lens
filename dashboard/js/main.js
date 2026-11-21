@@ -7,7 +7,9 @@
 //
 // Addresses (every level is a link, and Back/Forward work):
 //   #/explore?at=<lat>,<lon>,<zoom>&ward=<code>&b=<RSN>&lens=<id>&sys=pre&show=low10   the map
-//   #/xray/<RSN>   #/compare/<RSN>   #/story/<chapter>   #/about   #/help   (#/approach → #/about)
+//   #/xray/<RSN>   #/compare   #/compare/<A>   #/compare/<A>/<B>   #/story/<step>   #/about   #/help   (#/approach → #/about)
+// The comparison is one view with three ways in: #/compare (Same score, different story: an example pair),
+// #/compare/<A> (from a building's inspection: B is suggested) and #/compare/<A>/<B> (the map's Compare mode).
 // Old addresses (#/q1…q5, #/building/<RSN>, #/explore/<tab>, #/trends/<tab>, #/fingerprint) redirect.
 //
 // History: panning and zooming replace the current entry; selecting a ward or a building, opening an
@@ -67,7 +69,8 @@ const state = {
   changes: { start: 'all' },
   movers: { dir: 'both' },
   fp: { score: 92, pairIndex: 0, a: null, b: null, shownA: null, shownB: null },
-  xray: { rsn: null, evalUid: null, zone: null, mode: 'exterior', matchRsn: null },
+  xray: { rsn: null, evalUid: null, zone: null, mode: 'exterior' },
+  pick: null,            // the map's Compare mode: { a, b, slot } while it is on (slot: the one the next building fills)
 };
 let M = null;
 let story = null;
@@ -92,6 +95,7 @@ function context() {
     latest: pm.latest.filter(inWard), pairs: pm.pairs.filter((p) => inWard(p.b)),
     ch: choropleth(), highlight: app.highlight,
     select, setWard, setFp, setPeriod, findBuilding, searchAll: () => searchSource,
+    openCompare: (a, b) => navigate(compareHash(a, b)),
     registerShown: (slot, rsn) => { state.fp[slot === 'a' ? 'shownA' : 'shownB'] = rsn; },
   };
 }
@@ -105,8 +109,8 @@ function recOf(rsn) {
 function parseHash() {
   const h = location.hash.replace(/^#\/?/, '');
   const [path, query = ''] = h.split('?');
-  const [route = '', arg] = path.split('/');
-  return { route, arg: arg ? decodeURIComponent(arg) : undefined, query };
+  const [route = '', arg, arg2] = path.split('/');
+  return { route, arg: arg ? decodeURIComponent(arg) : undefined, arg2: arg2 ? decodeURIComponent(arg2) : undefined, query };
 }
 function navigate(hash) {
   if (location.hash === hash) onRoute(); else location.hash = hash;
@@ -115,7 +119,7 @@ function routeIfChanged() { if (location.hash !== handled) onRoute(); }
 
 function onRoute() {
   handled = location.hash;
-  const { route, arg, query } = parseHash();
+  const { route, arg, arg2, query } = parseHash();
   const leg = legacyRoute(route, arg);
   if (leg) { history.replaceState(null, '', leg); onRoute(); return; }
 
@@ -135,6 +139,7 @@ function onRoute() {
   if (!M && !PAGES[route]) return; // routed again once the data has loaded
 
   if (route === 'story') {
+    if (state.pick) setPick(false);   // the story drives the map itself
     const from = lastRoute === 'explore' && state.depth === 'map' ? exploreHash() : lastHash;
     lastHash = location.hash; lastRoute = 'story';
     story.enter(arg, from.startsWith('#/story') ? undefined : from);
@@ -155,7 +160,12 @@ function onRoute() {
     return;
   }
   if (route === 'compare') {
-    if (arg && M.byPeriod.cur.latestByRsn.has(arg) && arg !== state.fp.a) Object.assign(state.fp, { a: arg, b: null });
+    // the address is the comparison: no building means an example pair, one means "this building and a
+    // suggested same-score one", two means exactly that pair (any building evaluated in either system: the
+    // view explains when a building can't be lined up with the other)
+    const ok = (rsn) => (rsn && M.data.byRsn.has(rsn) ? rsn : null);
+    const a = ok(arg), b = ok(arg2) !== a ? ok(arg2) : null;
+    Object.assign(state.fp, { a, b });
     openDepth('compare');
     return;
   }
@@ -245,10 +255,10 @@ function mapInsets() {
   const r = (el) => (el && !el.hidden && el.offsetParent ? el.getBoundingClientRect() : null);
   const cap = story?.active() ? r($('story-panel')) : null; // the story caption is an obstruction too
   if (narrow()) {
-    const sheet = [r($('place')), r($('lens')), cap].filter(Boolean).map((b) => box.bottom - b.top);
+    const sheet = [r($('place')), r($('pick-card')), r($('lens')), cap].filter(Boolean).map((b) => box.bottom - b.top);
     return { left: 0, right: 0, top: (r($('title-card'))?.bottom ?? box.top) - box.top, bottom: Math.max(0, ...sheet) };
   }
-  const left = [r($('title-card')), r($('place')), cap].filter(Boolean).reduce((w, b) => Math.max(w, b.right - box.left), 0);
+  const left = [r($('title-card')), r($('place')), r($('pick-card')), cap].filter(Boolean).reduce((w, b) => Math.max(w, b.right - box.left), 0);
   const lens = r($('lens'));
   return { left, right: lens ? box.right - lens.left : 0, top: 0, bottom: 0 };
 }
@@ -257,7 +267,8 @@ function renderMapLevel() {
   if (!M) return;
   const ctx = context();
   const sel = recOf(state.selected);
-  Atlas.update({ pm: ctx.pm, ward: state.ward, selected: state.selected, show: state.mapShow, ch: ctx.ch, footprint: footprints.get(state.selected) ?? null, selectedRec: sel });
+  const picks = state.pick ? ['a', 'b'].map((k) => ({ label: k.toUpperCase(), rec: state.pick[k] && ctx.pm.latestByRsn.get(state.pick[k]) })).filter((x) => x.rec) : null;
+  Atlas.update({ pm: ctx.pm, ward: state.ward, selected: state.selected, show: state.mapShow, ch: ctx.ch, footprint: footprints.get(state.selected) ?? null, selectedRec: sel, picks });
   if (state.selected && !footprints.has(state.selected)) loadFootprint(state.selected);
   renderChrome();
 }
@@ -277,7 +288,7 @@ function loadFootprint(rsn) {
 // Re-rendering a panel must not drop keyboard focus: remember the focused control and find it again.
 function keepFocus(fn) {
   const a = document.activeElement;
-  const host = a?.closest('#place, #lens-options, #legend, #in-view');
+  const host = a?.closest('#place, #pick-card, #lens-options, #legend, #in-view');
   const key = host && (a.id ? `#${a.id}` : ['data-act', 'data-tab', 'data-rsn', 'data-lens', 'value'].map((k) => (a.hasAttribute(k) ? `[${k}="${a.getAttribute(k)}"]` : '')).join(''));
   fn();
   if (key && !host.contains(document.activeElement)) (host.querySelector(key) ?? (host.id === 'place' ? $('place-title') : null))?.focus({ preventScroll: true });
@@ -334,7 +345,9 @@ function renderChromeNow() {
   const place = $('place');
   const wasOpen = !place.hidden, before = wasOpen ? { html: place.innerHTML, rect: place.getBoundingClientRect(), pt: placeOrigin.last } : null;
   const focusWasInPlace = place.contains(document.activeElement);
-  renderPlace($('place'), ctx, M, {
+  renderPick();
+  // in Compare mode the Compare card takes the place card's spot (a ward or building card would compete with it)
+  if (state.pick) { place.hidden = true; place.innerHTML = ''; } else renderPlace($('place'), ctx, M, {
     tab: state.placeTab,
     onClose: () => (state.selected ? select(null) : setWard('')),
     onTab: (t) => { state.placeTab = t; renderChrome(); },
@@ -343,6 +356,7 @@ function renderChromeNow() {
     onPeriod: (e) => setPeriod(e),
     onLens: (id) => setLens(id),
   });
+  document.body.classList.toggle('is-picking', !!state.pick);
   // a selected building carries its own breadcrumb, so the separate title card steps aside
   const placeCrumbs = $('place-crumbs');
   if (placeCrumbs) renderCrumbs(placeCrumbs, undefined, false);
@@ -353,7 +367,7 @@ function renderChromeNow() {
   renderInView();
   renderSummary();
   document.body.classList.toggle('has-place', !$('place').hidden);
-  $('title-card').classList.toggle('is-compact', !$('place').hidden);
+  $('title-card').classList.toggle('is-compact', !$('place').hidden || !!state.pick);
   const id = place.hidden ? '' : state.selected ? `b${state.selected}` : `w${state.ward}`;
   if (id !== placeId && state.depth === 'map') { // deeper levels set the panel aside; that is not a close
     if (id) {
@@ -385,9 +399,10 @@ function renderTitle() {
 
 // Toronto › Ward › Building (› Inspection, in the depth bar)
 // leaf: false stops at the ward (the building card's heading already names the building)
-function renderCrumbs(el, tail, leaf = true) {
-  const r = recOf(state.selected);
-  const ward = r?.ward ?? state.ward;
+// place: false leaves out the ward and building (the comparison is about two buildings, not the selected one)
+function renderCrumbs(el, tail, leaf = true, { place = true } = {}) {
+  const r = place ? recOf(state.selected) : null;
+  const ward = place ? r?.ward ?? state.ward : '';
   const items = [`<li><button type="button" class="crumb" data-crumb="city">Toronto</button></li>`];
   if (ward) items.push(`<li><button type="button" class="crumb" data-crumb="ward" data-ward="${ward}" ${!r && !tail ? 'aria-current="location"' : ''}>${esc(M.wardName.get(ward) ?? `Ward ${+ward}`)}</button></li>`);
   if (r && leaf) items.push(tail ? `<li><button type="button" class="crumb" data-crumb="building">${esc(titleCase(r.address))}</button></li>` : `<li><span aria-current="location">${esc(titleCase(r.address))}</span></li>`);
@@ -563,6 +578,7 @@ function circleAt(pt) {
 const STORY_FADE = 240; // ms: the story's crossfades between stage views
 // the story's move into a building (chapter 4): flight down to it, a beat on arrival, then the X-Ray opens out of it
 const STORY_FLIGHT = 1800, STORY_HOLD = 250, STORY_REVEAL = 800;
+const STORY_MAP_FLIGHT = 1300; // ms: the story's unhurried camera moves between the city and a ward
 function stopReveal() {
   for (const el of [$('depth'), $('map-wrap'), ...$('depth-body').querySelectorAll('.view')]) el.getAnimations().forEach((a) => { if (a.id === 'reveal') a.cancel(); });
 }
@@ -606,8 +622,8 @@ function openDepth(kind, page = null, after, { reveal: revealMs = REVEAL.open } 
   tip.hide();
   closeMenus();
   const r = recOf(state.selected);
-  const tail = { xray: 'Inspection', compare: 'Same score, different story', story: 'Beyond the Score', page: PAGES[page] }[kind];
-  if (M) renderCrumbs($('depth-crumbs'), tail);
+  const tail = { xray: 'Inspection', compare: 'Compare buildings', story: 'Beyond the Score', page: PAGES[page] }[kind];
+  if (M) renderCrumbs($('depth-crumbs'), tail, true, { place: kind !== 'compare' });
   $('depth-back').hidden = kind === 'story';
   markNav();
   document.title = `${kind === 'xray' && r ? `X-Ray: ${titleCase(r.address)}` : tail} · LeaseLens`;
@@ -660,8 +676,91 @@ function closeDepth() {
     .finished.then(done, () => {});
 }
 
+// ---- the map's Compare mode -------------------------------------------------------------------------------------------------
+// While it is on, choosing a building (a map marker, the address search, the buildings-in-view list) fills
+// Building A or B instead of opening its card. The card in the left rail shows both slots, which one the next
+// building fills, and Replace / Remove for each; Compare opens the shared comparison with exactly that pair,
+// whatever their scores. Leaving the mode (×, Esc, the Compare tool again) restores normal selection.
+function setPick(on) {
+  if (!!state.pick === on) return;
+  state.pick = on ? { a: null, b: null, slot: 'a' } : null;
+  if (on) { state.selected = null; state.placeTab = 'summary'; if (!story?.active()) pushExplore(); }
+  $('compare-btn').setAttribute('aria-pressed', String(on));
+  $('compare-btn').classList.toggle('is-on', on);
+  renderMapLevel();
+  if (on) requestAnimationFrame(() => $('pick-title').focus({ preventScroll: true }));
+  else if ($('pick-card').contains(document.activeElement) || document.activeElement === document.body) $('compare-btn').focus({ preventScroll: true });
+}
+
+function pickBuilding(rsn, { fly = false } = {}) {
+  const p = state.pick, live = $('pick-live');
+  const pm = M.byPeriod[state.period];
+  const r = pm.latestByRsn.get(rsn);
+  if (!r) { live.textContent = `That building has no evaluation in the ${pm.P.long}. Choose another one.`; return; }
+  const other = (s) => (s === 'a' ? 'b' : 'a');
+  const slot = p.slot ?? (!p.a ? 'a' : !p.b ? 'b' : 'b');   // both chosen and no slot picked: the new one replaces B
+  if (p[other(slot)] === rsn) { live.textContent = `${titleCase(r.address)} is already Building ${other(slot).toUpperCase()}. Choose a different building.`; return; }
+  p[slot] = rsn;
+  p.slot = !p.a ? 'a' : !p.b ? 'b' : null;
+  live.textContent = `Building ${slot.toUpperCase()}: ${titleCase(r.address)}, score ${r.score}.${p.slot ? ` Now choose Building ${p.slot.toUpperCase()}.` : ' Both buildings chosen; Compare is ready.'}`;
+  renderMapLevel();
+  if (fly) Atlas.showBuilding(r);
+}
+
+function renderPick() {
+  const card = $('pick-card'), p = state.pick;
+  card.hidden = !p || state.depth !== 'map';
+  if (!p) return;
+  const pm = M.byPeriod[state.period];
+  const off = pm.era !== 'cur';
+  $('pick-help').innerHTML = off
+    ? `Comparing inspection items uses the 2023 – now scoring system. <button type="button" class="link-btn" id="pick-cur">Switch to 2023 – now</button>`
+    : 'Zoom in and select two buildings on the map, or search for an address above. They don’t need the same score.';
+  $('pick-cur')?.addEventListener('click', () => setPeriod('cur'));
+  const slotHtml = (k) => {
+    const r = p[k] && pm.latestByRsn.get(p[k]);
+    const L = k.toUpperCase();
+    const now = p.slot === k;
+    return `<li class="pick-slot${now ? ' is-now' : ''}${r ? ' is-full' : ''}">
+      <span class="pick-letter" aria-hidden="true">${L}</span>
+      <div class="pick-body">
+        ${r ? `<p class="pick-name"><span class="visually-hidden">Building ${L}: </span>${esc(titleCase(r.address))}</p>
+          <p class="pick-meta">Score <b class="tnum">${r.score}</b> · ${esc(r.wardName)}</p>`
+          : `<p class="pick-name pick-empty"><span class="visually-hidden">Building ${L}: </span>${now ? 'Needs a building: select one now' : 'Needs a building'}</p>`}
+        ${r && now ? '<p class="pick-meta pick-now">Select a building to replace it</p>' : ''}
+      </div>
+      <div class="pick-btns">
+        ${r ? `<button type="button" class="link-btn" data-pick="replace" data-slot="${k}" aria-pressed="${now}">Replace<span class="visually-hidden"> Building ${L}</span></button>
+          <button type="button" class="link-btn" data-pick="remove" data-slot="${k}">Remove<span class="visually-hidden"> Building ${L}</span></button>` : ''}
+      </div>
+    </li>`;
+  };
+  $('pick-slots').innerHTML = slotHtml('a') + slotHtml('b');
+  const ready = !!(p.a && p.b && !off);
+  $('pick-go').disabled = !ready;
+  $('pick-need').textContent = ready ? '' : off ? 'Switch to the 2023 – now system to compare.' : `Choose ${!p.a && !p.b ? 'two buildings' : `Building ${!p.a ? 'A' : 'B'}`} to compare.`;
+  $('pick-slots').querySelectorAll('[data-pick]').forEach((b) => b.addEventListener('click', () => {
+    const k = b.dataset.slot;
+    if (b.dataset.pick === 'remove') { p[k] = null; p.slot = k; $('pick-live').textContent = `Building ${k.toUpperCase()} removed. Choose a building for it.`; }
+    else { p.slot = p.slot === k ? (!p.a ? 'a' : !p.b ? 'b' : null) : k; if (p.slot === k) $('pick-live').textContent = `Select a building to replace Building ${k.toUpperCase()}.`; }
+    renderMapLevel();
+    $('pick-slots').querySelector(`[data-slot="${k}"]`)?.focus({ preventScroll: true }) ?? $('pick-title').focus({ preventScroll: true });
+  }));
+}
+
+function wirePick() {
+  $('compare-btn').addEventListener('click', () => { closeMenus(); setPick(!state.pick); });
+  $('pick-close').addEventListener('click', () => setPick(false));
+  $('pick-go').addEventListener('click', () => {
+    const p = state.pick;
+    if (p?.a && p?.b) goDeep(compareHash(p.a, p.b));
+  });
+}
+
 // ---- interactions ---------------------------------------------------------------------------------------------------------
 function select(rsn, { fly = true, focus = false, open = false } = {}) {
+  // Compare mode: choosing a building on the map fills Building A or B instead of opening its card
+  if (rsn && state.pick && state.depth === 'map' && !story?.active() && !open) { pickBuilding(rsn, { fly }); return; }
   if (rsn && state.depth === 'xray') { navigate(`#/xray/${rsn}`); return; }
   if (state.depth !== 'map' && !story?.active()) {
     // from the comparison or a page: back onto the map, with this building selected
@@ -692,12 +791,15 @@ function setWard(ward, { fly = true } = {}) {
   syncControls();
 }
 
-// Fingerprint state: a patch object, or a function of the current state that returns one.
+// The comparison's address: #/compare, #/compare/<A> (B suggested) or #/compare/<A>/<B> (both chosen).
+const compareHash = (a, b) => `#/compare${a ? `/${encodeURIComponent(a)}${b ? `/${encodeURIComponent(b)}` : ''}` : ''}`;
+
+// Comparison state: a patch object, or a function of the current state that returns one.
 function setFp(patch, hash) {
   Object.assign(state.fp, typeof patch === 'function' ? patch(state.fp) : patch);
   if (!story?.active()) {
-    if (hash && location.hash !== hash) history.replaceState(history.state, '', hash);
-    else if (state.fp.a && state.depth === 'compare') history.replaceState(history.state, '', `#/compare/${state.fp.a}`);
+    const h = hash ?? (state.depth === 'compare' ? compareHash(state.fp.a, state.fp.b) : null);
+    if (h && location.hash !== h) { history.replaceState(history.state, '', h); handled = location.hash; }
   }
   if (state.depth === 'compare') renderFingerprint(context(), M, state.fp);
 }
@@ -836,6 +938,7 @@ function wireShell() {
     if (d) { d.open = false; d.querySelector('summary').focus(); e.preventDefault(); return; }
     for (const [b, p] of MENUS) if (!$(p).hidden) { $(p).hidden = true; $(b).setAttribute('aria-expanded', 'false'); $(b).focus(); e.preventDefault(); return; }
     if (state.depth !== 'map' || story?.active() || e.target.closest('input, select, textarea, .popover')) return;
+    if (state.pick) { setPick(false); e.preventDefault(); return; }
     if (state.selected) { select(null); e.preventDefault(); }
     else if (state.ward) { setWard('', { fly: false }); e.preventDefault(); }
   });
@@ -977,17 +1080,19 @@ const app = {
     const frame = (to, opts) => Atlas.wardsLoaded().then(() => {
       if (!live() || !to) return;
       if (to.kind === 'city') Atlas.showCity();
-      if (to.kind === 'ward') Atlas.showWard(to.ward, { city: !!to.city });
+      if (to.kind === 'ward') Atlas.showWard(to.ward, { city: !!to.city, duration: opts?.duration ?? (reducedMotion() ? undefined : STORY_MAP_FLIGHT / 1000) });
       if (to.kind === 'building') { const r = recOf(to.rsn); if (r) Atlas.showBuilding(r, undefined, opts); }
     });
     if (depth === 'map') {
       closeDepth();
       renderMapLevel();
-      frame(mapTo);
-      if (done) setTimeout(done, reducedMotion() ? 80 : 900);
+      // the step's highlight waits until the camera has landed, so it appears where the reader is looking
+      frame(mapTo).then(() => Atlas.whenSettled()).then(() => { if (done) setTimeout(done, reducedMotion() ? 0 : 120); });
       return;
     }
-    if (via && state.depth !== depth && !reducedMotion()) {
+    // The flight down into a building only starts from the map; from another stage view (the comparison,
+    // a chart) the level simply crossfades in, so stepping Back never detours through the map.
+    if (via && state.depth === 'map' && !reducedMotion()) {
       closeDepth();
       renderMapLevel();
       // An unhurried flight down to the building; once it has landed and the reader has had a beat to see
@@ -1032,6 +1137,7 @@ const app = {
   $('status').textContent = '';
   story = createStory(app);
   wireControls();
+  wirePick();
   fillSearch();
   renderMetaNotes();
   watchResize();

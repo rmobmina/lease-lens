@@ -9,7 +9,6 @@ import { itemLabel, itemProblemRates } from '../model.js';
 import { XRAY_ZONES, STATUS, CONCENTRATED, zoneByKey, zoneProfile, buildingEvaluations, timelinePoints, trendSummary, ratingClass } from '../xray-model.js';
 import { pct, fmt, esc, titleCase, formatDate, cssVar, signed } from '../ui.js';
 import { renderTimeline } from './xray-timeline.js';
-import { renderCompare } from './xray-compare.js';
 import { reducedMotion } from '../motion.js';
 
 const $ = (id) => document.getElementById(id);
@@ -73,9 +72,9 @@ export function renderXray(ctx, M, xs) {
   document.body.classList.add('xr-has-building');
   if (location.hash.startsWith("#/xray") && location.hash !== `#/xray/${rsn}`) history.replaceState(null, '', `#/xray/${rsn}`);
 
-  // A new building resets the inspection being shown, the comparison and the history selection. Older
+  // A new building resets the inspection being shown and the history selection. Older
   // states (X-Ray / Exploded views) open as the cutaway; the retired "How it works" tab opens the methodology.
-  if (xs.rsn !== rsn) Object.assign(xs, { rsn, evalUid: null, matchRsn: null, tab: 'model', items: false, cmpZone: null, tlPick: null });
+  if (xs.rsn !== rsn) Object.assign(xs, { rsn, evalUid: null, tab: 'model', items: false, tlPick: null });
   if (xs.tab === 'method') { xs.tab = 'model'; requestAnimationFrame(openMethod); }
   if (!MODES.includes(xs.mode)) xs.mode = xs.mode ? 'cutaway' : 'exterior';
   if (xs.mode === 'focus' && !xs.zone) xs.mode = 'cutaway';
@@ -108,16 +107,12 @@ export function renderXray(ctx, M, xs) {
   if (xs.tab === 'model') renderStage(profile, xs, entry);
   else disposeXray();
   if (xs.tab === 'history') renderHistory(points, rec, pm, M, xs);
-  if (xs.tab === 'compare') renderCompare($('xr-compare'), {
-    rec: latestInPeriod, pm, ctx, M, matchRsn: xs.matchRsn, zone: xs.cmpZone,
-    onChoose: (r) => { xs.matchRsn = r; rerender(); },
-    onZone: (z) => { xs.cmpZone = z; },
-    onOpen: (r) => ctx.select(r, { open: true }),
-  });
 }
 
-const TABS = ['model', 'compare', 'history'];
-const PANE = { model: 'xr-pane-model', compare: 'xr-pane-compare', history: 'xr-history' };
+// Two views of the building (tabs). Comparing it with another building is not a third tab: it opens the one
+// shared Compare buildings view (sections/fingerprint.js) with this building as Building A.
+const TABS = ['model', 'history'];
+const PANE = { model: 'xr-pane-model', history: 'xr-history' };
 let shownTab = null, paneAnim = null;
 function showTab(tab) {
   for (const t of TABS) {
@@ -661,6 +656,7 @@ function wire() {
   $('xr-focus').addEventListener('click', () => scene3d?.api?.focus(lastCtx?.xs.zone));
   $('xr-back').addEventListener('click', () => $('depth-back').click());
   $('xr-method-open').addEventListener('click', openMethod);
+  $('xr-compare-open').addEventListener('click', () => { if (lastCtx?.xs.rsn) lastCtx.ctx.openCompare(lastCtx.xs.rsn); });
   const dlg = $('xr-method-dialog');
   $('xr-method-close').addEventListener('click', () => dlg.close());
   dlg.addEventListener('click', (e) => { if (e.target === dlg) dlg.close(); });   // the backdrop
