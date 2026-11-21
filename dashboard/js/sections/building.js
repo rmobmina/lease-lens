@@ -3,8 +3,9 @@
 //              citywide ranking in one panel, the inspection finding, last inspected date and building facts,
 //              then one primary action (View inspection details) over two equal ones (Score history, Compare nearby).
 //   Ward     → one finding: its share in the citywide lowest 10%, against the city's share. "Explore ward"
-//              opens the rest on request: median and rank, its lowest- or highest-scoring buildings (switchable;
-//              also the keyboard route to individual buildings) and the two analysis layers that work per ward.
+//              opens the rest on request: median and rank, one ranked preview of its buildings (lowest scores
+//              first, one "Show highest" / "Show lowest" switch; also the keyboard route to individual buildings),
+//              the full list, and the two analysis layers that work per ward.
 // It replaces the old full-page Building Explorer; the numbers and rules are the same.
 
 import { scoreBand } from '../model.js';
@@ -129,25 +130,33 @@ function renderHistory(el, r, ctx, M, opts) {
 // ---- ward ------------------------------------------------------------------------------------------------
 // The card leads with one finding. Its details stay open per ward while the reader moves the map.
 let wardOpen = null;
-let wardList = 'low';   // which buildings the ward list shows: 'low' (lowest scores) | 'high' (highest); kept across wards
+// The ranked preview shows one end of the ward's scores: 'low' (lowest first, the default whenever a ward is
+// opened) or 'high'. It resets to 'low' when the ward changes.
+let wardList = 'low', wardListWard = null;
+const RANK = {
+  low: { label: 'Lowest scores', flip: 'Show highest' },
+  high: { label: 'Highest scores', flip: 'Show lowest' },
+};
 
-// The ward's buildings at one end of the score range: five, then a note for any others tied with the fifth,
-// so a cut-off never silently hides buildings with exactly the same score.
-const LIST_N = 5;
-export function wardExtremes(inWard, which) {
+// The ward's buildings at one end of the score range: the whole eligible list is sorted first, then the first
+// `n` taken (five by default), then a note for any others tied with the last one shown, so a cut-off never
+// silently hides buildings with exactly the same score.
+export const LIST_N = 5;
+const LIST_MIN = 3;   // short screens or large text show fewer rows, never fewer than this
+export function wardExtremes(inWard, which, n = LIST_N) {
   const dir = which === 'high' ? -1 : 1;
   const sorted = [...inWard].sort((a, b) => dir * (a.score - b.score) || a.address.localeCompare(b.address));
-  const shown = sorted.slice(0, LIST_N);
+  const shown = sorted.slice(0, n);
   const edge = shown.at(-1)?.score;
-  const tiedMore = sorted.slice(LIST_N).filter((r) => r.score === edge).length;
+  const tiedMore = sorted.slice(n).filter((r) => r.score === edge).length;
   return { shown, edge, tiedMore };
 }
 
-function wardListHtml(inWard, pm) {
-  const { shown, edge, tiedMore } = wardExtremes(inWard, wardList);
-  return `<ol class="near-list">${shown.map((d) => `
+function wardListHtml(inWard, pm, n) {
+  const { shown, edge, tiedMore } = wardExtremes(inWard, wardList, n);
+  return `<ol class="near-list ward-rank">${shown.map((d) => `
       <li><button type="button" data-rsn="${d.rsn}"><span class="nl-name">${esc(titleCase(d.address))}</span>
-      <span class="nl-km">${formatDate(d.date)}</span><span class="nl-score ${scoreBand(d.score, pm)}">${d.score}</span></button></li>`).join('')}</ol>
+      <span class="nl-km">${formatDate(d.date)}</span><span class="nl-score ${scoreBand(d.score, pm)}"><span class="visually-hidden">score </span>${d.score}</span></button></li>`).join('')}</ol>
     ${tiedMore ? `<p class="place-note">${fmt.n(tiedMore)} more building${tiedMore === 1 ? '' : 's'} also scored ${edge}.</p>` : ''}`;
 }
 
@@ -164,6 +173,7 @@ function renderWardCard(box, ctx, M, opts) {
   if (!row) { box.innerHTML = `${head}<p class="place-note">No evaluated buildings in this ward in the ${esc(pm.P.long)}.</p>`; wire(box, opts); return; }
   const open = wardOpen === ward;
   const inWard = pm.latest.filter((r) => r.ward === ward);
+  if (wardListWard !== ward) { wardList = 'low'; wardListWard = ward; }   // a newly opened ward starts at its lowest scores
   const high = row.share > ch.city * 1.15, low = row.share < ch.city * 0.85;
   const max = Math.max(row.share, ch.city) * 1.15 || 1;
   box.innerHTML = `${head}
@@ -182,12 +192,11 @@ function renderWardCard(box, ctx, M, opts) {
     </div>
     <div class="place-more ward-more" id="ward-more" ${open ? '' : 'hidden'}>
       <p class="place-sub">Median score <b>${row.median}</b> · rank ${row.rank} of ${ch.rows.length} wards by this share</p>
-      <fieldset class="seg seg-sm ward-list-pick">
-        <legend class="place-h3">Buildings in this ward</legend>
-        <label><input type="radio" name="ward-list" value="low" ${wardList === 'low' ? 'checked' : ''} /><span>Lowest scores</span></label>
-        <label><input type="radio" name="ward-list" value="high" ${wardList === 'high' ? 'checked' : ''} /><span>Highest scores</span></label>
-      </fieldset>
-      <div class="ward-list" id="ward-list" aria-live="polite">${wardListHtml(inWard, pm)}</div>
+      <div class="ward-rank-head">
+        <h3 class="place-h3" id="ward-rank-label">${RANK[wardList].label}</h3>
+        <button type="button" class="link-btn ward-flip" data-act="ward-flip" aria-controls="ward-list">${RANK[wardList].flip}</button>
+      </div>
+      <div class="ward-list" id="ward-list" role="region" aria-labelledby="ward-rank-label" aria-live="polite">${wardListHtml(inWard, pm, LIST_N)}</div>
       <p class="place-link"><button type="button" class="link-btn" data-act="ward-all" aria-haspopup="dialog">See all ${fmt.n(inWard.length)} buildings and scores</button></p>
       <h3 class="place-h3">Analyse this ward</h3>
       <div class="place-lenses">
@@ -197,13 +206,25 @@ function renderWardCard(box, ctx, M, opts) {
     </div>`;
   wire(box, opts);
   box.querySelector('[data-act="ward-all"]').addEventListener('click', (e) => openWardTable(inWard, name, pm, opts, e.currentTarget));
-  // Switching the list redraws only the list, so focus stays on the switch.
-  box.querySelectorAll('input[name="ward-list"]').forEach((i) => i.addEventListener('change', () => {
-    wardList = i.value;
-    const list = box.querySelector('#ward-list');
-    list.innerHTML = wardListHtml(inWard, pm);
+  // The preview: five rows where they fit; on a short screen or with larger Display text it drops rows (to three)
+  // until the card's actions fit without scrolling. If even three don't fit, the card itself scrolls, so every
+  // action and the full-list link stay reachable.
+  const list = box.querySelector('#ward-list');
+  const drawList = () => {
+    let n = LIST_N;
+    list.innerHTML = wardListHtml(inWard, pm, n);
+    while (n > LIST_MIN && !box.hidden && !list.closest('[hidden]') && box.scrollHeight > box.clientHeight + 1) list.innerHTML = wardListHtml(inWard, pm, --n);
     list.querySelectorAll('[data-rsn]').forEach((b) => b.addEventListener('click', () => opts.onSelect(b.dataset.rsn)));
-  }));
+  };
+  // One switch: it flips the preview between the two ends, and its own label says what it will show next.
+  // Only the label, the switch and the rows change, so focus stays on the switch.
+  box.querySelector('[data-act="ward-flip"]').addEventListener('click', (e) => {
+    wardList = wardList === 'low' ? 'high' : 'low';
+    box.querySelector('#ward-rank-label').textContent = RANK[wardList].label;
+    e.currentTarget.textContent = RANK[wardList].flip;
+    drawList();
+  });
+  if (open) requestAnimationFrame(drawList);   // measured once the card has its real size
   box.querySelector('[data-act="ward-more"]').addEventListener('click', (e) => {
     wardOpen = wardOpen === ward ? null : ward;
     const now = wardOpen === ward;
@@ -211,6 +232,7 @@ function renderWardCard(box, ctx, M, opts) {
     e.currentTarget.setAttribute('aria-expanded', String(now));
     e.currentTarget.textContent = now ? 'Hide ward details' : 'Explore ward';
     more.hidden = !now;
+    if (now) drawList();
     if (now && !reducedMotion()) more.animate([{ opacity: 0, transform: 'translateY(-4px)' }, { opacity: 1, transform: 'none' }], { duration: 220, easing: 'cubic-bezier(0.2, 0.7, 0.2, 1)' });
   });
 }

@@ -89,6 +89,31 @@ const runStartup = (src, storage) => {
 };
 const runTheme = (src, storage) => runStartup(src, storage).theme;
 
+test('Compare buildings: a suggested Building B has exactly the same score in the same system, or there is none', () => {
+  const counts = d3.rollup(pm.latest, (v) => v.length, (r) => r.score);
+  for (const r of pm.latest.slice(0, 400)) {
+    const m = F.sameScoreMatch(r, pm.latest, pm.cats);
+    if (counts.get(r.score) === 1) { assert.equal(m, null, `${r.rsn}: no other building scored ${r.score}, so nothing is suggested`); continue; }
+    assert.ok(m, `${r.rsn}: another building scored ${r.score}`);
+    assert.equal(m.score, r.score, 'exactly the same score (never the closest one)');
+    assert.equal(m.era, r.era, 'the same scoring system');
+    assert.notEqual(m.rsn, r.rsn, 'never the building itself');
+  }
+  const unique = pm.latest.find((r) => counts.get(r.score) === 1);
+  if (unique) assert.equal(F.sameScoreMatch(unique, pm.latest, pm.cats), null);
+});
+
+test('Compare buildings: one view, three ways in (#/compare, #/compare/<A>, #/compare/<A>/<B>)', async () => {
+  const main = await readFile(new URL('../dashboard/js/main.js', import.meta.url), 'utf8');
+  assert.match(main, /const \[route = '', arg, arg2\] = path\.split\('\/'\)/, 'the route carries up to two buildings');
+  assert.match(main, /goDeep\(compareHash\(p\.a, p\.b\)\)/, 'the map’s Compare mode opens the shared view with exactly its pair');
+  const xray = await readFile(new URL('../dashboard/js/sections/xray.js', import.meta.url), 'utf8');
+  assert.match(xray, /ctx\.openCompare\(lastCtx\.xs\.rsn\)/, 'the inspection opens the shared view with its building as A');
+  const html = await readFile(new URL('../dashboard/index.html', import.meta.url), 'utf8');
+  assert.equal([...html.matchAll(/data-view="compare"/g)].length, 1, 'exactly one comparison view');
+  assert.match(html, /<h1 id="fp-title">Compare buildings/);
+});
+
 test('theme start-up: a saved choice is applied before paint; anything else falls back to the system setting', async () => {
   const src = await themeScript();
   // the old light/dark toggle's saved choice still applies
@@ -126,7 +151,7 @@ test('Display settings: every text size in the stylesheets follows the text-size
 
 test('every ⓘ button has an accessible name and an explanation to open', async () => {
   const { INFO } = await import('../dashboard/js/content/info.js');
-  const files = ['../dashboard/index.html', ...['main.js', 'sections/building.js', 'sections/xray.js', 'story/controller.js', 'sections/fingerprint.js', 'sections/xray-compare.js', 'sections/age.js']
+  const files = ['../dashboard/index.html', ...['main.js', 'sections/building.js', 'sections/xray.js', 'story/controller.js', 'sections/fingerprint.js', 'sections/age.js']
     .map((f) => `../dashboard/js/${f}`)];
   const html = await readFile(new URL('../dashboard/index.html', import.meta.url), 'utf8');
   let n = 0;
@@ -148,10 +173,12 @@ test('every ⓘ button has an accessible name and an explanation to open', async
   assert.ok(n >= 12, `found ${n} ⓘ buttons`);
 });
 
-test('Building Explorer: three tabs, and the method lives in a dialog, not a tab', async () => {
+test('Building Explorer: two tabs, comparing opens the shared view, and the method lives in a dialog, not a tab', async () => {
   const html = await readFile(new URL('../dashboard/index.html', import.meta.url), 'utf8');
   const tabs = [...html.matchAll(/role="tab"[^>]*data-xr-tab="([^"]+)"/g)].map((m) => m[1]);
-  assert.deepEqual(tabs, ['model', 'compare', 'history']);
+  assert.deepEqual(tabs, ['model', 'history']);
+  assert.match(html, /id="xr-compare-open"/, 'the inspection has a Compare with another building action');
+  assert.doesNotMatch(html, /xr-pane-compare/, 'no second comparison layout inside the X-Ray');
   assert.match(html, /<dialog class="bx-dialog" id="xr-method-dialog"/);
   assert.doesNotMatch(html, /How it works<\/button>/);
 });
@@ -178,8 +205,7 @@ test('the ⓘ control is sized only by tokens: 16 px circle, 24 px button, 44 px
 test('no native <select> popups remain in the dashboard: every select is enhanced', async () => {
   const html = await readFile(new URL('../dashboard/index.html', import.meta.url), 'utf8');
   const ids = [...html.matchAll(/<select id="([^"]+)"/g)].map((m) => m[1]);
-  const js = (await Promise.all(['main.js', 'sections/fingerprint.js', 'sections/xray-compare.js']
+  const js = (await Promise.all(['main.js', 'sections/fingerprint.js']
     .map((f) => readFile(new URL(`../dashboard/js/${f}`, import.meta.url), 'utf8')))).join('\n');
   for (const id of ids) assert.match(js, new RegExp(`enhanceSelect\\(\\$\\('${id}'\\)`), `#${id} uses the shared Select`);
-  assert.match(js, /enhanceSelect\(sel,/, 'the comparison selector uses the shared Select');
 });
