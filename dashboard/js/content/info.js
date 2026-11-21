@@ -101,7 +101,7 @@ export const INFO = {
   },
   story: {
     title: 'About this story',
-    body: '<p>Every example in the story is a real building, chosen by a rule you can reproduce: the most and least flagged buildings at the median score. Numbers are computed from the current data when the page loads. You can leave at any time; the map comes back as you left it.</p>',
+    body: '<p>The story uses every apartment building the City has evaluated under its current scoring system, in place since 2023: the same buildings as the map. Every example is a real building, chosen by a rule you can reproduce: the most and least flagged buildings at the median score. Numbers are computed from the current data when the page loads. You can leave at any time; the map comes back as you left it.</p>',
     more: { href: '#/about', label: 'How LeaseLens works' },
   },
 };

@@ -13,6 +13,8 @@
 // Unit of analysis: each building's LATEST evaluation in the current scoring system
 // (the same rule the rest of the dashboard uses). Earlier inspections are not averaged in.
 
+import { PERIODS } from './model.js';
+
 export const SCALE_MAX = 3;
 export const LOW_MAX = 1;          // "low mark" = rated 0 or 1, the two lowest marks
 export const UNCOMMON_SHARE = 0.05; // a low mark is "uncommon" if < 5% of rated buildings get one on that item
@@ -105,13 +107,101 @@ export function buildingProfile(rec, layout) {
   const all = groups.flatMap((g) => g.items);
   const rated = all.filter((i) => i.status === 'rated');
   return {
-    rec, groups,
+    rec, groups, era: rec.era, scale: SCALES.cur,
     rated: rated.length,
     na: all.filter((i) => i.status === 'na').length,
     low: rated.filter((i) => i.low),
     uncommon: rated.filter((i) => i.uncommon),
     belowTop: rated.filter((i) => i.rating < SCALE_MAX).length,
   };
+}
+
+// ---- the two scoring systems -----------------------------------------------------------------------------
+// Each system's rating scale; "low" is the dashboard's own cut-off for that system (model.js PERIODS).
+export const SCALES = {
+  cur: { era: 'cur', min: 0, max: 3, lowMax: PERIODS.cur.poorMax, system: '2023 – now', range: '0–3' },
+  pre: { era: 'pre', min: 1, max: 5, lowMax: PERIODS.pre.poorMax, system: '2017 – 2023', range: '1–5' },
+};
+
+// Where the 2017 – 2023 system's 20 items sit among the five areas. This places each item in an area so a pair
+// from the two systems can be read area by area; it is NOT an item-for-item match. The two systems share only one
+// item identifier (GRAFFITI), and rate it on different scales, so no rating is ever compared across them.
+export const FP_PRE_PLACE = {
+  outside: ['EXTERIOR_GROUNDS', 'EXTERIOR_WALKWAYS', 'PARKING_AREA', 'EXTERIOR_CLADDING', 'ENTRANCE_DOORS_WINDOWS', 'WATER_PEN_EXT_BLDG_ELEMENTS'],
+  shared: ['ENTRANCE_LOBBY', 'INTERIOR_WALL_CEILING_FLOOR', 'STAIRWELLS', 'LAUNDRY_ROOMS', 'OTHER_FACILITIES', 'GRAFFITI'],
+  waste: ['GARBAGE_BIN_STORAGE_AREA', 'GARBAGE_CHUTE_ROOMS', 'STORAGE_AREAS_LOCKERS'],
+  systems: ['ELEVATORS', 'INTERIOR_LIGHTING_LEVELS', 'SECURITY', 'BALCONY_GUARDS', 'INTERNAL_GUARDS_HANDRAILS'],
+  records: [],   // the 2017 – 2023 system had no record or plan items
+};
+
+// A building evaluated only under the 2017 – 2023 system, laid out on the same five areas (its own items, in the
+// order above). Same shape as buildingProfile, so every view draws both the same way.
+export function eraProfile(rec, cats, labelFn) {
+  const S = SCALES[rec.era];
+  const naSet = new Set(rec.naCats ?? []);
+  const groups = FP_GROUPS.map((g) => {
+    const items = (FP_PRE_PLACE[g.key] ?? []).filter((c) => cats.includes(c)).map((col) => {
+      const rating = rec.ratings[col] ?? null;
+      const status = rating != null ? 'rated' : naSet.has(col) ? 'na' : 'blank';
+      const low = rating != null && rating <= S.lowMax;
+      return { col, rating, status, low, uncommon: false, stat: { col, label: labelFn(col), groupLabel: g.label, official: LL.prettyCat(col) } };
+    });
+    const rated = items.filter((i) => i.status === 'rated');
+    return { key: g.key, label: g.label, note: g.note, items, rated: rated.length, low: rated.filter((i) => i.low).length, belowTop: rated.filter((i) => i.rating < S.max).length };
+  });
+  const all = groups.flatMap((g) => g.items);
+  const rated = all.filter((i) => i.status === 'rated');
+  return { rec, groups, era: rec.era, scale: S, rated: rated.length, na: all.filter((i) => i.status === 'na').length, low: rated.filter((i) => i.low), uncommon: [], belowTop: rated.filter((i) => i.rating < S.max).length };
+}
+
+// ---- every item, side by side ------------------------------------------------------------------------------
+// One row per inspection item, grouped by area. Items are matched by their inspection identifier (the City's
+// column name), so an item keeps its row even when only one building has a rating for it. Each side's cell:
+//   rated    a real rating (0 is a rating, never "missing"); `low` uses that building's own system
+//   na       the item doesn't apply / wasn't assessed (N/A)
+//   blank    nothing was recorded
+//   absent   the item isn't part of that building's scoring system
+// `comparable`: both sides rated on the same scale (same system). Only comparable rows can count as "rated
+// differently"; a low rating on either side always counts as "rated low in either building".
+export const ITEM_FILTERS = ['all', 'diff', 'low'];
+export function pairRows(pa, pb) {
+  const sameSystem = pa.era === pb.era;
+  return pa.groups.map((ga, gi) => {
+    const gb = pb.groups[gi];
+    const ia = new Map(ga.items.map((i) => [i.col, i])), ib = new Map(gb.items.map((i) => [i.col, i]));
+    const cols = [...ga.items.map((i) => i.col), ...gb.items.map((i) => i.col).filter((c) => !ia.has(c))];
+    const cell = (it) => (it ? { status: it.status, rating: it.rating, low: it.low, uncommon: it.uncommon } : { status: 'absent', rating: null, low: false, uncommon: false });
+    const rows = cols.map((col) => {
+      const a = cell(ia.get(col)), b = cell(ib.get(col));
+      const stat = (ia.get(col) ?? ib.get(col)).stat;
+      const comparable = sameSystem && a.status === 'rated' && b.status === 'rated';
+      return {
+        col, stat, label: stat.label, a, b, comparable,
+        diff: comparable && a.rating !== b.rating,
+        low: a.low || b.low,
+        system: ia.has(col) && ib.has(col) ? 'both' : ia.has(col) ? pa.era : pb.era,
+      };
+    });
+    return { key: ga.key, label: ga.label, a: { low: ga.low, rated: ga.rated }, b: { low: gb.low, rated: gb.rated }, rows };
+  });
+}
+export const rowMatches = (row, filter) => (filter === 'diff' ? row.diff : filter === 'low' ? row.low : true);
+
+// The one-line observation under the two summaries, as data (the view words it). Score wording only when the two
+// systems are comparable; with equal scores it points at the clearest inspection difference, if there is one.
+export function pairObservation(pa, pb) {
+  if (pa.era !== pb.era) return { kind: 'systems' };
+  const groups = pairRows(pa, pb);
+  const rows = groups.flatMap((g) => g.rows);
+  const gap = pa.rec.score - pb.rec.score;
+  if (gap) return { kind: 'scores', hi: gap > 0 ? 'a' : 'b', points: Math.abs(gap) };
+  const nA = pa.low.length, nB = pb.low.length;
+  // the area where the low-rated counts differ most (by count, then share)
+  const area = d3.greatest(groups.filter((g) => g.a.low !== g.b.low), (g) => Math.abs(g.a.low - g.b.low) * 1000 + Math.abs((g.a.rated ? g.a.low / g.a.rated : 0) - (g.b.rated ? g.b.low / g.b.rated : 0)));
+  if (nA !== nB) return { kind: 'same-score-lows', area: area ?? null };
+  const sharedLow = rows.filter((r) => r.a.low && r.b.low).length;
+  if (nA && sharedLow < nA) return { kind: 'same-score-items', sharedLow };
+  return { kind: 'same', diffRows: rows.filter((r) => r.diff).length };
 }
 
 // The paired profile (sections/fp-profile.js): one row per area for two buildings, on one shared scale.
